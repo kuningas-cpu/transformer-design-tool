@@ -779,6 +779,31 @@ if (process.argv.includes('--dump')) {
 /* ---------------- 23. 电容谐振复位（正激，无复位绕组）+ 2号变压器(输出电感+辅助绕组) ---------------- */
 /* ---------------- 24. 第三方数据交叉验证：第二家供应商（鼎铖 03-56319-01/-02） ---------------- */
 /* ---------------- 25. 本轮优化项 ---------------- */
+/* ---------------- 26. AL / "不开气隙"陷阱：等效有效气隙 ---------------- */
+header('26 AL source: "no air gap" is a process statement, not zero effective gap');
+{
+  const fwTurn = { topology: 'Forward', vinMin: 18, vinMax: 36, vout: 19, iout: 3.947, fs: 200,
+    auditMode: '1', npGiven: 12, nsGiven: 23, ae: 52, le: 32, aw: 38, mlt: 34, resetMode: 'cap', muI: 2400 };
+  /* ① AL 填 0 + 库内实测 AL（天胜承认书 1146）→ Lm 必须等于承认书的 165 µH */
+  const lib = TD.design(baseInputs(Object.assign({}, fwTurn, { alNh: 0, alLibNh: 1146 })));
+  close(lib.summary.LmUH, 1146e-9 * 144 * 1e6, 1e-9, 'with the library measured AL, Lm = 165.0 µH (matches TST1724)');
+  ok('AL source reported as library', lib.summary.alSource === 'library');
+  close(lib.summary.gapEffMm, (TD.MU0 * 52e-6 / (1146e-9) - 32e-3 / 2400) * 1000, 1e-12, 'implied effective gap ≈ 0.044 mm');
+  ok('the implied process gap is tens of microns', lib.summary.gapEffMm > 0.02 && lib.summary.gapEffMm < 0.08, lib.summary.gapEffMm.toFixed(4) + ' mm');
+  /* ② AL 填 0 且库里也没有实测值 → 理想无气隙值（这才是"对不上"的根源） */
+  const ideal = TD.design(baseInputs(Object.assign({}, fwTurn, { alNh: 0, alLibNh: 0 })));
+  close(ideal.summary.alIdealNh, TD.MU0 * 2400 * 52e-6 / 32e-3 * 1e9, 1e-9, 'ideal ungapped AL = µ0·µi·Ae/le');
+  close(ideal.summary.LmUH, ideal.summary.alIdealNh * 1e-9 * 144 * 1e6, 1e-9, 'ideal path: Lm = AL_ideal·Np²');
+  ok('the ideal path is ~4.3× the measured AL (this is what makes inductance/turns look wrong)',
+    Math.abs(ideal.summary.alIdealNh / 1146 - 4.3) < 0.4, ideal.summary.alIdealNh.toFixed(0) + ' vs 1146 nH/N²');
+  ok('the tool warns when it has to fall back to the ideal ungapped value', ideal.warns.some((w) => /理想无气隙/.test(w)));
+  ok('and says so in the step table as well', ideal.steps.some((st) => /AL 取值与等效有效气隙/.test(st.t) && /等效有效气隙/.test(st.s)));
+  /* ③ 用户显式填实测 AL 时优先于库值 */
+  const user = TD.design(baseInputs(Object.assign({}, fwTurn, { alNh: 1038, alLibNh: 1146 })));
+  ok('explicit AL wins over the library value', user.summary.alSource === 'user' && Math.abs(user.summary.alUsedNh - 1038) < 1e-9);
+  close(user.summary.LmUH, 1038e-9 * 144 * 1e6, 1e-9, 'DCE spec AL=1038 (149.5 µH/12²) → Lm = 149.5 µH');
+}
+
 header('25 optimisation batch: DCM / AC front-end / leakage / window / inductor / LLC / UI tools');
 {
   /* --- 真 DCM：用很小的 AL（大间隙）让工作点进入 DCM --- */
@@ -951,9 +976,9 @@ header('22 core library: provenance, measured AL, CSV import/export');
   /* 有实测 AL 的预设必须把 AL 填进输入框（实测值优先于 µi·Ae/le 推算） */
   ok('applying a measured-AL preset fills the AL input', typeof windowStub.__TD_APPLY_CORE__ === 'function');
   windowStub.__TD_APPLY_CORE__('EPC19');
-  ok('EPC19 preset sets ae/mlt/AL from the library',
-    Number(dom.ae.value) === 52 && Number(dom.mlt.value) === 38 && Number(dom.alNh.value) === 1146,
-    [dom.ae.value, dom.mlt.value, dom.alNh.value].join('/'));
+  ok('EPC19 preset sets ae/mlt and passes the measured AL through the library channel',
+    Number(dom.ae.value) === 52 && Number(dom.mlt.value) === 38 && Number(dom.alLibNh.value) === 1146 && Number(dom.alNh.value) === 0,
+    [dom.ae.value, dom.mlt.value, dom.alNh.value, dom.alLibNh.value].join('/'));
   const builtin = JSON.parse(JSON.stringify(TD.CORES));
   const csv = TD.coresToCsv(TD.CORES);
   ok('CSV export has a header and one row per core', csv.split('\n').length === TD.CORES.length + 1 && /^model,family/.test(csv));

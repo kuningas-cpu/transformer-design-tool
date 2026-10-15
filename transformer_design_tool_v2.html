@@ -98,7 +98,8 @@
         <div class="field"><label for="ae">有效截面积 Ae <span class="unit">(mm²)</span> *</label><input id="ae" type="number" value="52.2" step="0.1" min="0.5"/></div>
         <div class="field"><label for="le">有效磁路长度 le <span class="unit">(mm)</span> *</label><input id="le" type="number" value="57.5" step="0.1" min="1"/></div>
         <div class="field"><label for="mlt">平均匝长 MLT <span class="unit">(mm)</span> *</label><input id="mlt" type="number" value="50" step="0.5" min="5"/></div>
-        <div class="field"><label for="alNh">AL <span class="unit">(nH/N²)</span>，0 = 无气隙计算</label><input id="alNh" type="number" value="0" step="10" min="0"/></div>
+        <div class="field"><label for="alNh">AL <span class="unit">(nH/N²)</span>，0 = 用库内实测 AL／理想无气隙值</label><input id="alNh" type="number" value="0" step="10" min="0"/></div>
+        <div class="field"><label for="alLibNh">磁芯库实测 AL <span class="unit">(nH/N²，选预设时自动带入)</span></label><input id="alLibNh" type="number" value="0" step="10" min="0"/></div>
       </div>
       <h3>材质 / Material</h3>
       <div class="two-col">
@@ -558,6 +559,10 @@ var TD = (function () {
     var nlGiven = (isFinite(parseFloat(I.nlGiven)) && parseFloat(I.nlGiven) > 0) ? Math.round(parseFloat(I.nlGiven)) : 0;
     var lmGiven = numOr(I.lmGiven, 0);
     var naux = (isFinite(parseFloat(I.naux)) && parseFloat(I.naux) > 0) ? Math.round(parseFloat(I.naux)) : 0;
+    /* 磁芯库里的实测 AL（由界面在选中磁芯时带进来）：AL 填 0 时优先用它，
+       因为"不开气隙"只是工艺说法——未研磨的对拼面仍有几十微米的有效气隙，
+       实测 AL 往往只有理想值 µ0·µi·Ae/le 的 1/3~1/2。 */
+    var alLibNh = numOr(I.alLibNh, 0);
     var lkUh = numOr(I.lkUh, 0);              /* 实测/估算漏感（µH），0 = 未计入 */
     /* MLT 按绕层波动 ±%（默认 0：MLT 若已由承认书 DCR 反推，就不该再叠加；填 20 表示按最坏情况留余量） */
     var mltTol = (isFinite(parseFloat(I.mltTol)) && parseFloat(I.mltTol) >= 0) ? parseFloat(I.mltTol) : 0;
@@ -753,9 +758,24 @@ var TD = (function () {
     var dNeedMax = dutyForVin(T, nAch, Vo, I.vinMax);
     var voutAtDmax = voutFromDuty(T, nAch, I.vinMin, dMax, I.vf);
     var nSecWind = (T.kind === 'bipolar' && I.secRect === 'ct') ? 2 : 1;
-    var ALauto = I.alNh > 0 ? I.alNh * 1e-9 : MU0 * I.muI * Ae / le;
+    var ALideal = MU0 * I.muI * Ae / le;                 /* 无气隙理想值 µ0·µi·Ae/le */
+    var ALsource = I.alNh > 0 ? 'user' : (alLibNh > 0 ? 'library' : 'ideal');
+    var ALauto = ALsource === 'user' ? I.alNh * 1e-9 : (ALsource === 'library' ? alLibNh * 1e-9 : ALideal);
+    /* 由所用 AL 反推"等效有效气隙"（含工艺性气隙）：l_g,eff = µ0·Ae/AL − le/µi */
+    var gapEffMm = (MU0 * Ae / ALauto - le / Math.max(I.muI, 1)) * 1000;
     var Lm = ALauto * Np * Np;
     if (T.kind !== 'flyback') Lp = Lm;   /* for transformer topologies the primary inductance *is* Lm */
+    /* AL 来源与"等效有效气隙"提示：这是"填 0 表示不开气隙"最容易踩的坑 */
+    var alIdealNh = ALideal * 1e9, alUsedNh = ALauto * 1e9;
+    steps.push({ t: 'AL 取值与等效有效气隙', f: 'AL_ideal = µ0·µi·Ae/le ;  l_g,eff = µ0·Ae/AL − le/µi',
+      s: '本磁芯/材质理想无气隙 AL = ' + alIdealNh.toFixed(0) + ' nH/N²；' +
+         (ALsource === 'user' ? '按你填写的实测 AL = ' + alUsedNh.toFixed(0) + ' nH/N²'
+          : ALsource === 'library' ? 'AL 填 0 → 用磁芯库实测 AL = ' + alUsedNh.toFixed(0) + ' nH/N²'
+          : 'AL 填 0 且磁芯库无实测值 → 按理想无气隙值 ' + alUsedNh.toFixed(0) + ' nH/N²') +
+         ' → 等效有效气隙 ' + gapEffMm.toFixed(3) + ' mm（含工艺性气隙）' +
+         (alUsedNh < alIdealNh * 0.7 ? '；实测比理想低 ' + ((1 - alUsedNh / alIdealNh) * 100).toFixed(0) + '%，说明存在工艺性有效气隙（未研磨对拼面/研磨残留），这是正常的' : '') });
+    if (ALsource === 'ideal') warns.push('AL 填 0 且磁芯库没有实测 AL → 工具按**理想无气隙**值 µ0·µi·Ae/le = ' + alIdealNh.toFixed(0) + ' nH/N² 计算。但真实"不开气隙"磁芯因对拼面平面度会有几十微米的有效气隙，实测 AL 常只有理想的 1/3~1/2（本工具 EPC19 库里记录的天胜承认书实测 = 1146 nH/N²，理想值 ≈ ' + alIdealNh.toFixed(0) + '）。**请把实测 AL 填进 AL 输入框**，否则电感与匝数会偏大数倍。');
+    if (ALsource === 'library') warns.push('AL 输入为 0，已按磁芯库里的实测 AL = ' + alUsedNh.toFixed(0) + ' nH/N² 计算（等效有效气隙 ' + gapEffMm.toFixed(3) + ' mm）。如需按理想无气隙值试算，请直接填一个较大的 AL。');
     /* 电容谐振复位（正激、初级并联电容）：电容上限与开关管电压应力 */
     var capReset = null;
     if (T.kind === 'forward' && resetMode === 'cap' && Lm > 0) {
@@ -1192,6 +1212,7 @@ var TD = (function () {
       dT: loss.dT, RthMax: RthMax, tempC: loss.tempC, fillPct: fillPct, AwReq: AwReq, copperTotal: copperTotal,
       RdcPriOhm: RdcPri, RdcSecOhm: RdcSec, RdcPri25Ohm: RdcPri25, RdcSec25Ohm: RdcSec25,
       npGiven: NpGiven, npMinFlux: npMinFlux, npMinSat: npMinSat,
+      alSource: ALsource, alUsedNh: alUsedNh, alIdealNh: alIdealNh, gapEffMm: gapEffMm,
       outStage: os, llcTank: tank,
       capReset: capReset, resetMode: resetMode,
       acFront: acFront,
@@ -1281,6 +1302,7 @@ var TD = (function () {
   var IDS = ['topology','fs','vinMin','vinMax','vout','iout','vf','eta','vinNom','secRect','dutyMax','rippleK','rippleLout',
     'auditMode','npGiven','nsGiven','dcrLimitP','dcrLimitS',
     'resetMode','cresNf','vdsRated','nlGiven','lmGiven','naux',
+    'alLibNh',
     'lkUh','mltTol','marginMm','awW','awH','nlDia','nlStrands','nlPar','crRated',
     'acMode','vacMin','vacMax','fline','cbusUf','cbusEsr','rsAc','vdBridge','holdMs','holdVmin','pfcBus',
     'ripplePct','esrOhm','rdsOnMOhm','vfBody','tDeadNs','llcFr','llcK','llcQ','cossP',
@@ -1335,7 +1357,8 @@ var TD = (function () {
     if (!c) return;
     $('ae').value = c.ae; $('le').value = c.le; $('aw').value = c.aw; $('mlt').value = c.mlt;
     /* 有实测 AL 时直接填 AL（实测值比 µi·Ae/le 推算更可信） */
-    if (c.alMeas > 0) { $('alNh').value = c.alMeas; }
+    $('alLibNh').value = c.alMeas > 0 ? c.alMeas : 0;
+    $('alNh').value = 0;   /* 清空手动 AL，让"库内实测 AL"生效；要覆盖时手动填 */
   }
   function applyMaterialPreset(name) {
     var m = TD.MATERIALS[name];
@@ -1362,6 +1385,7 @@ var TD = (function () {
       cresNf: num('cresNf', 0), vdsRated: num('vdsRated', 0),
       nlGiven: num('nlGiven', 0), lmGiven: num('lmGiven', 0), naux: num('naux', 0),
       lkUh: num('lkUh', 0), mltTol: num('mltTol', 0), marginMm: num('marginMm', 0),
+      alLibNh: num('alLibNh', 0),
       awW: num('awW', 0), awH: num('awH', 0),
       nlDia: num('nlDia', 0), nlStrands: num('nlStrands', 1), nlPar: num('nlPar', 1),
       crRated: num('crRated', 0),
