@@ -1494,6 +1494,16 @@ header('34 measured Vds,pk (60 V) reconciled against the analytic reset model');
   ok('the equivalent switching frequency = 1044 kHz', rel34(mw.fsEffKHz, 1044) < 0.02, mw.fsEffKHz.toFixed(0));
   ok('only ~3.7% of the modelled magnetising energy shows up on the capacitor', rel34(mw.eRatioOfMag, 3.7) < 0.05, mw.eRatioOfMag.toFixed(2));
   ok('the reflected-output clamp level is reported (Vin_max + n*Vo = 46.2 V)', rel34(mw.vClampRefl, 46.2) < 0.01, mw.vClampRefl.toFixed(1));
+  /* 关键判据：无损谐振复位的理论下限 π·n·Vo/(1−D)（与 Lm、C、Fs 无关）——实测 24 V 低于它 ⇒ 纯电容解释不成立 */
+  ok('the lossless resonant reset has a theoretical floor of pi*n*Vo/(1-D)',
+    Math.abs(mw.vResMinTheo - 44.6) < 0.3, mw.vResMinTheo.toFixed(2));
+  ok('the measured 24 V sits below that floor, so a pure capacitor reset is ruled out',
+    mw.vResPk < mw.vResMinTheo && mw.belowTheo === true, mw.vResPk + ' < ' + mw.vResMinTheo.toFixed(1));
+  ok('the pure-capacitor equivalent would fail the reset timing in this converter',
+    mw.pureCFits === false && mw.tResetNeedUs > mw.tOffMinUs, mw.tResetNeedUs.toFixed(2) + ' > ' + mw.tOffMinUs.toFixed(2));
+  ok('a series damping resistance is offered as the quantitative alternative',
+    mw.rSeriesOhm > 1500 && mw.rSeriesOhm < 2500 && mw.rSeriesLossW > 1.0 && mw.rSeriesLossW < 2.0,
+    mw.rSeriesOhm.toFixed(0) + ' Ω, ' + mw.rSeriesLossW.toFixed(2) + ' W');
 
   const chkMeas = withMeas.checks.find((c) => /电压应力/.test(c.name) && /实测/.test(c.name));
   const chkAna = withMeas.checks.find((c) => /电压应力/.test(c.name) && !/实测/.test(c.name));
@@ -1511,7 +1521,9 @@ header('34 measured Vds,pk (60 V) reconciled against the analytic reset model');
   ok('that step spells out the ratio, the equivalents and the clamp hypothesis',
     /5\.22 倍/.test(st.s) && /27\.2 nF/.test(st.s) && /4493 µH/.test(st.s) && /1044 kHz/.test(st.s) && /3\.7%/.test(st.s) && /46\.2 V/.test(st.s),
     st.s.slice(0, 200));
-  ok('a warning explains both candidate causes', withMeas.warns.some((w) => /远低于解析上界/.test(w) && /等效 Fs/.test(w) && /副边回馈输出/.test(w)));
+  ok('a warning states the theoretical minimum and both remaining causes',
+    withMeas.warns.some((w) => /低于无损谐振复位的理论下限/.test(w) && /阻尼电阻/.test(w) && /钳位器件/.test(w)),
+    withMeas.warns.filter((w) => /理论下限/.test(w)).join(' | ').slice(0, 180));
   ok('the "100 V class infeasible" warning admits the measurement contradicts the model',
     withMeas.warns.some((w) => /模型判定）耐压档不可行/.test(w) && /实测 Vds,pk = 60 V/.test(w) && /不代表你板子会超压/.test(w)));
 

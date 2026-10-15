@@ -934,6 +934,19 @@ var TD = (function () {
           fsEffKHz: nAch * Vo / (vResM * Math.sqrt(Lm * crNf * 1e-9)) / 1000,  /* 等效 Fs（Lm、C 不变） */
           eRatioOfMag: wMag > 0 ? (0.5 * crNf * 1e-9 * vResM * vResM) / wMag * 100 : 0,
           vClampRefl: vClampRefl, dVtoClamp: vdsMeasPk - vClampRefl };
+        /* 两条解释里哪一条站得住：① 纯电容（需要多大的 C）；② 复位回路串了阻尼电阻 */
+        meas.tRiseModelUs = (Math.PI / 2) * Math.sqrt(Lm * crNf * 1e-9) * 1e6;      /* 模型给的上冲时间 */
+        meas.cNeedNf = meas.cEffNf;
+        meas.tResetNeedUs = Math.PI * Math.sqrt(Lm * meas.cNeedNf * 1e-9) * 1e6;     /* 该 C 下复位所需半周期 */
+        meas.tOffMinUs = (1 - dReset) / Fs * 1e6;                                    /* 最小关断期（Vin_min 处 D 最大） */
+        meas.pureCFits = meas.tResetNeedUs <= meas.tOffMinUs;                        /* 纯电容解释是否还来得及复位 */
+        meas.rSeriesOhm = vResM > 1e-9 ? iMagPk * Lm / (vResM * crNf * 1e-9) : 0;    /* 重阻尼近似下的串联电阻 */
+        meas.rSeriesLossW = wMag * Fs;                                               /* 每周期磁化能量全部耗散时的功率 */
+        /* 无损谐振复位的理论下限（与 Lm、C、Fs 无关，只要复位能在本周期内完成）：
+           V_res ≥ π·n·Vo/(1−D)；实测峰值低于它 ⇒ 纯电容谐振复位在数学上不成立 */
+        var dMaxVin = Math.min(Math.max(dNeedMax, 0.02), 0.95);
+        meas.vResMinTheo = Math.PI * nAch * Vo / (1 - dMaxVin);
+        meas.belowTheo = vResM < meas.vResMinTheo * 0.98;
       }
       capReset = { crMaxNf: crMaxNf, crNf: crNf, crAuto: !(cresNf > 0), vResetPk: vResetPk,
         dVLk: dVLk, lkUH: lkUh, wLeak: wLeak, wMag: wMag, wRatio: wMag > 0 ? wLeak / wMag : 0,
@@ -988,13 +1001,22 @@ var TD = (function () {
           f: '实测复位峰值 = Vds,pk(实测) − Vin_max；等效复位电容 = C·(V_res,pk(解析)/V_res(实测))²；'
             + '等效 Lm = Lm·比值²（V_res ∝ 1/√Lm）；能量比 = ½C·V_实测² / ½Lm·I_m,pk²',
           s: '实测 Vds,pk = ' + meas.vdsMeasPk.toFixed(1) + ' V（Vin_max ' + I.vinMax + ' V）→ 复位峰值 ' + meas.vResPk.toFixed(1) +
-             ' V，而解析上界给 ' + vResetPk.toFixed(1) + ' V（差 ' + meas.k.toFixed(2) + ' 倍）。' +
-             '若峰值只由励磁项决定：等效复位电容 ≈ ' + meas.cEffNf.toFixed(1) + ' nF（现值 ' + crNf.toFixed(2) + ' nF）、等效 Lm ≈ ' +
-             meas.lmEffUh.toFixed(0) + ' µH（现值 ' + (Lm * 1e6).toFixed(0) + ' µH）、或等效 Fs ≈ ' + meas.fsEffKHz.toFixed(0) + ' kHz（现值 ' + I.fs + ' kHz）；' +
-             '进入复位电容的能量只有解析励磁能量的 ' + meas.eRatioOfMag.toFixed(1) + '%。' +
-             '另一种更可能的解释：磁化能量经副边回馈到输出（关断期副边整流管反向导通），此时 drain 被钳在 Vin_max + n·Vo ≈ ' + meas.vClampRefl.toFixed(1) +
-             ' V' + (biggerClamp ? '，加上漏感尖峰后与实测 ' + meas.vdsMeasPk.toFixed(1) + ' V 吻合' : '（与实测差 ' + meas.dVtoClamp.toFixed(1) + ' V）') +
-             '——那样 1 nF 只起吸收/缓冲作用，复位靠副边通路。请确认副边整流结构（全桥/中心抽头）与 Fs，并用差分探头复核（漏感尖峰只有几十 ns 宽，普通探头容易漏掉）。' });
+             ' V，解析上界给 ' + vResetPk.toFixed(1) + ' V（差 ' + meas.k.toFixed(2) + ' 倍），进入复位电容的能量只有解析励磁能量的 ' + meas.eRatioOfMag.toFixed(1) + '%。'
+           + '逐条排查：'
+           + '① 纯电容谐振复位：要只升到 ' + meas.vResPk.toFixed(1) + ' V 需要 C ≈ ' + meas.cNeedNf.toFixed(1) + ' nF（或等效 Lm ≈ ' + meas.lmEffUh.toFixed(0) +
+             ' µH、等效 Fs ≈ ' + meas.fsEffKHz.toFixed(0) + ' kHz），但该电容的复位半周期 t = π·√(Lm·C) ≈ ' +
+             meas.tResetNeedUs.toFixed(2) + ' µs，而最小关断期只有 ' + meas.tOffMinUs.toFixed(2) + ' µs → ' +
+             (meas.pureCFits ? '时序上还勉强成立' : '**复位来不及，纯电容解释不成立**') + '；'
+           + '② 复位回路串了阻尼（R-C 型吸收/耗散复位）：峰值 ≈ I_m,pk·Lm/(R·C) → 需要 R ≈ ' + meas.rSeriesOhm.toFixed(0) +
+             ' Ω（量级；每周期磁化能量 ' + (wMag * 1e6).toFixed(1) + ' µJ 基本都耗在这只电阻上，≈ ' + meas.rSeriesLossW.toFixed(2) + ' W）；'
+           + '③ 磁化能量经副边回馈到输出：drain 会被钳在 Vin_max + n·Vo ≈ ' + meas.vClampRefl.toFixed(1) + ' V' +
+             (biggerClamp ? '，与实测同量级 ' : '（与实测差 ' + meas.dVtoClamp.toFixed(1) + ' V）') + '（需要副边整流能反向导通，单管+续流的正激做不到）；'
+           + '④ 纯电容 + 无阻尼时模型给的上冲时间 = (π/2)·√(Lm·C) ≈ ' + meas.tRiseModelUs.toFixed(2) + ' µs ——请拿示波器上的实际上升时间对照，'
+             + '明显更快说明有阻尼，明显更慢说明 Lm·C 比模型大。'
+           + '⑤ 理论下限（最关键）：无损谐振复位在 Vin_max 处的最小峰值 = π·n·Vo/(1−D) = ' + meas.vResMinTheo.toFixed(1) +
+             ' V，**与 Lm、C、Fs 都无关**（只要复位能在本周期内完成）；实测峰值 ' + meas.vResPk.toFixed(1) + ' V ' +
+             (meas.belowTheo ? '**低于这个下限 → 纯电容谐振复位在数学上不成立**：复位回路里一定有阻尼电阻或钳位器件（否则这么小的峰不可能出现）'
+                              : '高于这个下限，纯电容解释有可能成立（再核对 Lm、C、Fs 即可）') + '。' });
       }
       /* 复位电容的可行窗口单独交代：这是"能不能用这个耐压档"的判据 */
       steps.push({ t: '复位电容 C_res 的可行窗口（耐压 vs 复位时间）',
@@ -1403,11 +1425,13 @@ var TD = (function () {
         addCheck('开关管电压应力 Vds,pk（实测）≤ 0.85×耐压', capReset.meas.vdsMeasPk, 'V', capReset.vdsLimit, 'V',
           capReset.meas.vdsMeasPk <= capReset.vdsLimit, 0.9);
         if (capReset.vdsPk > capReset.vdsLimit * 1.3 && capReset.meas.vdsMeasPk <= capReset.vdsLimit * 0.9) {
-          warns.push('实测 Vds,pk = ' + capReset.meas.vdsMeasPk + ' V 远低于解析上界 ' + capReset.vdsPk.toFixed(1) +
-            ' V（' + capReset.meas.k.toFixed(1) + ' 倍差）：解析值假设"磁化能量 ½·Lm·I_m,pk² 全部灌进 C_res"，实测只对应其中的 ' +
-            capReset.meas.eRatioOfMag.toFixed(1) + '%。两种解释：① 等效参数不同（等效 Lm ≈ ' + capReset.meas.lmEffUh.toFixed(0) +
-            ' µH，或等效 Fs ≈ ' + capReset.meas.fsEffKHz.toFixed(0) + ' kHz）；② 另有复位/钳位通路（磁化能量经副边回馈输出时，drain 会被钳在 Vin_max + n·Vo ≈ ' +
-            capReset.meas.vClampRefl.toFixed(1) + ' V 附近）。请确认 Fs、副边整流结构与这 1 nF 的接法，并用差分探头复核尖峰（几十 ns 宽，普通探头会漏）。');
+          warns.push('实测 Vds,pk = ' + capReset.meas.vdsMeasPk + ' V（复位峰值 ' + capReset.meas.vResPk.toFixed(1) +
+            ' V）**低于无损谐振复位的理论下限** π·n·Vo/(1−D) = ' + capReset.meas.vResMinTheo.toFixed(1) +
+            ' V —— 这个下限与 Lm、C_res、Fs 都无关（只要复位能在本周期内完成），所以"1 nF 纯电容谐振复位"在数学上不成立：' +
+            '复位回路里一定还有别的东西。最常见两种：① 电容上串了一只阻尼电阻（R-C 吸收/耗散复位）——按重阻尼近似，R ≈ ' +
+            capReset.meas.rSeriesOhm.toFixed(0) + ' Ω 就能把峰值压到实测值，代价是每周期 ' + ((capReset.wMag || 0) * 1e6).toFixed(1) +
+            ' µJ 的磁化能量被耗掉（≈ ' + capReset.meas.rSeriesLossW.toFixed(2) + ' W）；② 初级两端另有把 drain 钳在该电压的钳位器件（TVS/RCD）。' +
+            '请核对这只 1 nF 是否串了电阻、或初级两端是否还有 TVS/钳位，并把实际上升时间与模型的 ' + capReset.meas.tRiseModelUs.toFixed(2) + ' µs 对照。');
         }
       }
     }
