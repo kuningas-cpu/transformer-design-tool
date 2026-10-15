@@ -898,6 +898,25 @@ var TD = (function () {
          上限：复位必须在最小关断期内完成（关断期最小 = Vin_min 处 D 最大），t_reset = (π/2)·√(Lm·C) ≤ (1-D)/Fs
          窗口为空 → 该耐压档在这个 Vin_max / 漏感下不可行 */
       var vdsA = iMagPk * Math.sqrt(Lm);                     /* 励磁项系数（V·√F） */
+      /* ---------- 复位稳态的"环形解"（Lm-C 在关断期自由振荡，稳态由电流周期性决定）----------
+         v_cap(t) = Vin·cos(ωt) − I_off·Z·sin(ωt) ,  i(t) = I_off·cos(ωt) + (Vin/Z)·sin(ωt)
+         稳态： I_off·(1 − cosΩ) = ΔI + (Vin/Z)·sinΩ      (Ω = ω·t_off, ΔI = n·Vo·T/Lm)
+         Vds,pk = Vin + √(Vin² + (I_off·Z)²)
+         注意：Ω 接近 360° 的整数倍时这个无阻尼解会"谐振累积"（电流/电压失控），真实系统靠阻尼限制——
+         所以工具同时给出两个估计：简单解（I_off = ΔI，偏保守的常态）与环形解（无阻尼稳态）。 */
+      function ringSolve(lmH, vinV) {
+        var dR = Math.min(Math.max(nAch * Vo / Math.max(vinV, 1e-9), 0.02), 0.95);
+        var tOffR = (1 - dR) / Fs;
+        var Zz = Math.sqrt(lmH / (crNf * 1e-9));
+        var Om = tOffR / Math.sqrt(lmH * crNf * 1e-9);
+        var dIr = nAch * Vo / Fs / lmH;
+        var den = 1 - Math.cos(Om);
+        var iOffR = Math.abs(den) < 1e-4 ? dIr : (dIr + (vinV / Zz) * Math.sin(Om)) / den;
+        if (!(iOffR > 0) || !isFinite(iOffR)) iOffR = dIr;      /* 非物理区间退回简单解 */
+        return { vds: vinV + Math.sqrt(vinV * vinV + Math.pow(iOffR * Zz, 2)), iOff: iOffR,
+          omDeg: Om * 180 / Math.PI, resonance: Math.abs(Math.sin(Om)) < 0.15 || Math.abs(den) < 0.05 };
+      }
+      var ring = ringSolve(Lm, I.vinMax);
       var lkMaxUh = null;
       var crMinNf = 0, crWindowEmpty = false;
       var vdsRoom = vdsRated * 0.85 - I.vinMax;              /* 留给"复位峰值 + 漏感尖峰"的电压 */
@@ -953,6 +972,17 @@ var TD = (function () {
         meas.belowVdsFloor = vdsMeasPk < meas.vdsFloorTheo * 0.98;
         /* 纯电容复位时峰值至少 2·Vin ⇒ 反过来：这个峰值最多只可能是多大输入电压测出来的 */
         meas.vinImplied = vdsMeasPk / 2;
+        /* 用"环形解"反推：要多大的 Lm 才能产生实测的这个峰值（Lm 越大 → 励磁电流越小 → 峰值越低） */
+        var bestLm = 0, bestErr = Infinity;
+        for (var si = 0; si <= 220; si++) {
+          var lTry = 60e-6 * Math.pow(5000e-6 / 60e-6, si / 220);
+          var pkTry = ringSolve(lTry, I.vinMax).vds;
+          var eTry = Math.abs(pkTry - vdsMeasPk);
+          if (eTry < bestErr) { bestErr = eTry; bestLm = lTry; }
+        }
+        meas.lmFromMeasUh = bestLm * 1e6;
+        meas.alFromMeasNh = Np > 0 ? bestLm / (Np * Np) * 1e9 : 0;
+        meas.lmRatio = Lm > 0 ? bestLm / Lm : 0;
       }
       capReset = { crMaxNf: crMaxNf, crNf: crNf, crAuto: !(cresNf > 0), vResetPk: vResetPk,
         dVLk: dVLk, lkUH: lkUh, wLeak: wLeak, wMag: wMag, wRatio: wMag > 0 ? wLeak / wMag : 0,
@@ -961,6 +991,7 @@ var TD = (function () {
         iLkPri: iLkTurn, lkUsed: lkH > 0,
         crMinNf: crMinNf, crHardMaxNf: crHardMaxNf, crWindowEmpty: crWindowEmpty, lkMaxUh: lkMaxUh, vdsRoom: vdsRoom,
         vdsClassNeed: vdsClassNeed,
+        vdsPkRing: ring.vds, ringIoff: ring.iOff, ringOmDeg: ring.omDeg, ringResonance: ring.resonance,
         meas: meas,
         LmUH: Lm * 1e6, dMaxUsed: dReset, dInput: I.dutyMax };
       /* 警告：窗口为空 / 电容超出窗口 —— 这两条决定"这个耐压档能不能用" */
@@ -1037,6 +1068,15 @@ var TD = (function () {
                ' V）。请核对这组波形是在多大的输入电压下测的；如果确实是在 Vin_max = ' + I.vinMax +
                ' V 测的，那说明复位通路/开关接法与"单管正激 + 初级并联电容"这个模型不一致（工具需要按实际电路改模型）。' });
         }
+        steps.push({ t: '复位峰值：简单解 vs 环形解（无阻尼稳态）',
+          f: '简单解（复位电流衰减到 0）：Vds,pk = Vin + √(Vin² + (ΔI·Z)²)，ΔI = n·Vo·T/Lm ;  '
+            + '环形解（Lm-C 自由振荡，稳态由电流周期性决定）：I_off·(1 − cosΩ) = ΔI + (Vin/Z)·sinΩ，Ω = t_off/√(Lm·C_res)，Vds,pk = Vin + √(Vin² + (I_off·Z)²)',
+          s: '简单解 ' + vdsPkVal.toFixed(1) + ' V；环形解 ' + ring.vds.toFixed(1) + ' V（Ω = ' + ring.omDeg.toFixed(0) + '°，I_off = ' +
+             ring.iOff.toFixed(3) + ' A）' +
+             (ring.resonance ? '——**Ω 接近 360° 的整数倍，无阻尼解会谐振累积**，实际峰值由阻尼决定（绕组电阻、磁芯损耗、开关雪崩等），真实值介于两个解之间偏向小的那个' : '') +
+             '。用环形解按实测 ' + meas.vdsMeasPk.toFixed(1) + ' V 反推：需要的 Lm ≈ ' + meas.lmFromMeasUh.toFixed(0) + ' µH' +
+             (Np > 0 ? '（等价 AL ≈ ' + meas.alFromMeasNh.toFixed(0) + ' nH/N² 于 ' + Np + ' 匝）' : '') +
+             '，而当前输入的是 ' + (Lm * 1e6).toFixed(0) + ' µH（差 ' + meas.lmRatio.toFixed(2) + ' 倍）。' });
       }
       /* 复位电容的可行窗口单独交代：这是"能不能用这个耐压档"的判据 */
       steps.push({ t: '复位电容 C_res 的可行窗口（耐压 vs 复位时间）',
@@ -1437,6 +1477,14 @@ var TD = (function () {
       addCheck('复位电容 ≤ 上限（谐振复位）', capReset.crNf, 'nF', capReset.crMaxNf, 'nF', capReset.crNf <= capReset.crMaxNf + 1e-9, 0.9);
     if (capReset && capReset.vdsRated > 0) {
       var vdsHasMeas = !!(capReset.meas && capReset.meas.vdsMeasPk > 0);
+      /* 实测峰值反推出的 Lm 与输入值差得多 → 说明承认书里的电感量/绕组结构需要重新确认 */
+      if (vdsHasMeas && (capReset.meas.lmRatio > 1.6 || capReset.meas.lmRatio < 0.62)) {
+        warns.push('实测 Vds,pk = ' + capReset.meas.vdsMeasPk + ' V 反推的等效 Lm ≈ ' + capReset.meas.lmFromMeasUh.toFixed(0) +
+          ' µH（≈ AL ' + capReset.meas.alFromMeasNh.toFixed(0) + ' nH/N² 于 ' + Np + ' 匝），而当前按输入的 ' + (Lm * 1e6).toFixed(0) +
+          ' µH 计算（承认书"电感量 165 µH @ 12 匝" → AL ≈ 1146 nH/N²）。这个差别意味着：**承认书上的电感量可能不是 12 匝初级绕组本身的电感**' +
+          '（例如那 165 µH 只是其中一段 6 匝绕组的电感，AL 其实是"不开气隙"的理想值 ≈ 3700~4900 nH/N²，两段串联成 12 匝后初级电感 ≈ 660~700 µH）；' +
+          '也可能两段绕组实际是串联而不是并联，或者还有别的复位通路。请用 LCR 表实测：6-7 单独、5-8 单独、以及两段串联/并联四种接法的电感量，再填回"承认书电感量 + 测量绕组匝数"。');
+      }
       /* 有实测值时：判决以实测为准（实测是事实，解析值只是"磁化能量全部进电容"的上界），
          解析那行仍列出，但降级为外围项，不参与判决与磁芯排名 */
       addCheck('开关管电压应力 Vds,pk（' + (vdsHasMeas ? '模型上界' : '解析') + '）≤ 0.85×耐压',

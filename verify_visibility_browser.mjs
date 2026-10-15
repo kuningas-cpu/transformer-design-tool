@@ -233,6 +233,9 @@ SCENARIOS.forEach((sc) => {
       (stepRegion.match(/最多只有[^。）]*/) || ['(missing)'])[0]);
     check('步骤里给出完整下限（含 2·Vin 这一项）',
       /Vds,pk ≥ 2·Vin_max/.test(stepRegion) && /低于这个下限/.test(stepRegion));
+    check('步骤里给出"简单解 vs 环形解"两种复位峰值估计与反推的 Lm',
+      /简单解 vs 环形解/.test(stepRegion) && /需要的 Lm ≈ \d+ µH/.test(stepRegion),
+      (stepRegion.match(/需要的 Lm ≈ \d+ µH/) || ['(missing)'])[0]);
     const osRegion = (() => { const i = dom.indexOf('id="outStage"'); const j = dom.indexOf('<div class="card"', i + 1); return (i > 0 && j > i) ? dom.slice(i, j) : ''; })();
     check('输出级卡片同步给出窗口结论', /复位电容可行窗口/.test(osRegion) && /窗口为空/.test(osRegion), osRegion.slice(-260));
   }

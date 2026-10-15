@@ -9,7 +9,7 @@
 | 文件 | 说明 |
 |---|---|
 | `transformer_design_tool_v2.html` | 工具本体：输入 + 结果 + 校核清单 + 判决 + 电压扫描 + 设计步骤 + 磁芯对比 + 公式表，支持 CSV 导出 |
-| `verify_transformer_tool_v2.mjs` | 验证脚本：**614 项检查**（结构/首次渲染/物理不变量/手算对照/模糊测试/校核模式/输出级/LLC 谐振腔/电容复位/复位电容窗口/实板 1 nF 工况/实测 Vds 对账与完整理论下限/动态显示/面板顺序/续流管口径/按拓扑生成文字/开关管应力公式/热阻口径/两家供应商交叉验证） |
+| `verify_transformer_tool_v2.mjs` | 验证脚本：**620 项检查**（结构/首次渲染/物理不变量/手算对照/模糊测试/校核模式/输出级/LLC 谐振腔/电容复位/复位电容窗口/实板 1 nF 工况/实测 Vds 对账/完整理论下限/复位环形解与 Lm 反推/动态显示/面板顺序/续流管口径/按拓扑生成文字/开关管应力公式/热阻口径/两家供应商交叉验证） |
 | `verify_visibility_browser.mjs` | 真浏览器回归：用无头 Edge/Chrome 打开工具，按 8 组「输入类型 × 拓扑 × 整流器件 × 耐压档」场景核对**实际被隐藏的输入项、面板顺序、整流器件选项措辞、公式表是否只列当前拓扑、Vds,pk 步骤行、热阻提示、复位电容窗口结论**（109 项检查；本机没有 Chromium 内核浏览器时自动跳过） |
 | `transformer_design_tool_v2_notes.md` | 设计说明：公式与约定、与 v1 的差异清单、适用边界、验证清单、EPC19 核算记录 |
 | `supplier_spec_EPC19_review.md` | 重庆天胜 EPC19（TST1724）承认书参数提取与核算记录 |
@@ -47,7 +47,7 @@
 ## 复现验证
 
 ```
-node verify_transformer_tool_v2.mjs              # 614 项检查，全通过表示归档件完整可运行
+node verify_transformer_tool_v2.mjs              # 620 项检查，全通过表示归档件完整可运行
 node verify_transformer_tool_v2.mjs --diag       # 额外打印默认工况逐项结果与 EPC19 核算明细
 node verify_visibility_browser.mjs               # 真浏览器（无头 Edge/Chrome）核对输入项的动态显示/隐藏
 python make_excel_from_v2_engine.py              # 由同一套公式生成 transformer_design_tool_v2.xlsx
@@ -354,17 +354,38 @@ I_m,pk·Z ≥ π·n·Vo/(1−D)              （复位必须在本周期内完�
 **验证**：第 34 组扩展到 24 项（完整下限的构成、2·Vin 特例、实测低于下限的判定、反推最大输入电压 30 V 及其步骤行），
 真浏览器回归加"反推输入电压 + 完整下限"两项；总数 609 → **614 项，0 失败**，真浏览器 113 项全过，Excel 反激分支仍 19/19。
 
+### 第十三轮：确认 Vin = 24 V 测得 60 V → 反推出初级电感 ≈ 548 µH（≠ 承认书的 165 µH）（2026-10-15）
+
+**用户确认**：60 V 是在 **Vin = 24 V** 下测的；6-7 / 5-8 是**两个 12 匝并联**。
+
+**新增"环形解"**（复位期间 Lm-C 自由振荡，稳态由电流周期性决定，而非"电流衰减到零"的简单解）：
+
+```
+简单解：Vds,pk = Vin + √(Vin² + (ΔI·Z)²)，ΔI = n·Vo·T/Lm
+环形解：I_off·(1 − cosΩ) = ΔI + (Vin/Z)·sinΩ，Ω = t_off/√(Lm·C_res)，Vds,pk = Vin + √(Vin² + (I_off·Z)²)
+```
+
+按承认书 165 µH（AL = 1146 @ 12 匝）、1 nF、250 kHz、Vin_max = 36 V：简单解 251 V，**环形解 471 V（Ω = 405°，I_off = 1.07 A，B ≈ 0.29 T 几乎饱和）**
+——即"若初级真是 165 µH，这个谐振会把电压电流都推爆"（无阻尼 Q ≈ 2×10⁴，绕组/磁芯损耗压不住），与"转换器稳定工作"矛盾。
+而**用实测 60 V 反推环形解**得到 **Lm ≈ 548 µH（AL ≈ 3804 nH/N² @12 匝）**，正好落在"不开气隙"的 EPC19/PC44 理想值（3700~4900）上。
+
+**结论**：承认书的"165 µH"很可能**不是 12 匝初级本身的电感**，而是一段 **6 匝**绕组的电感（`165 µH = AL·6²` ⇒ AL ≈ 4583 = 无气隙理想值；两段串联成 12 匝 → 初级 ≈ 660 µH，DCR 15.6 mΩ×2 ≈ 31 mΩ ≈ 承认书 32 mΩ）。
+**请用 LCR 表实测四种接法**（6-7 单独 / 5-8 单独 / 串联 / 并联）定案；工具已能按实测峰值反推所需 Lm 并提示这一步。
+
+**验证**：第 34 组扩展到 30 项（两种解的对比、环形解的 Ω 与 I_off、实测反推 Lm/AL 与倍数、步骤行与 LCR 提示），
+真浏览器回归加"简单解 vs 环形解"一项；总数 614 → **620 项，0 失败**，真浏览器 114 项全过，Excel 反激分支仍 19/19。
+
 ## 归档完整性
 
-归档整理于 2026-10-15，并在归档目录内重新运行验证脚本确认可用：**614 项检查全部通过**
-（真浏览器回归 `verify_visibility_browser.mjs` 另 113 项通过；Excel 反激分支 19/19 逐格一致）。
+归档整理于 2026-10-15，并在归档目录内重新运行验证脚本确认可用：**620 项检查全部通过**
+（真浏览器回归 `verify_visibility_browser.mjs` 另 114 项通过；Excel 反激分支 19/19 逐格一致）。
 校验和（SHA-256，用于日后确认归档件未被改动）：
 
 | 文件 | SHA-256 |
 |---|---|
-| `transformer_design_tool_v2.html` | `49DB76D85850086C5FCE830C39D05813C1F52BCC50EC87D27061F61F0268BE97` |
-| `verify_transformer_tool_v2.mjs` | `634AC2899C3514FB06C4ADA1140718248D7163CD1211A396DF03D55D96DB1C7F` |
-| `verify_visibility_browser.mjs` | `1E837645B8F196908A8EAE9B2C208D9D051EC37F0013AE890C4B7A65B64403EA` |
+| `transformer_design_tool_v2.html` | `5D8F2AE939E8DD8F6245402E843BB98B2D91ADFD8DCC5077AB436A77C767605C` |
+| `verify_transformer_tool_v2.mjs` | `CC46F6ACDFD8E85D7D8B1A938C9219B30B5A090EA0237483166BD217FA615750` |
+| `verify_visibility_browser.mjs` | `45A152D11F0EEB2C5F84A18921234308D4AEB34D4D667C3F8E9560EE93736EEF` |
 | `supplier_spec_EPC19_review.md` | `3B12F62F67648E77FD4A4CE7DD7401B7E8FF547A844426CE10DAE0B7B84414E6` |
 
 `verify_transformer_tool_v2.mjs` 以脚本自身位置解析工具文件路径，因此归档目录整体移动或改名后仍可直接运行。

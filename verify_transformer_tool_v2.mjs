@@ -1516,6 +1516,28 @@ header('34 measured Vds,pk (60 V) reconciled against the analytic reset model');
   ok('a reverse-derivation step asks the user to check the input voltage used',
     !!revStep && /最多只有 30\.0 V/.test(revStep.s) && /Vin_max = 36 V/.test(revStep.s), revStep ? revStep.s.slice(0, 160) : 'missing');
 
+  /* 真实工况再算一次：Fs = 250 kHz、Vin_max = 36 V（用户实测 60 V 的板子） */
+  const board250 = Object.assign({}, board, { fs: 250 });
+  const r250 = TD.design(baseInputs(Object.assign({}, board250, { vdsMeasPk: 60 })));
+  const c250 = r250.summary.capReset;
+  ok('the ring (undamped steady-state) solution is computed separately from the simple one',
+    c250.vdsPkRing > c250.vdsPk && c250.ringOmDeg > 360 && c250.ringOmDeg < 450,
+    'ring ' + c250.vdsPkRing.toFixed(0) + ' V @ Ω=' + c250.ringOmDeg.toFixed(0) + '°, simple ' + c250.vdsPk.toFixed(0) + ' V');
+  ok('with the datasheet 165 uH the ring solution would run away (1.07 A magnetising current, ~470 V)',
+    c250.ringIoff > 0.8 && c250.ringIoff < 1.4 && c250.vdsPkRing > 400,
+    c250.ringIoff.toFixed(3) + ' A, ' + c250.vdsPkRing.toFixed(0) + ' V');
+  ok('the measured 60 V inverts to Lm ≈ 548 uH (AL ≈ 3804 nH/N² for 12 turns)',
+    Math.abs(c250.meas.lmFromMeasUh - 548) / 548 < 0.05 && Math.abs(c250.meas.alFromMeasNh - 3804) / 3804 < 0.05,
+    c250.meas.lmFromMeasUh.toFixed(0) + ' µH / ' + c250.meas.alFromMeasNh.toFixed(0) + ' nH/N²');
+  ok('that is ~3.3x the inductance implied by the datasheet value',
+    Math.abs(c250.meas.lmRatio - 3.32) / 3.32 < 0.05, c250.meas.lmRatio.toFixed(2));
+  const ws = r250.steps.find((s) => /简单解 vs 环形解/.test(s.t));
+  ok('a step row contrasts the two solutions and reports the inverted Lm',
+    !!ws && /环形解/.test(ws.f) && /I_off·\(1 − cosΩ\)/.test(ws.f) && /需要的 Lm ≈ 548 µH/.test(ws.s), ws ? ws.s.slice(0, 200) : 'missing');
+  ok('a warning tells the user to re-measure the primary inductance with an LCR meter',
+    r250.warns.some((w) => /反推的等效 Lm/.test(w) && /LCR 表实测/.test(w) && /6 匝/.test(w) && /串联/.test(w)),
+    r250.warns.filter((w) => /反推的等效 Lm/.test(w)).join(' | ').slice(0, 200));
+
   const chkMeas = withMeas.checks.find((c) => /电压应力/.test(c.name) && /实测/.test(c.name));
   const chkAna = withMeas.checks.find((c) => /电压应力/.test(c.name) && !/实测/.test(c.name));
   ok('a measured check row is added and passes (60 V <= 85 V)', !!chkMeas && chkMeas.pass === true && chkMeas.scope === 'core',
