@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8" />
@@ -125,6 +125,9 @@
       </div>
       <h3>输出级 / Output stage（正激/推挽/桥式/LLC 适用）</h3>
       <div class="three-col">
+        <div class="field"><label for="nlDia">输出电感线径 <span class="unit">(mm，0=按 J 自动)</span></label><input id="nlDia" type="number" value="0" step="0.01" min="0"/></div>
+        <div class="field"><label for="nlStrands">输出电感股数</label><input id="nlStrands" type="number" value="1" step="1" min="1"/></div>
+        <div class="field"><label for="nlPar">输出电感并联绕组数</label><input id="nlPar" type="number" value="1" step="1" min="1"/></div>
         <div class="field"><label for="ripplePct">输出纹波允许值 <span class="unit">(% of Vout)</span></label><input id="ripplePct" type="number" value="1" step="0.1" min="0.05"/></div>
         <div class="field"><label for="esrOhm">输出电容 ESR <span class="unit">(Ω)</span></label><input id="esrOhm" type="number" value="0.01" step="0.001" min="0.0001"/></div>
         <div class="field"><label for="rdsOnMOhm">同步整流 Rds(on) <span class="unit">(mΩ)</span></label><input id="rdsOnMOhm" type="number" value="10" step="1" min="0.1"/></div>
@@ -133,6 +136,7 @@
       </div>
       <h3>LLC 谐振腔 / LLC tank（仅 LLC 拓扑使用）</h3>
       <div class="three-col">
+        <div class="field"><label for="crRated">谐振电容耐压 <span class="unit">(V，0=不校核)</span></label><input id="crRated" type="number" value="0" step="10" min="0"/></div>
         <div class="field"><label for="llcFr">谐振频率 fr <span class="unit">(kHz，0 = 用 Fs)</span></label><input id="llcFr" type="number" value="0" step="1" min="0"/></div>
         <div class="field"><label for="llcK">电感比 k = Lm/Lr</label><input id="llcK" type="number" value="5" step="0.5" min="1.5" max="15"/></div>
         <div class="field"><label for="llcQ">品质因数 Q（0 = 自动取 0.9·Q_max）</label><input id="llcQ" type="number" value="0" step="0.05" min="0"/></div>
@@ -144,6 +148,7 @@
           <select id="resetMode"><option value="cap">电容谐振复位（初级并联电容）</option><option value="winding">复位绕组（1:1 时 D≤0.5）</option></select></div>
         <div class="field"><label for="cresNf">复位电容 C_res <span class="unit">(nF，0=自动取上限)</span></label><input id="cresNf" type="number" value="0" step="0.5" min="0"/></div>
         <div class="field"><label for="vdsRated">开关管耐压 <span class="unit">(V，0=不校核)</span></label><input id="vdsRated" type="number" value="0" step="10" min="0"/></div>
+        <div class="field"><label for="lkUh">实测/估算漏感 Lk <span class="unit">(µH，0=未计入)</span></label><input id="lkUh" type="number" value="0" step="0.1" min="0"/></div>
         <div class="field"><label for="nlGiven">输出电感给定匝数 <span class="unit">(0=自动)</span></label><input id="nlGiven" type="number" value="0" step="1" min="0"/></div>
         <div class="field"><label for="lmGiven">输出电感实测电感 <span class="unit">(µH，0=自动)</span></label><input id="lmGiven" type="number" value="0" step="1" min="0"/></div>
         <div class="field"><label for="naux">辅助绕组匝数 <span class="unit">(0=无)</span></label><input id="naux" type="number" value="0" step="1" min="0"/></div>
@@ -153,6 +158,28 @@
         <div class="field"><label for="nsGiven">给定 Ns <span class="unit">(匝)</span></label><input id="nsGiven" type="number" value="12" step="1" min="0"/></div>
         <div class="field"><label for="dcrLimitP">原边 DCR 规格上限 <span class="unit">(mΩ，0=不校核)</span></label><input id="dcrLimitP" type="number" value="0" step="1" min="0"/></div>
         <div class="field"><label for="dcrLimitS">副边 DCR 规格上限 <span class="unit">(mΩ，0=不校核)</span></label><input id="dcrLimitS" type="number" value="0" step="1" min="0"/></div>
+      </div>
+      <h3>交流输入前端 / AC front-end（可选）</h3>
+      <div class="three-col">
+        <div class="field"><label for="acMode">输入类型</label>
+          <select id="acMode"><option value="dc">直流输入（用上面的 Vin_min/Vin_max）</option><option value="ac">交流 + 整流母线电容</option><option value="pfc">交流 + PFC（母线恒定）</option></select></div>
+        <div class="field"><label for="vacMin">Vac_min <span class="unit">(V rms)</span></label><input id="vacMin" type="number" value="176" step="1" min="1"/></div>
+        <div class="field"><label for="vacMax">Vac_max <span class="unit">(V rms)</span></label><input id="vacMax" type="number" value="264" step="1" min="1"/></div>
+        <div class="field"><label for="fline">工频 <span class="unit">(Hz)</span></label><input id="fline" type="number" value="50" step="1" min="1"/></div>
+        <div class="field"><label for="cbusUf">母线电容 C_bus <span class="unit">(µF)</span></label><input id="cbusUf" type="number" value="220" step="10" min="1"/></div>
+        <div class="field"><label for="cbusEsr">母线电容 ESR <span class="unit">(Ω)</span></label><input id="cbusEsr" type="number" value="0.3" step="0.05" min="0.01"/></div>
+        <div class="field"><label for="rsAc">交流源阻+线阻 <span class="unit">(Ω)</span></label><input id="rsAc" type="number" value="0.5" step="0.1" min="0.01"/></div>
+        <div class="field"><label for="vdBridge">整流桥压降 <span class="unit">(V)</span></label><input id="vdBridge" type="number" value="1.4" step="0.1" min="0"/></div>
+        <div class="field"><label for="holdMs">保持时间要求 <span class="unit">(ms，0=不校核)</span></label><input id="holdMs" type="number" value="0" step="5" min="0"/></div>
+        <div class="field"><label for="holdVmin">保持结束时允许最低母线 <span class="unit">(V)</span></label><input id="holdVmin" type="number" value="0" step="1" min="0"/></div>
+        <div class="field"><label for="pfcBus">PFC 母线电压 <span class="unit">(V)</span></label><input id="pfcBus" type="number" value="390" step="5" min="20"/></div>
+      </div>
+      <h3>窗口与绝缘 / Window &amp; insulation</h3>
+      <div class="three-col">
+        <div class="field"><label for="awW">骨架绕线窗口宽 <span class="unit">(mm，0=用 Aw)</span></label><input id="awW" type="number" value="0" step="0.1" min="0"/></div>
+        <div class="field"><label for="awH">骨架绕线窗口高 <span class="unit">(mm)</span></label><input id="awH" type="number" value="0" step="0.1" min="0"/></div>
+        <div class="field"><label for="marginMm">挡墙胶带每侧宽度 <span class="unit">(mm)</span></label><input id="marginMm" type="number" value="0" step="0.5" min="0"/></div>
+        <div class="field"><label for="mltTol">MLT 最坏偏差 <span class="unit">(%/DCR 余量)</span></label><input id="mltTol" type="number" value="0" step="5" min="0"/></div>
       </div>
       <h3>热 / Thermal</h3>
       <div class="three-col">
@@ -195,6 +222,22 @@
     <h2>LLC 谐振腔 / LLC resonant tank（FHA 一阶谐波近似）</h2>
     <p class="sub">仅 LLC 拓扑给出。增益 M(fn) = 1/√[(1 + (1/k)(1 - 1/fn²))² + (Q(fn - 1/fn))²]，fn = fsw/fr。FHA 忽略高次谐波及寄生参数，最终以仿真与实测为准。</p>
     <div id="tankTable"></div>
+  </div>
+  <div class="card">
+    <h2>方案对比 / 保存 / 报告</h2>
+    <p class="sub">方案对比：每行一个方案，只写需要覆盖的字段，其余沿用左侧当前输入。列格式：<span class="mono">名称,Np,Ns,AL(nH/N²),电感匝数,实测电感µH,辅助匝数,原边线径,原边股数,原边并联,副边线径,副边股数,副边并联</span>（例如 <span class="mono">A家,12,23,1146,38,145,25,0.4,2,2,0.2,2,3</span>）</p>
+    <textarea id="cmpInput" spellcheck="false" style="width:100%;height:86px;font-family:Consolas,monospace;font-size:12px;border:1px solid var(--border);border-radius:8px;padding:8px;"></textarea>
+    <div class="toolbar">
+      <button id="cmpBtn" type="button">对比这些方案</button>
+      <button id="reportBtn" class="secondary" type="button">生成设计报告（可打印）</button>
+      <input id="presetName" type="text" placeholder="方案名" style="width:130px;height:auto;padding:9px 8px;"/>
+      <button id="saveBtn" class="secondary" type="button">保存方案</button>
+      <select id="presetList" style="width:150px;height:auto;padding:9px 8px;"></select>
+      <button id="loadBtn" class="secondary" type="button">读取</button>
+      <button id="myBoardBtn" class="secondary" type="button">载入我的板子(19V/75W)</button>
+    </div>
+    <div id="cmpTable"></div>
+    <div id="saveMsg" class="hint"></div>
   </div>
   <div class="card">
     <h2>磁芯库维护 / Core library（按数据手册填写）</h2>
@@ -300,6 +343,32 @@ var TD = (function () {
   function mmToAwg(mm) { return 36 - 39 * Math.log(mm / 0.127) / Math.log(92); }
   function wireAreaMm2(diaMm) { return Math.PI / 4 * diaMm * diaMm; }
   function rhoCu(tempC) { return RHO_CU_20 * (1 + ALPHA_CU * (tempC - 20)); }
+  /* 交流输入前端：桥式整流 + 母线电容，恒功率负载的数值仿真（两个工频周期，第二个周期统计） */
+  function busSim(Vpk, fLine, Cfarad, Pload, Rtotal) {
+    if (!(Vpk > 0) || !(Cfarad > 0) || !(fLine > 0)) return null;
+    var N = 3000, dt = (1 / fLine) / N, v = Vpk, vmin = Infinity, sum2 = 0, tCond = 0, count = 0, sumP = 0;
+    var settle = 14;   /* 先跑 14 个工频周期让母线电压稳定（大电容 + 大源阻时建立很慢） */
+    for (var i = 0; i < N * (settle + 1); i++) {
+      var t = (i % N) * dt;
+      var vs = Vpk * Math.abs(Math.sin(2 * Math.PI * fLine * t));
+      var iload = Pload / Math.max(v, 1);
+      var id = Math.max((vs - v) / Math.max(Rtotal, 1e-6), 0);
+      var icap = id - iload;
+      v += icap * dt / Cfarad;
+      if (v < 0) v = 0;
+      if (i >= N * settle) {                  /* 末周期统计 */
+        if (vmin === Infinity) vmin = v;
+        if (v < vmin) vmin = v;
+        sum2 += icap * icap;
+        sumP += vs * id;
+        if (id > 1e-9) tCond += dt;
+        count++;
+      }
+    }
+    /* 采样是等时间间隔的，因此平均输入功率 = mean(vs·id)（不要再乘 dt·fLine） */
+    return { vmin: vmin, icRms: Math.sqrt(sum2 / Math.max(count, 1)),
+      condFrac: Math.min(tCond / (1 / fLine), 1), pIn: sumP / Math.max(count, 1) };
+  }
   function skinDepthMm(fsHz, tempC) { return SKIN_K_20 * Math.sqrt(rhoCu(tempC) / RHO_CU_20) / Math.sqrt(fsHz); }
   function rmsTrapezoid(Ia, Ib, duty) {
     if (duty <= 0) return 0;
@@ -330,18 +399,36 @@ var TD = (function () {
     o.dIm = p.Lm > 0 ? o.Vt / p.Lm : 0;
     o.CCM = true;
     if (T.kind === 'flyback') {
+      var Vr = p.Vo * p.n;                    /* 复位期折算到原边的电压 = (Vout+Vf)·Np/Ns */
       var IavgOn = p.Pin / (p.Vin * D);
       var dI = p.Vin * D / (p.Lp * p.Fs);
       var Ipk = IavgOn + dI / 2, Iv = IavgOn - dI / 2;
-      if (Iv <= 1e-9) { o.CCM = false; Ipk = 2 * p.Pin / (p.Vin * D); Iv = 0; }
+      if (Iv > 1e-9) {
+        o.CCM = true; o.DCM = false;
+        o.IrmsPri = rmsTrapezoid(Ipk, Iv, D);
+        o.IsPkSec = p.n * Ipk; o.IsValleySec = p.n * Iv;
+        o.IrmsSec = p.n * rmsTrapezoid(Ipk, Iv, 1 - D);
+        o.IavgSec = (1 - D) * p.n * (Ipk + Iv) / 2;
+      } else {
+        /* 真 DCM：占空比由功率决定 D = √(2·Pin·Lp·Fs)/Vin；峰值 Ipk = Vin·D/(Lp·Fs)；
+           复位时间 tr = Lp·Ipk/Vr，需满足 D·T + tr ≤ T */
+        var Ddcm = Math.min(Math.sqrt(2 * p.Pin * p.Lp * p.Fs) / Math.max(p.Vin, 1e-9), 0.95);
+        var IpkD = p.Vin * Ddcm / (p.Lp * p.Fs);
+        var tr = Vr > 1e-9 ? p.Lp * IpkD / Vr : (1 / p.Fs);
+        var trFrac = Math.min(tr * p.Fs, 1 - Ddcm);
+        o.CCM = false; o.DCM = true;
+        o.D = Ddcm; o.trFrac = trFrac;
+        o.dcmConsistent = (Ddcm + trFrac) <= 1.0001;
+        Ipk = IpkD; Iv = 0;
+        o.IrmsPri = Ipk * Math.sqrt(Ddcm / 3);
+        o.IsPkSec = p.n * Ipk; o.IsValleySec = 0;
+        o.IrmsSec = p.n * Ipk * Math.sqrt(trFrac / 3);
+        o.IavgSec = 0.5 * trFrac * p.n * Ipk;
+      }
       o.IpkPri = Ipk; o.Ivalley = Iv; o.dIpri = Ipk - Iv;
-      o.dIripple = dI;                      /* modelled pk-pk ripple from Lp (used by the flux self-test) */
-      o.IrmsPri = rmsTrapezoid(Ipk, Iv, D);
-      o.IsPkSec = p.n * Ipk; o.IsValleySec = p.n * Iv;
-      o.IrmsSec = p.n * rmsTrapezoid(Ipk, Iv, 1 - D);
+      o.dIripple = dI;                      /* 由 Lp 与占空比决定的纹波（磁通自检用） */
       o.Bpk = p.Lp * Ipk / (p.Np * p.Ae);
       o.dBpp = p.Lp * (Ipk - Iv) / (p.Np * p.Ae);
-      o.IavgSec = (1 - D) * p.n * (Ipk + Iv) / 2;
       o.PcoreDensity = null;
     } else if (T.kind === 'forward') {
       var Ia = Math.max(p.Iout - p.dIL / 2, 0), Ib = p.Iout + p.dIL / 2;
@@ -441,6 +528,7 @@ var TD = (function () {
   function design(I) {
     var errs = [], warns = [], steps = [], checks = [], self = [], sweep = [];
     var T = TOPOS[I.topology] || TOPOS['Flyback'];
+    I = Object.assign({}, I);          /* 交流输入模式会覆盖 Vin_min/Vin_max，避免改动调用方对象 */
     var Po = I.vout * I.iout;
     var Vo = I.vout + I.vf;
     var eta = Math.min(Math.max(I.eta, 0.3), 1);
@@ -470,6 +558,14 @@ var TD = (function () {
     var nlGiven = (isFinite(parseFloat(I.nlGiven)) && parseFloat(I.nlGiven) > 0) ? Math.round(parseFloat(I.nlGiven)) : 0;
     var lmGiven = numOr(I.lmGiven, 0);
     var naux = (isFinite(parseFloat(I.naux)) && parseFloat(I.naux) > 0) ? Math.round(parseFloat(I.naux)) : 0;
+    var lkUh = numOr(I.lkUh, 0);              /* 实测/估算漏感（µH），0 = 未计入 */
+    /* MLT 按绕层波动 ±%（默认 0：MLT 若已由承认书 DCR 反推，就不该再叠加；填 20 表示按最坏情况留余量） */
+    var mltTol = (isFinite(parseFloat(I.mltTol)) && parseFloat(I.mltTol) >= 0) ? parseFloat(I.mltTol) : 0;
+    var marginMm = (isFinite(parseFloat(I.marginMm)) && parseFloat(I.marginMm) > 0) ? parseFloat(I.marginMm) : 0;  /* 挡墙胶带每侧宽度 */
+    var awW = numOr(I.awW, 0), awH = numOr(I.awH, 0);   /* 骨架绕线窗口宽/高（mm），都>0 时用窗口推算 Aw */
+    var nlDia = numOr(I.nlDia, 0);                      /* 输出电感线径（mm），0=auto */
+    var nlStrands = (isFinite(parseFloat(I.nlStrands)) && parseFloat(I.nlStrands) >= 1) ? Math.round(parseFloat(I.nlStrands)) : 1;
+    var nlPar = (isFinite(parseFloat(I.nlPar)) && parseFloat(I.nlPar) >= 1) ? Math.round(parseFloat(I.nlPar)) : 1;
     if (T.kind === 'forward' && resetMode === 'cap') dLimit = 0.70;
     dMax = Math.min(I.dutyMax, dLimit);
     if (I.fs <= 0) errs.push('开关频率必须大于 0');
@@ -480,6 +576,42 @@ var TD = (function () {
     if (errs.length) return { ok: false, errs: errs, warns: warns, steps: steps, checks: checks, sweep: sweep, self: self, summary: {}, points: {}, windings: [] };
     if (I.dutyMax > dLimit + 1e-9) warns.push('占空比输入 ' + I.dutyMax + ' 超过 ' + T.label + ' 的物理上限 ' + dLimit + '，已按 ' + dLimit + ' 计算。');
     steps.push({ t: '功率', f: 'Po = Vout·Iout ;  Pin = Po/η', s: Po.toFixed(2) + ' W ;  ' + Po.toFixed(2) + '/' + eta + ' = ' + Pin.toFixed(2) + ' W' });
+    /* ---------- 交流输入前端（可选）：由交流电压与母线电容推母线电压，再喂给后面的设计 ---------- */
+    var acFront = null;
+    if (I.acMode === 'ac' || I.acMode === 'pfc') {
+      var vdB = numOr(I.vdBridge, 1.4), fLine = numOr(I.fline, 50), cbus = numOr(I.cbusUf, 220);
+      var rsTot = numOr(I.rsAc, 0.5) + numOr(I.cbusEsr, 0.3);
+      var vpkMin = Math.SQRT2 * Math.max(I.vacMin, 1) - 2 * vdB;
+      var vpkMax = Math.SQRT2 * Math.max(I.vacMax, 1) - 2 * vdB;
+      var holdMs = numOr(I.holdMs, 0), holdVmin = numOr(I.holdVmin, 0);
+      if (I.acMode === 'pfc') {
+        var vb = numOr(I.pfcBus, 390);
+        acFront = { mode: 'pfc', vbus: vb, vBusMin: vb * 0.98, vBusMax: vb * 1.02,
+          note: 'PFC 模式：母线视为恒定的 ' + vb + ' V（±2% 工频纹波），隔离级按普通 DCDC 设计；PFC 电感/输入电流/THD/浪涌不在本工具范围' };
+        I.vinMin = vb * 0.98; I.vinMax = vb * 1.02;
+        steps.push({ t: '交流输入 — PFC 前端', f: 'V_bus ≈ 恒定（PFC 输出）',
+          s: '母线 ' + vb + ' V → 后级按 Vin ' + I.vinMin.toFixed(0) + '~' + I.vinMax.toFixed(0) + ' V 的 DCDC 设计（Vin_min/Vin_max 已被覆盖）' });
+      } else {
+        var sim = busSim(vpkMin, fLine, cbus * 1e-6, Pin, rsTot);
+        var cReqF = (holdMs > 0 && holdVmin > 0 && vpkMin > holdVmin)
+          ? 2 * Pin * (holdMs / 1000) / (vpkMin * vpkMin - holdVmin * holdVmin) : 0;
+        var vAtHold = (holdMs > 0 && cbus > 0)
+          ? Math.sqrt(Math.max(vpkMin * vpkMin - 2 * Pin * (holdMs / 1000) / (cbus * 1e-6), 0)) : vpkMin;
+        acFront = { mode: 'ac', vpkMin: vpkMin, vpkMax: vpkMax,
+          vValley: sim ? sim.vmin : vpkMin, ripple: vpkMin - (sim ? sim.vmin : vpkMin),
+          icRms: sim ? sim.icRms : 0, condFrac: sim ? sim.condFrac : 0, pInCheck: sim ? sim.pIn : 0,
+          cbusUf: cbus, cReqUf: cReqF * 1e6, holdMs: holdMs, holdVmin: holdVmin, vAtHold: vAtHold };
+        I.vinMin = Math.max(sim ? sim.vmin : vpkMin, 1);
+        I.vinMax = vpkMax;
+        steps.push({ t: '交流输入 — 整流母线（数值仿真）',
+          f: 'V_pk = √2·Vac − 2·Vf ; 母线谷值/纹波/电容电流由"恒功率负载 + 母线电容"数值仿真得出；保持时间 V2 = √(V_pk² − 2·P·t/C)',
+          s: 'Vac ' + I.vacMin + '~' + I.vacMax + ' V / ' + fLine + ' Hz → V_pk = ' + vpkMin.toFixed(1) + '~' + vpkMax.toFixed(1) +
+             ' V；C_bus = ' + cbus + ' µF → **谷值 ' + (sim ? sim.vmin.toFixed(1) : '-') + ' V**（纹波 ' + (sim ? (vpkMin - sim.vmin).toFixed(1) : '-') +
+             ' V，导通角 ' + (sim ? (sim.condFrac * 100).toFixed(0) : '-') + '%，电容纹波电流 ' + (sim ? sim.icRms.toFixed(2) : '-') +
+             ' A）；Vin_min/Vin_max 已按母线覆盖为 ' + I.vinMin.toFixed(1) + '~' + I.vinMax.toFixed(1) + ' V' +
+             (holdMs > 0 ? '；保持 ' + holdMs + ' ms 后母线 ' + vAtHold.toFixed(1) + ' V，需要 C_bus ≥ ' + (cReqF * 1e6).toFixed(0) + ' µF' : '') });
+      }
+    }
     steps.push({ t: '整流后目标电压', f: 'Vo = Vout + Vf', s: I.vout + ' + ' + I.vf + ' = ' + Vo.toFixed(2) + ' V' });
     var nTarget;
     if (T.kind === 'flyback') {
@@ -627,17 +759,33 @@ var TD = (function () {
     /* 电容谐振复位（正激、初级并联电容）：电容上限与开关管电压应力 */
     var capReset = null;
     if (T.kind === 'forward' && resetMode === 'cap' && Lm > 0) {
-      var crMaxNf = Math.pow(1 - dMax, 2) / (Math.PI * Math.PI * Lm * Fs * Fs) * 1e9;
+      /* 用"实际工作占空比"（Vin_min 处按整数匝数得到的 D）而不是输入框的 D_max：
+         关断时间由实际占空比决定。闭式：C 取到上限时 V_res,pk = π·n·Vo/(1-D)（与 Lm、Fs 无关） */
+      var dReset = Math.min(Math.max(dNeedMin, 0.05), 0.9);
+      var crMaxNf = Math.pow(1 - dReset, 2) / (Math.PI * Math.PI * Lm * Fs * Fs) * 1e9;
       var crNf = cresNf > 0 ? cresNf : crMaxNf;
       var vResetPk = nAch * Vo / Fs / Math.sqrt(Lm * crNf * 1e-9);
+      /* 漏感能量：½Lk·Ipk² 也全部倒进复位电容 → 额外抬升 ΔV = Ipk·√(Lk/C) */
+      var lkH = lkUh * 1e-6;
+      /* 漏感承载的是负载电流（折算到原边的脉冲电流），用设计点估算 */
+      var iDesignPri = Math.max((I.iout + I.rippleLout / 2) / Math.max(nAch, 1e-9), 1e-9);
+      var iLkTurn = lkH > 0 ? iDesignPri : 0;
+      var dVLk = lkH > 0 ? iLkTurn * Math.sqrt(lkH / (crNf * 1e-9)) : 0;
+      var wLeak = lkH > 0 ? 0.5 * lkH * iLkTurn * iLkTurn : 0;
+      var iMagPk = dReset * I.vinMin / (Lm * Fs);            /* 励磁电流峰值（关断瞬间） */
+      var wMag = 0.5 * Lm * iMagPk * iMagPk;
       capReset = { crMaxNf: crMaxNf, crNf: crNf, crAuto: !(cresNf > 0), vResetPk: vResetPk,
-        vdsPk: I.vinMax + vResetPk, vdsRated: vdsRated, vdsMargin: vdsRated > 0 ? I.vinMax + vResetPk - vdsRated * 0.85 : 0,
-        LmUH: Lm * 1e6, dMaxUsed: dMax };
+        dVLk: dVLk, lkUH: lkUh, wLeak: wLeak, wMag: wMag, wRatio: wMag > 0 ? wLeak / wMag : 0,
+        vResetClosed: Math.PI * nAch * Vo / (1 - dReset),
+        vdsPk: I.vinMax + vResetPk + dVLk, vdsRated: vdsRated,
+        LmUH: Lm * 1e6, dMaxUsed: dReset, dInput: I.dutyMax };
       steps.push({ t: '电容谐振复位（初级并联电容）',
-        f: '半谐振周期 ≤ 关断时间 → C ≤ (1-D)²/(π²·Lm·Fs²)；V_res,pk = Vin·D·T/√(Lm·C)（= n·Vo·T/√(Lm·C)）；Vds,pk = Vin_max + V_res,pk',
-        s: 'Lm = ' + (Lm * 1e6).toFixed(1) + ' µH（AL·Np²，实测 AL = ' + (ALauto * 1e9).toFixed(0) + ' nH/N²）→ C ≤ ' +
-           crMaxNf.toFixed(2) + ' nF（取 ' + crNf.toFixed(2) + ' nF' + (cresNf > 0 ? '，用户输入' : '，自动取上限') +
-           '）；复位峰值 ' + vResetPk.toFixed(1) + ' V → Vds,pk ≈ ' + (I.vinMax + vResetPk).toFixed(1) + ' V' });
+        f: 'C ≤ (1-D)²/(π²·Lm·Fs²)（D 用实际工作占空比）；C 取上限时 V_res,pk = π·n·Vo/(1-D)；漏感项 ΔV = Ipk·√(Lk/C)；Vds,pk = Vin_max + V_res,pk + ΔV',
+        s: 'D(实际@Vin_min) = ' + dReset.toFixed(3) + '（输入框 D_max = ' + I.dutyMax + '）→ C ≤ ' + crMaxNf.toFixed(2) +
+           ' nF（取 ' + crNf.toFixed(2) + ' nF' + (cresNf > 0 ? '，用户输入' : '，自动取上限') + '）；励磁项 V_res,pk = ' +
+           vResetPk.toFixed(1) + ' V（闭式校核 π·n·Vo/(1-D) = ' + (Math.PI * nAch * Vo / (1 - dReset)).toFixed(1) + ' V）' +
+           (lkH > 0 ? '；漏感 ' + lkUh + ' µH → ΔV = ' + dVLk.toFixed(1) + ' V（漏感能量/励磁能量 = ' + (wLeak / Math.max(wMag, 1e-12)).toFixed(2) + '×）' : '；未填漏感 → ΔV 未计入') +
+           ' → Vds,pk ≈ ' + (I.vinMax + vResetPk + dVLk).toFixed(1) + ' V' });
     }
     var common = { n: nAch, Vo: Vo, VinNom: I.vinNom > 0 ? I.vinNom : (I.vinMin + I.vinMax) / 2, Iout: I.iout, Pin: Pin, Fs: Fs, Lp: Lp, Lm: Lm, Np: Np, Ns: Ns, Ae: Ae, dIL: I.rippleLout, nSecWind: nSecWind };
     function pt(Vin) { var q = {}; for (var key in common) q[key] = common[key]; q.Vin = Vin; return operatingPoint(T, q); }
@@ -669,13 +817,23 @@ var TD = (function () {
     var copperReset = resetTurns * Aprim;
     var copperSecondary = Ns * Asec * nSecWind;
     var copperTotal = copperPrimary + copperSecondary + copperReset;
-    var fillPct = copperTotal * I.kPack / Aw * 100;
+    /* 骨架窗口：填了窗口宽×高就用它；挡墙胶带（margin tape）从有效宽度里扣掉 */
+    var awBase = Aw, awEff = Aw, awNote = '';
+    if (awW > 0 && awH > 0) {
+      awBase = awW * awH;
+      awEff = Math.max(awW - 2 * marginMm, 1) * Math.max(awH, 1);
+      awNote = '（骨架窗口 ' + awW + '×' + awH + ' mm² = ' + awBase.toFixed(1) + ' mm²' + (marginMm > 0 ? '，挡墙每侧 ' + marginMm + ' mm → 有效 ' + awEff.toFixed(1) + ' mm²' : '') + '）';
+    } else if (marginMm > 0) {
+      warns.push('填了挡墙胶带宽度 ' + marginMm + ' mm，但没有骨架窗口宽/高（awW、awH）→ 无法扣减，填充率仍按 Aw=' + Aw + ' mm² 计算，结果偏乐观。');
+    }
+    var fillPct = copperTotal * I.kPack / Math.max(awEff, 1) * 100;
     var AwReq = copperTotal * I.kPack / I.kuMax;
     if (T.kind === 'forward') steps.push({ t: '磁复位绕组', f: 'Vin·D·T/Np = Vin·t_reset/Nr，t_reset ≤ (1-D)T  →  Nr/Np ≥ D/(1-D)（等价 D_max = Nr/(Nr+Np)）',
       s: 'Nr = ' + resetTurns + ' 匝，Nr/Np = ' + (resetTurns / Np).toFixed(3) + ' ≥ ' + (dMax / (1 - dMax)).toFixed(3) +
          '；复位占用周期 ' + (dMax * Np / resetTurns * 100).toFixed(0) + '% ≤ ' + ((1 - dMax) * 100).toFixed(0) + '%' });
     steps.push({ t: '窗口填充校核（一次+二次共享窗口）', f: 'fill = (Np·A_cuP + Ns·A_cuS·n_sec + N_reset·A_cuP)·k_pack/Aw',
-      s: '铜面积 ' + copperTotal.toFixed(2) + ' mm² × ' + I.kPack + ' / Aw ' + Aw + ' mm² = ' + fillPct.toFixed(1) + '%' + (resetTurns ? '（含复位绕组 ' + resetTurns + ' 匝）' : '') + ' ; 满足 Ku=' + (I.kuMax * 100).toFixed(0) + '% 需 Aw ≥ ' + AwReq.toFixed(1) + ' mm²' });
+      s: '铜面积 ' + copperTotal.toFixed(2) + ' mm² × ' + I.kPack + ' / 有效窗口 ' + awEff.toFixed(1) + ' mm² = ' + fillPct.toFixed(1) + '%' +
+         (resetTurns ? '（含复位绕组 ' + resetTurns + ' 匝）' : '') + awNote + ' ; 满足 Ku=' + (I.kuMax * 100).toFixed(0) + '% 需 Aw ≥ ' + AwReq.toFixed(1) + ' mm²' });
     var windings = buildWindings(T, { Np: Np, Ns: Ns, nSecWind: nSecWind, Aprim: Aprim, Asec: Asec, IrmsPri: maxIrmsPri, IrmsSec: maxIrmsSec, resetTurns: resetTurns, dIm: Math.max(pts.vinMin.dIm, pts.vinMax.dIm), D: dMax, mlt: I.mlt, acFactor: I.acFactor });
     var ALreq = 0, gapMm = 0;
     if (T.kind === 'flyback') {
@@ -759,8 +917,9 @@ var TD = (function () {
       os.LoutBac = LoutH * os.dILmax / (os.LoutN * Ae) / 2;
       os.LoutPcv = I.pcvRef * Math.pow(I.fs / 100, I.lossA) * Math.pow((os.LoutBac * 1000) / 100, I.lossB);
       os.LoutPcore = os.LoutPcv * (I.ae * I.le) * 1e-6;
-      var wireLo = resolveWire('auto', 0, 1, 1, IrmsL, I.jTarget, Fs, I.tamb + 40);
-      os.LoutDia = wireLo.dia; os.LoutStrands = wireLo.strands;
+      /* 输出电感自己的线径/股数/并联（默认 auto，与 2 号"38 匝×4 组并联"这类结构对应） */
+      var wireLo = resolveWire(nlDia > 0 ? 'mm' : 'auto', nlDia, nlStrands, nlPar, IrmsL, I.jTarget, Fs, I.tamb + 40);
+      os.LoutDia = wireLo.dia; os.LoutStrands = wireLo.strands; os.LoutPar = wireLo.par;
       os.LoutRdc25 = rhoCu(25) * (I.mlt * 1e-3) * os.LoutN / (wireLo.totalArea * 1e-6);
       os.LoutPcu = IrmsL * IrmsL * (rhoCu(I.tamb + 40) * (I.mlt * 1e-3) * os.LoutN / (wireLo.totalArea * 1e-6)) * I.acFactor;
       os.LoutPtotal = os.LoutPcu + os.LoutPcore;
@@ -771,7 +930,13 @@ var TD = (function () {
         os.auxRatio = naux / os.LoutN;
         /* 辅助绕组与输出电感同磁芯：续流期二极管整流，V_aux ≈ (N_aux/N_L)·(Vout+Vf) - Vf */
         os.auxV = os.auxRatio * (I.vout + I.vf) - I.vf;
+        os.auxA = wireLo.area * wireLo.strands;                       /* 辅助绕组通常与电感同线径 */
+        os.auxRdc25 = rhoCu(25) * (I.mlt * 1e-3) * naux / (os.auxA * 1e-6);
+        os.auxPeakI = 0;                                              /* 辅助负载电流未知时只报电阻与压降 */
       }
+      /* 输出电感（含辅助绕组）的窗口校核：与变压器各自独立的磁芯 */
+      os.LoutCopper = os.LoutN * wireLo.totalArea + (naux > 0 ? naux * (wireLo.area * wireLo.strands) : 0);
+      os.LoutFillPct = os.LoutCopper * I.kPack / Math.max(awEff, 1) * 100;
       steps.push({ t: '输出电感（Buck 型副边的 LC 滤波）', f: 'ΔI_L = Vo·(1-D)/(L·Fs) ;  N ≥ L·Ipk/(Ae·Bsat·k_der) ;  AL = L/N² ;  l_g = μ0·Ae/AL - le/µi',
         s: 'ΔI_L(设计点 Vin_min) = ' + I.rippleLout + ' A → ΔI_L(Vin_max) = ' + os.dILmax.toFixed(3) + ' A；L = ' + os.LoutUH.toFixed(2) +
            ' µH；N = ' + os.LoutN + ' 匝（Ipk = ' + IpkL.toFixed(3) + ' A, I_rms = ' + IrmsL.toFixed(3) + ' A）；AL = ' + os.LoutAL.toFixed(0) +
@@ -886,6 +1051,16 @@ var TD = (function () {
         tank.LmErrPct = 0;
       }
       for (var fg = 0.4; fg <= 2.0001; fg += 0.1) tank.gainRow.push({ fn: fg, M: llcGain(fg, Qd, kk) });
+      /* 轻载/高线增益下限：Q→0 时增益曲线的渐近值是 k/(k+1)，若 M_min 小于它，控制器即使升到最高频率也降不下来 → 需要 burst/skip */
+      tank.mMinAsymptote = kk / (kk + 1);
+      tank.lightLoadOK = Mmin >= tank.mMinAsymptote * 1.02;
+      var Qlight = Math.max(Qd * 0.1, 1e-4);                 /* 10% 负载 */
+      var fnHighLight = 3;
+      for (var f4 = 1.0; f4 <= 3; f4 += 0.002) { if (llcGain(f4, Qlight, kk) <= Mmin) { fnHighLight = f4; break; } }
+      tank.fnHighLight = fnHighLight;
+      tank.fMaxLight_kHz = fnHighLight * frHz / 1000;
+      tank.LrOverLm = 1 / kk;
+      tank.crRated = numOr(I.crRated, 0);
       steps.push({ t: 'LLC 谐振腔（FHA）', f: 'Q = Zr/Rac，Zr = √(Lr/Cr)；fr = 1/(2π√(Lr·Cr))；k = Lm/Lr；M(fn) = 1/√[(1+ (1/k)(1-1/fn²))² + (Q(fn-1/fn))²]',
         s: 'Rac = ' + Rac.toFixed(2) + ' Ω；需要的增益范围 M = ' + Mmin.toFixed(3) + ' ~ ' + Mmax.toFixed(3) +
            '（额定点 M=1）→ 允许的最大 Q = ' + Qmax.toFixed(4) + '，取 Q = ' + Qd.toFixed(4) + '；Zr = ' + Zr.toFixed(2) +
@@ -919,12 +1094,24 @@ var TD = (function () {
       addCheck('给定 Np ≥ 磁通要求的最小匝数', Np, '匝', npMinFlux, '匝', Np >= npMinFlux - 1e-9, 1.05);
       if (T.kind === 'flyback') addCheck('给定 Np ≥ 不饱和要求的最小匝数', Np, '匝', npMinSat, '匝', Np >= npMinSat - 1e-9, 1.05);
     }
-    if (I.dcrLimitP > 0) addCheck('原边 DCR @25°C（对规格值）', RdcPri25 * 1000, 'mΩ', I.dcrLimitP, 'mΩ', RdcPri25 * 1000 <= I.dcrLimitP, 0.9);
-    if (I.dcrLimitS > 0) addCheck('副边 DCR @25°C（对规格值）', RdcSec25 * 1000, 'mΩ', I.dcrLimitS, 'mΩ', RdcSec25 * 1000 <= I.dcrLimitS, 0.9);
+    /* DCR 校核用"最坏 MLT"（默认 +20%），因为实际 MLT 随绕层变化（内层小、外层大） */
+    var mltWorst = 1 + mltTol / 100;
+    if (I.dcrLimitP > 0) addCheck('原边 DCR @25°C（对规格值' + (mltTol > 0 ? '，按最坏 MLT +' + mltTol + '%' : '') + '）', RdcPri25 * 1000 * mltWorst, 'mΩ', I.dcrLimitP, 'mΩ', RdcPri25 * 1000 * mltWorst <= I.dcrLimitP, 0.9);
+    if (I.dcrLimitS > 0) addCheck('副边 DCR @25°C（对规格值' + (mltTol > 0 ? '，按最坏 MLT +' + mltTol + '%' : '') + '）', RdcSec25 * 1000 * mltWorst, 'mΩ', I.dcrLimitS, 'mΩ', RdcSec25 * 1000 * mltWorst <= I.dcrLimitS, 0.9);
+    if (capReset && lkH <= 0) warns.push('电容复位未计入漏感：实际 Vds,pk 还要加上漏感尖峰 ΔV = Ipk·√(Lk/C)。测一次漏感（或按夹层绕法的 0.3%~2%·Lm 估）填进"漏感 Lk"输入，才能得到真实的开关应力。');
+    if (capReset && lkH > 0 && capReset.wRatio > 1) warns.push('漏感能量（' + capReset.wLeak.toFixed(3) + ' mJ）大于励磁能量（' + capReset.wMag.toFixed(3) + ' mJ）：复位电容主要由漏感决定，开关应力对 C 很敏感；建议用实测漏感复核，或考虑 RCD/有源钳位。');
+    if (acFront && acFront.mode === 'ac') {
+      if (acFront.holdMs > 0 && acFront.holdVmin > 0)
+        addCheck('母线保持时间：V(t_hold) ≥ 允许下限', acFront.vAtHold, 'V', acFront.holdVmin, 'V', acFront.vAtHold >= acFront.holdVmin, 0.95);
+      addCheck('母线谷值（设计用 Vin_min）≥ 允许下限', acFront.vValley, 'V', I.vinMinAllowed ? I.vinMinAllowed : 1, 'V', true, 1e9);
+      if (acFront.icRms > 0) checks.push({ name: '母线电容纹波电流（选型用）', value: acFront.icRms, unit: 'A', limit: '按电容规格校核', limitUnit: '', pass: true, warn: false, scope: 'peripheral' });
+    }
     if (os.buckDerived) {
       addCheck('输出电感 Bpk ≤ Bsat·降额', os.LoutBpk, 'T', BsatAllow, 'T', os.LoutBpk <= BsatAllow, 0.9, 'peripheral');
       addCheck('输出电感温升 ΔT', os.LoutdT, 'K', I.dtTarget, 'K', os.LoutdT <= I.dtTarget, 0.85, 'peripheral');
       addCheck('输出电感所需气隙 l_g', os.LoutGap, 'mm', 2.0, 'mm', os.LoutGap <= 2.0, 0.75, 'peripheral');
+      addCheck('输出电感窗口填充率（含辅助绕组）', os.LoutFillPct, '%', I.kuMax * 100, '%', os.LoutFillPct <= I.kuMax * 100 + 1e-9, 0.9, 'peripheral');
+      if (os.naux > 0 && I.dcrLimitS > 0) { /* 承认书若给辅助绕组 DCR，用 dcrLimitP 或 S 通道对照 */ }
     }
     addCheck('输出电容 ESR 占纹波预算', os.dVesr / os.rippleBudget * 100, '%', 50, '%', os.dVesr <= os.rippleBudget * 0.5, 0.9, 'peripheral');
     if (tank) {
@@ -932,6 +1119,11 @@ var TD = (function () {
       addCheck('LLC 所需 Lm 与磁芯 AL·Np² 偏差', tank.LmErrPct, '%', 20, '%', tank.LmErrPct <= 20, 0.75);
       if (!tank.ALgiven) addCheck('LLC 所需气隙 l_g（按谐振腔 Lm）', tank.gapMm, 'mm', 2.0, 'mm', tank.gapMm <= 2.0, 0.75);
       addCheck('LLC ZVS：I_Lm,pk vs 2·Coss·Vin/t_dead', tank.ImPk, 'A', tank.IZvsNeed, 'A', tank.ImPk >= tank.IZvsNeed, 3, 'peripheral');
+      addCheck('LLC 高线轻载可降增益（M_min ≥ k/(k+1)·1.02）', tank.Mmin, '×', tank.mMinAsymptote * 1.02, '×', tank.lightLoadOK, 0.98);
+      if (tank.crRated > 0) addCheck('谐振电容耐压：V_cr,pk ≤ 0.8×耐压', tank.VcrPk, 'V', tank.crRated * 0.8, 'V', tank.VcrPk <= tank.crRated * 0.8, 0.9);
+      if (!tank.lightLoadOK) warns.push('高线轻载时所需增益低于 FHA 渐近值 k/(k+1)=' + (tank.mMinAsymptote).toFixed(3) + '：需要 burst/skip 模式，或减小 k（增大 Lm/Lr 比）以降低最小增益。');
+      if (tank.fMaxLight_kHz > frHz * 2.2 / 1000) warns.push('轻载下要把增益压到 M_min 需要升频到约 ' + tank.fMaxLight_kHz.toFixed(0) + ' kHz（fr 的 ' + (tank.fnHighLight).toFixed(1) + ' 倍）：确认控制器与驱动能支持这么高的最高频率。');
+      if (tank.crRated <= 0) warns.push('未填谐振电容耐压：按 V_cr,pk ≈ ' + tank.VcrPk.toFixed(0) + ' V 留裕量选型（建议 ≥ ' + (tank.VcrPk / 0.8).toFixed(0) + ' V）。');
     }
     if (T.kind === 'flyback') addCheck('所需气隙 l_g', gapMm, 'mm', 2.0, 'mm', gapMm <= 2.0, 0.75);
     if (T.kind === 'forward' && resetMode === 'winding') addCheck('复位绕组匝比 Nr/Np（需 ≥ D/(1-D)）', resetTurns / Np, '', dMax / (1 - dMax), '', resetTurns / Np >= dMax / (1 - dMax) - 1e-9, 0.98);
@@ -943,9 +1135,11 @@ var TD = (function () {
     if (T.kind === 'llc') addCheck('谐振点输出电压偏差（整数匝数，可由谐振腔增益补偿）', Math.abs(vNom / (2 * nAch) - Vo) / Vo * 100, '%', 10, '%', Math.abs(vNom / (2 * nAch) - Vo) / Vo * 100 <= 10, 0.3);
     if (T.kind === 'flyback') {
       var valley = Math.min(pts.vinMin.Ivalley, pts.vinMax.Ivalley);
-      var mode = valley > 1e-6 ? 'CCM' : 'BCM 边界（谷值=0，按近似计）';
+      var dcmMin = !!(pts.vinMin.DCM || pts.vinMax.DCM);
+      var mode = dcmMin ? ('DCM（占空比由功率决定；t_reset/T = ' + ((pts.vinMin.trFrac || pts.vinMax.trFrac || 0) * 100).toFixed(0) + '%）') : 'CCM';
       checks.push({ name: '工作模式（最恶劣点）', value: mode, unit: '', limit: '目标 CCM', limitUnit: '', pass: true, warn: !(T.kind === 'flyback' && valley > 1e-6) });
-      if (valley <= 1e-6) warns.push('最恶劣工况下原边电流谷值降到 0（BCM/DCM 边界）：工具按边界近似计算，若要保证 CCM 需加大 Lp（提高 AL/增加匝数）或减小 D。');
+      if (dcmMin) warns.push('最恶劣工况已进入 DCM：工具按真 DCM 模型算（占空比由功率决定、复位时间校核、峰值电流高于 CCM）。若要回到 CCM，需加大 Lp（提高 AL/增加匝数）或减小 D。');
+      else if (valley <= 1e-6) warns.push('最恶劣工况接近 BCM（谷值≈0）：若再加重负载或降低 Vin 会进入 DCM。');
     }
     if (Math.abs(voutAtDmax - I.vout) / I.vout > 0.03) {
       warns.push('按 D_max=' + dMax + ' 与整数匝数得到 ' + voutAtDmax.toFixed(2) + ' V（目标 ' + I.vout + ' V）；实际由控制器把 D 调到 ' + dNeedMin.toFixed(3) + ' 得到目标电压，见校核表。');
@@ -961,6 +1155,12 @@ var TD = (function () {
       if (pts.vinMin.CCM) {
         var Pfrom = 0.5 * Lp * (pts.vinMin.IpkPri * pts.vinMin.IpkPri - pts.vinMin.Ivalley * pts.vinMin.Ivalley) * Fs;
         self.push({ name: '能量守恒 ½Lp(Ip²-Iv²)·Fs vs Pin', err: relErr(Pfrom, Pin) });
+      }
+      if (pts.vinMin.DCM) {
+        var Pdcm = 0.5 * Lp * pts.vinMin.IpkPri * pts.vinMin.IpkPri * Fs;
+        self.push({ name: 'DCM 能量守恒 ½Lp·Ipk²·Fs vs Pin', err: relErr(Pdcm, Pin) });
+        self.push({ name: 'DCM 复位时间 D·T+tr ≤ T', err: pts.vinMin.dcmConsistent ? 0 : 1 });
+        self.push({ name: 'DCM 副边电荷平衡 I_avg,sec vs Pin/Vo', err: relErr(pts.vinMin.IavgSec, Pin / Vo) });
       }
       self.push({ name: '磁通摆幅两条路径 Lp·ΔI_model vs V·t', err: relErr(Lp * pts.vinMin.dIripple / (Np * Ae), pts.vinMin.Vt / (Np * Ae)) });
       self.push({ name: 'AL 往返 AL_req·Np² vs Lp', err: relErr(ALreq * Np * Np, Lp) });
@@ -994,6 +1194,7 @@ var TD = (function () {
       npGiven: NpGiven, npMinFlux: npMinFlux, npMinSat: npMinSat,
       outStage: os, llcTank: tank,
       capReset: capReset, resetMode: resetMode,
+      acFront: acFront,
       nSecWind: nSecWind, resetTurns: resetTurns, skinMm: skin, Bac: Bac, Pcv: Pcv, Ve: Ve, acFactor: I.acFactor,
       hardFail: hardFail, softWarn: softWarn, lossPer: loss.per,
       verdict: hardFail ? '不通过 / FAIL' : (softWarn ? '需复核 / REVIEW' : '可用 / OK'),
@@ -1080,6 +1281,8 @@ var TD = (function () {
   var IDS = ['topology','fs','vinMin','vinMax','vout','iout','vf','eta','vinNom','secRect','dutyMax','rippleK','rippleLout',
     'auditMode','npGiven','nsGiven','dcrLimitP','dcrLimitS',
     'resetMode','cresNf','vdsRated','nlGiven','lmGiven','naux',
+    'lkUh','mltTol','marginMm','awW','awH','nlDia','nlStrands','nlPar','crRated',
+    'acMode','vacMin','vacMax','fline','cbusUf','cbusEsr','rsAc','vdBridge','holdMs','holdVmin','pfcBus',
     'ripplePct','esrOhm','rdsOnMOhm','vfBody','tDeadNs','llcFr','llcK','llcQ','cossP',
     'deltaBTarget','bsatDerate','acFactor','corePreset','aw','ae','le','mlt','alNh','matPreset','bsat100','muI','pcvRef',
     'lossA','lossB','jTarget','wireModeP','wireDiaP','strandsP','parP','wireModeS','wireDiaS','strandsS','parS','kPack',
@@ -1158,6 +1361,13 @@ var TD = (function () {
       resetMode: $('resetMode').value,
       cresNf: num('cresNf', 0), vdsRated: num('vdsRated', 0),
       nlGiven: num('nlGiven', 0), lmGiven: num('lmGiven', 0), naux: num('naux', 0),
+      lkUh: num('lkUh', 0), mltTol: num('mltTol', 0), marginMm: num('marginMm', 0),
+      awW: num('awW', 0), awH: num('awH', 0),
+      nlDia: num('nlDia', 0), nlStrands: num('nlStrands', 1), nlPar: num('nlPar', 1),
+      crRated: num('crRated', 0),
+      acMode: $('acMode').value, vacMin: num('vacMin', 176), vacMax: num('vacMax', 264), fline: num('fline', 50),
+      cbusUf: num('cbusUf', 220), cbusEsr: num('cbusEsr', 0.3), rsAc: num('rsAc', 0.5), vdBridge: num('vdBridge', 1.4),
+      holdMs: num('holdMs', 0), holdVmin: num('holdVmin', 0), pfcBus: num('pfcBus', 390),
       dutyMax: num('dutyMax', 0.45), rippleK: num('rippleK', 0.4), rippleLout: num('rippleLout', 0.6),
       deltaBTarget: num('deltaBTarget', 0.2), bsatDerate: num('bsatDerate', 0.8), acFactor: num('acFactor', 1.2),
       ae: num('ae', 52.2), le: num('le', 57.5), aw: num('aw', 54), mlt: num('mlt', 50), alNh: num('alNh', 0),
@@ -1271,6 +1481,15 @@ var TD = (function () {
         '复位峰值电压 ' + fmt(s.capReset.vResetPk, 1) + ' V → 开关管 Vds,pk ≈ ' + fmt(s.capReset.vdsPk, 1) + ' V' + (s.capReset.vdsRated > 0 ? '（耐压 ' + fmt(s.capReset.vdsRated, 0) + ' V，校核见清单）' : '（未填耐压，不做校核）') + '。<br>' +
         '电容越小开关应力越高、关断期复位越快；电容超过上限则复位在下一个周期前完不成。</div>';
     }
+    if (s.acFront) {
+      var a = s.acFront;
+      $('outStage').innerHTML += '<div class="hint"><strong>交流输入前端' + (a.mode === 'pfc' ? '（PFC，母线恒定）' : '（桥式整流 + 母线电容）') + '</strong><br>' +
+        (a.mode === 'pfc'
+          ? ('母线 ' + fmt(a.vbus, 0) + ' V（±2% 工频纹波）→ 后级按 Vin ' + fmt(a.vBusMin, 0) + '~' + fmt(a.vBusMax, 0) + ' V 设计；PFC 电感/输入电流/THD/浪涌不在本工具范围。<br>')
+          : ('Vac 峰值 ' + fmt(a.vpkMin, 1) + ' ~ ' + fmt(a.vpkMax, 1) + ' V；C_bus ' + fmt(a.cbusUf, 0) + ' µF → 母线谷值 <b>' + fmt(a.vValley, 1) + ' V</b>（纹波 ' + fmt(a.ripple, 1) + ' V，导通角 ' + fmt(a.condFrac * 100, 0) + '%，电容纹波电流 ' + fmt(a.icRms, 2) + ' A）；<b>设计已改用该母线电压</b>。<br>')) +
+        (a.holdMs > 0 ? ('保持 ' + fmt(a.holdMs, 0) + ' ms 后母线 ' + fmt(a.vAtHold, 1) + ' V（下限 ' + fmt(a.holdVmin, 0) + ' V）→ 需要 C_bus ≥ ' + fmt(a.cReqUf, 0) + ' µF。<br>') : '') +
+        '提示：母线电容太小会把谷值拉得很低，匝数与占空比会随之变化——这正是"先定母线、再设计变压器"的顺序。</div>';
+    }
     var t = r.tank;
     if (!t) {
       $('tankCard').style.display = 'none';
@@ -1293,6 +1512,28 @@ var TD = (function () {
       th += '</tr></thead><tbody><tr><td><b>M</b></td>';
       t.gainRow.forEach(function (g) { th += '<td class="num">' + fmt(g.M, 3) + '</td>'; });
       th += '</tr></tbody></table>';
+      /* 增益曲线（SVG）：虚线 = M_max / M_min 需求线 */
+      var W = 560, H = 190, pad = 34, n = t.gainRow.length;
+      var mMaxY = Math.max(t.Mpeak, t.Mmax) * 1.08, mMinY = 0;
+      function px(i) { return pad + (W - 2 * pad) * (i / (n - 1)); }
+      function py(m) { return H - pad - (H - 2 * pad) * ((m - mMinY) / (mMaxY - mMinY)); }
+      var poly = t.gainRow.map(function (g, i) { return px(i).toFixed(1) + ',' + py(g.M).toFixed(1); }).join(' ');
+      var svg = '<svg width="' + W + '" height="' + H + '" style="background:#fff;border:1px solid #dfe7f5;border-radius:8px">';
+      svg += '<line x1="' + pad + '" y1="' + (H - pad) + '" x2="' + (W - pad) + '" y2="' + (H - pad) + '" stroke="#9ca3af"/>';
+      svg += '<line x1="' + pad + '" y1="' + pad + '" x2="' + pad + '" y2="' + (H - pad) + '" stroke="#9ca3af"/>';
+      svg += '<line x1="' + pad + '" y1="' + py(1).toFixed(1) + '" x2="' + (W - pad) + '" y2="' + py(1).toFixed(1) + '" stroke="#c7d2fe" stroke-dasharray="4 3"/>';
+      svg += '<text x="' + (W - pad - 4) + '" y="' + (py(1) - 4).toFixed(1) + '" font-size="10" fill="#6366f1" text-anchor="end">M=1</text>';
+      svg += '<line x1="' + pad + '" y1="' + py(t.Mmax).toFixed(1) + '" x2="' + (W - pad) + '" y2="' + py(t.Mmax).toFixed(1) + '" stroke="#f59e0b" stroke-dasharray="4 3"/>';
+      svg += '<text x="' + (W - pad - 4) + '" y="' + (py(t.Mmax) - 4).toFixed(1) + '" font-size="10" fill="#b45309" text-anchor="end">M_max=' + fmt(t.Mmax, 3) + '</text>';
+      svg += '<line x1="' + pad + '" y1="' + py(t.Mmin).toFixed(1) + '" x2="' + (W - pad) + '" y2="' + py(t.Mmin).toFixed(1) + '" stroke="#10b981" stroke-dasharray="4 3"/>';
+      svg += '<text x="' + (W - pad - 4) + '" y="' + (py(t.Mmin) - 4).toFixed(1) + '" font-size="10" fill="#0f766e" text-anchor="end">M_min=' + fmt(t.Mmin, 3) + '</text>';
+      svg += '<polyline fill="none" stroke="#2563eb" stroke-width="2" points="' + poly + '"/>';
+      svg += '<text x="' + px(n - 1) + '" y="' + (H - pad + 14) + '" font-size="10" fill="#6b7280" text-anchor="end">fn = fsw/fr</text>';
+      svg += '<text x="' + pad + '" y="' + (pad - 8) + '" font-size="10" fill="#6b7280">M(fn)（Q=' + fmt(t.Q, 3) + ', k=' + fmt(t.k, 1) + '）</text>';
+      svg += '</svg>';
+      th += '<h3>增益曲线</h3>' + svg + '<div class="hint" style="margin-top:6px">峰值 ' + fmt(t.Mpeak, 3) + ' @ fn=' + fmt(t.fnPeak, 3) +
+        '；轻载降增益需升频到 fn≈' + fmt(t.fnHighLight, 2) + '（' + fmt(t.fMaxLight_kHz, 0) + ' kHz）；FHA 渐近最小增益 k/(k+1) = ' + fmt(t.mMinAsymptote, 3) +
+        '；所需 Lr/Lm = 1/k = ' + fmt(t.LrOverLm * 100, 1) + '%（可部分由变压器漏感实现，夹层绕法漏感通常为 Lm 的 0.3%~2%）。</div>';
       $('tankTable').innerHTML = th;
     }
     var html = '<table><thead><tr><th style="width:22%">步骤</th><th style="width:38%">公式</th><th>代入数值</th></tr></thead><tbody>';
@@ -1327,6 +1568,156 @@ var TD = (function () {
     });
   }
   function renderFormulas() {
+    /* ---------- 设计报告（可打印）与方案对比 ---------- */
+    function buildReport(r) {
+      if (!r || !r.ok) return '<p>无有效结果。</p>';
+      var s = r.summary, rows = [];
+      function kv(k, v) { return '<tr><td style="width:34%">' + esc(k) + '</td><td><b>' + esc(v) + '</b></td></tr>'; }
+      var h = '<h2>变压器设计报告</h2><p style="font-size:12px;color:#555">由变压器快速设计/校核工具 v2 生成（' +
+        new Date().toLocaleString() + '）。结论以样机实测为准。</p>';
+      h += '<h3>1. 输入</h3><table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;font-size:13px">';
+      [['拓扑', s.topologyLabel], ['Vin_min / Vin_max (V)', r.inputs.vinMin + ' / ' + r.inputs.vinMax],
+       ['Vout / Iout (A)', r.inputs.vout + ' V / ' + r.inputs.iout + ' A'],
+       ['Fs (kHz) / η', r.inputs.fs + ' / ' + r.inputs.eta],
+       ['磁芯 / 材质', r.inputs.coreModelHint || (r.inputs.ae + ' mm² / ' + r.inputs.bsat100 + ' T')],
+       ['磁复位方式', r.summary.resetMode === 'cap' ? '电容谐振复位（初级并联电容）' : '复位绕组'],
+       ['绕组', 'Np=' + s.Np + ' / Ns=' + s.Ns + '（并联 P' + r.inputs.parP + ' / S' + r.inputs.parS + '）'],
+       ['线材', 'P ' + fmt(s.wirePd, 3) + 'mm×' + s.wirePstrands + ' 股；S ' + fmt(s.wireSd, 3) + 'mm×' + s.wireSstrands + ' 股']
+      ].forEach(function (x) { h += kv(x[0], x[1]); });
+      h += '</table><h3>2. 计算结果</h3><table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;font-size:13px">';
+      [['占空比 D(Vin_min) / D(Vin_max)', fmt(s.dNeedMin, 4) + ' / ' + fmt(s.dNeedMax, 4)],
+       ['峰值/有效值电流（原边）', fmt(s.IpkPri, 2) + ' A / ' + fmt(s.IrmsPri, 2) + ' A'],
+       ['副边峰值/有效值', fmt(s.IsPkSec, 2) + ' A / ' + fmt(s.IrmsSec, 2) + ' A'],
+       ['ΔB_pp / Bpk（限值）', fmt(s.dBpp, 3) + ' / ' + fmt(s.Bpk, 3) + ' T（' + fmt(s.BsatAllow, 3) + ' T）'],
+       ['电感 / AL / 气隙', (r.T.kind === 'flyback' ? fmt(s.LpUH, 2) + ' µH' : fmt(s.LmUH, 1) + ' µH') + ' / ' + fmt(s.ALreqNh || s.ALusedNh, 0) + ' nH/N² / ' + (r.T.kind === 'flyback' ? fmt(s.gapMm, 3) + ' mm' : '—')],
+       ['窗口填充率 / 电流密度', fmt(s.fillPct, 1) + '% / Jp ' + fmt(s.Jpri, 2) + ' Js ' + fmt(s.Jsec, 2) + ' A/mm²'],
+       ['DCR@25°C（并联值／单绕组）', fmt(s.RdcPri25Ohm * 1000, 1) + '／' + fmt(s.RdcPri25Ohm * 1000 * r.inputs.parP, 1) + ' mΩ（原边）'],
+       ['损耗 / 温升', 'Pcu ' + fmt(s.Pcu, 3) + ' W，Pcore ' + fmt(s.Pcore, 3) + ' W → ΔT ' + fmt(s.dT, 1) + ' K'],
+       ['满足目标温升所需 Rth', (isFinite(s.RthMax) ? fmt(s.RthMax, 1) : '—') + ' K/W']
+      ].forEach(function (x) { h += kv(x[0], x[1]); });
+      if (s.capReset) h += kv('电容谐振复位', 'C ≤ ' + fmt(s.capReset.crMaxNf, 2) + ' nF（取 ' + fmt(s.capReset.crNf, 2) + '），V_励磁 ' + fmt(s.capReset.vResetPk, 1) + ' V + V_漏感 ' + fmt(s.capReset.dVLk, 1) + ' V → Vds,pk ' + fmt(s.capReset.vdsPk, 1) + ' V');
+      if (s.outStage && s.outStage.LoutUH) h += kv('输出电感', fmt(s.outStage.LoutUH, 2) + ' µH / ' + s.outStage.LoutN + ' 匝，Bpk ' + fmt(s.outStage.LoutBpk, 3) + ' T，气隙 ' + fmt(s.outStage.LoutGap, 3) + ' mm');
+      if (s.outStage && s.outStage.naux) h += kv('辅助绕组', s.outStage.naux + ' 匝 → V_aux ≈ ' + fmt(s.outStage.auxV, 2) + ' V，DCR ' + fmt(s.outStage.auxRdc25 * 1000, 0) + ' mΩ');
+      if (s.llcTank) h += kv('LLC 谐振腔', 'Lr ' + fmt(s.llcTank.LrUH, 2) + ' µH，Cr ' + fmt(s.llcTank.CrNf, 1) + ' nF，Lm_req ' + fmt(s.llcTank.LmReqUH, 1) + ' µH，Q ' + fmt(s.llcTank.Q, 3) + '，增益裕量 ' + fmt(s.llcTank.gainMargin, 2) + '×');
+      h += '</table><h3>3. 校核清单</h3><table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;font-size:13px">';
+      r.checks.forEach(function (c) {
+        var v = (typeof c.value === 'number') ? fmt(c.value, Math.abs(c.value) < 1 ? 4 : 2) : c.value;
+        var l = (typeof c.limit === 'number') ? fmt(c.limit, Math.abs(c.limit) < 1 ? 4 : 2) : c.limit;
+        h += '<tr><td>' + esc(c.name) + '</td><td>' + esc(v) + ' ' + esc(c.unit) + '</td><td>' + esc(l) + ' ' + esc(c.limitUnit) + '</td><td><b>' +
+          (c.pass === false ? '不通过' : (c.warn ? '接近上限' : '通过')) + '</b></td></tr>';
+      });
+      h += '</table><h3>4. 结论</h3><p style="font-size:14px"><b>' + esc(s.verdict) + '</b>（硬性不通过 ' + s.hardFail + ' 项，接近上限 ' + s.softWarn + ' 项）</p>';
+      if (r.warns.length) h += '<h3>5. 提示</h3><ul style="font-size:13px">' + r.warns.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>';
+      return h;
+    }
+    function openReport() {
+      var html = buildReport(lastResult);
+      try {
+        var w = window.open('', '_blank');
+        if (!w) { coreLibMsg('浏览器拦截了弹出窗口，请允许弹窗后重试。'); return; }
+        w.document.write('<html><head><meta charset="utf-8"><title>变压器设计报告</title></head><body style="font-family:Segoe UI,Microsoft YaHei;padding:24px">' + html + '</body></html>');
+        w.document.close();
+        w.print();
+      } catch (e) { coreLibMsg('生成报告失败：' + (e.message || e)); }
+    }
+    function parseVariants(text) {
+      var out = [];
+      String(text || '').split(/\r?\n/).forEach(function (line) {
+        if (!line.trim()) return;
+        var p = line.split(',').map(function (x) { return x.trim(); });
+        var v = { name: p[0] || ('方案' + (out.length + 1)) };
+        if (p[1]) v.npGiven = parseFloat(p[1]);
+        if (p[2]) v.nsGiven = parseFloat(p[2]);
+        if (p[3]) v.alNh = parseFloat(p[3]);
+        if (p[4]) v.nlGiven = parseFloat(p[4]);
+        if (p[5]) v.lmGiven = parseFloat(p[5]);
+        if (p[6]) v.naux = parseFloat(p[6]);
+        if (p[7]) { v.wireModeP = 'mm'; v.wireDiaP = parseFloat(p[7]); }
+        if (p[8]) { v.wireModeP = 'mm'; v.strandsP = parseFloat(p[8]); }
+        if (p[9]) { v.wireModeP = 'mm'; v.parP = parseFloat(p[9]); }
+        if (p[10]) { v.wireModeS = 'mm'; v.wireDiaS = parseFloat(p[10]); }
+        if (p[11]) { v.wireModeS = 'mm'; v.strandsS = parseFloat(p[11]); }
+        if (p[12]) { v.wireModeS = 'mm'; v.parS = parseFloat(p[12]); }
+        if (v.npGiven && v.nsGiven) v.auditMode = '1';
+        out.push(v);
+      });
+      return out;
+    }
+    function runCompare() {
+      var variants = parseVariants($('cmpInput').value);
+      if (!variants.length) { coreLibMsg('对比失败：至少填一行（名称,Np,Ns,AL,…）。'); return; }
+      var baseI = readInputs();
+      var results = variants.map(function (v) {
+        var name = v.name; var over = Object.assign({}, v); delete over.name;
+        return { name: name, r: TD.design(Object.assign({}, baseI, over)) };
+      });
+      var cols = ['结论', 'Np/Ns', 'Lm/Lp (µH)', 'Bpk (T)', '填充 %', '原边 DCR (mΩ,单绕组)', '副边 DCR (mΩ,单绕组)', '温升 (K)', '硬性不通过', '提示'];
+      var h = '<table><thead><tr><th>项目</th>' + results.map(function (x) { return '<th>' + esc(x.name) + '</th>'; }).join('') + '</tr></thead><tbody>';
+      function row(label, fn) { return '<tr><td>' + label + '</td>' + results.map(function (x) { return '<td>' + fn(x.r) + '</td>'; }).join('') + '</tr>'; }
+      h += row('<b>结论</b>', function (r) { return '<span class="status ' + r.summary.verdictClass + '">' + esc(r.summary.verdict) + '</span>'; });
+      h += row('Np / Ns', function (r) { return r.summary.Np + ' / ' + r.summary.Ns; });
+      h += row('Lm（变压器）/ 输出电感 (µH)', function (r) { return fmt(r.summary.LmUH, 1) + ' / ' + (r.summary.outStage ? fmt(r.summary.outStage.LoutUH, 1) : '—'); });
+      h += row('Bpk / 限值 (T)', function (r) { return fmt(r.summary.Bpk, 3) + ' / ' + fmt(r.summary.BsatAllow, 3); });
+      h += row('窗口填充率 (%)', function (r) { return fmt(r.summary.fillPct, 1); });
+      h += row('原边 DCR 单绕组 (mΩ)', function (r) { return fmt(r.summary.RdcPri25Ohm * 1000 * r.inputs.parP, 1); });
+      h += row('副边 DCR 单绕组 (mΩ)', function (r) { return fmt(r.summary.RdcSec25Ohm * 1000 * r.inputs.parS, 1); });
+      h += row('输出电感 Bpk (T)', function (r) { return r.summary.outStage && r.summary.outStage.LoutBpk ? fmt(r.summary.outStage.LoutBpk, 3) : '—'; });
+      h += row('辅助电压 (V)', function (r) { return r.summary.outStage && r.summary.outStage.naux ? fmt(r.summary.outStage.auxV, 2) : '—'; });
+      h += row('温升 ΔT (K)', function (r) { return fmt(r.summary.dT, 1); });
+      h += row('硬性不通过项', function (r) { return String(r.summary.hardFail); });
+      h += row('未通过项名称', function (r) { return esc(r.checks.filter(function (c) { return c.pass === false; }).map(function (c) { return c.name; }).join('；') || '—'); });
+      h += '</tbody></table>';
+      $('cmpTable').innerHTML = h;
+    }
+    function savePreset() {
+      try {
+        var name = ($('presetName').value || '').trim() || ('方案' + new Date().toLocaleString());
+        if (!window.localStorage) { coreLibMsg('本浏览器不支持 localStorage。'); return; }
+        var all = JSON.parse(window.localStorage.getItem('tde_designs') || '{}');
+        all[name] = readInputs();
+        window.localStorage.setItem('tde_designs', JSON.stringify(all));
+        refreshPresetList();
+        coreLibMsg('已保存方案：' + name);
+      } catch (e) { coreLibMsg('保存失败：' + (e.message || e)); }
+    }
+    function refreshPresetList(sel) {
+      var el = $('presetList');
+      el.innerHTML = '';
+      try {
+        var all = JSON.parse((window.localStorage && window.localStorage.getItem('tde_designs')) || '{}');
+        Object.keys(all).forEach(function (k) {
+          var o = document.createElement('option'); o.value = k; o.textContent = k; el.appendChild(o);
+        });
+        if (sel) el.value = sel;
+      } catch (e) { /* ignore */ }
+    }
+    function loadPreset() {
+      try {
+        var all = JSON.parse((window.localStorage && window.localStorage.getItem('tde_designs')) || '{}');
+        var d = all[$('presetList').value];
+        if (!d) { coreLibMsg('没有选中已保存的方案。'); return; }
+        Object.keys(d).forEach(function (k) {
+          var node = document.getElementById(k);
+          if (node && typeof d[k] !== 'object') node.value = d[k];
+        });
+        render();
+        coreLibMsg('已读取方案：' + $('presetList').value);
+      } catch (e) { coreLibMsg('读取失败：' + (e.message || e)); }
+    }
+    function loadMyBoard() {
+      var v = { topology: 'Forward', vinMin: 18, vinMax: 36, vout: 19, iout: 3.947, fs: 200, vf: 0.5, eta: 0.9,
+        dutyMax: 0.65, deltaBTarget: 0.2, bsatDerate: 0.8, resetMode: 'cap', auditMode: '1', npGiven: 12, nsGiven: 23,
+        alNh: 1146, ae: 52, le: 32, aw: 38, mlt: 34, corePreset: 'EPC19', matPreset: 'PC40',
+        wireModeP: 'mm', wireDiaP: 0.4, strandsP: 2, parP: 2, wireModeS: 'mm', wireDiaS: 0.2, strandsS: 2, parS: 3,
+        nlGiven: 38, lmGiven: 145, naux: 25, nlDia: 0.25, nlStrands: 1, nlPar: 4, vdsRated: 250, lkUh: 0.8,
+        dcrLimitP: 32, ripplePct: 1, esrOhm: 0.01, rdsOnMOhm: 10, rth: 28, dtTarget: 40, tamb: 40, kPack: 1.25, kuMax: 0.4, jTarget: 4 };
+      Object.keys(v).forEach(function (k) {
+        var node = document.getElementById(k);
+        if (node) node.value = v[k];
+      });
+      render();
+      coreLibMsg('已载入 19V/75W 板（1号 12T/23T + 电容复位；2号 38T 输出电感 + 25T 辅助）。工作点与漏感请按实测修改。');
+    }
     var rows = [
       ['Flyback / 反激', 'Vo = Vin·D/((1-D)·n)', 'ΔB = Lp·ΔI/(Np·Ae) = Vin·D/(Np·Ae·Fs)', '单极性，Bpk=ΔB；D 为开关导通占空比；Lp 由 ΔI/Ipk 决定'],
       ['Active Clamp Flyback', 'Vo ≈ Vin·D/((1-D)·n)', '同反激（钳位电容提供复位）', '单极性，Bpk=ΔB；漏感能量由钳位回路吸收'],
@@ -1340,6 +1731,10 @@ var TD = (function () {
     rows.forEach(function (r) { html += '<tr><td>' + esc(r[0]) + '</td><td class="mono">' + esc(r[1]) + '</td><td class="mono">' + esc(r[2]) + '</td><td>' + esc(r[3]) + '</td></tr>'; });
     html += '</tbody></table>';
     $('formulaTable').innerHTML = html;
+    /* 把报告/对比/保存这些工具函数暴露给 init 里的按钮（render 之后才存在，故延迟查找） */
+    window.__TD_UI__ = { buildReport: buildReport, openReport: openReport, runCompare: runCompare,
+      savePreset: savePreset, loadPreset: loadPreset, loadMyBoard: loadMyBoard,
+      refreshPresetList: refreshPresetList, parseVariants: parseVariants };
   }
   function showError(msg) {
     var b = $('errBox');
@@ -1581,6 +1976,13 @@ var TD = (function () {
     });
     $('resetBtn').addEventListener('click', resetForm);
     $('exportBtn').addEventListener('click', exportCSV);
+    function ui(fn) { return function () { var u = window.__TD_UI__; if (u && typeof u[fn] === 'function') u[fn](); }; }
+    $('cmpBtn').addEventListener('click', ui('runCompare'));
+    $('reportBtn').addEventListener('click', ui('openReport'));
+    $('saveBtn').addEventListener('click', ui('savePreset'));
+    $('loadBtn').addEventListener('click', ui('loadPreset'));
+    $('myBoardBtn').addEventListener('click', ui('loadMyBoard'));
+    try { if (window.localStorage) { var u0 = window.__TD_UI__; } } catch (e) { /* ignore */ }
     render();
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', render);
     window.addEventListener('load', render);

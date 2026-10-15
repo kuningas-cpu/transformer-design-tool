@@ -66,7 +66,15 @@ let TD = null;
 try { TD = new Function(engineSrc + '\n;return TD;')(); ok('engine parses in Node', !!TD); }
 catch (e) { ok('engine parses in Node', false, e.message); }
 let uiCompiles = false;
-try { new Function(uiSrc); uiCompiles = true; } catch (e) { uiCompiles = false; }
+try { new Function(uiSrc); uiCompiles = true; } catch (e) {
+  uiCompiles = false;
+  try {
+    fs.writeFileSync('_ui_syntax_check.js', uiSrc);
+    const out = require('node:child_process').execFileSync('node', ['--check', '_ui_syntax_check.js'], { encoding: 'utf8' });
+  } catch (e2) {
+    console.log('  UI syntax error detail:\n' + String(e2.stdout || e2.stderr || e2.message).split('\n').slice(0, 12).join('\n'));
+  }
+}
 ok('UI script compiles (syntax)', uiCompiles);
 
 const htmlIds = new Set([...html.matchAll(/id="([^"]+)"/g)].map((m) => m[1]));
@@ -770,6 +778,98 @@ if (process.argv.includes('--dump')) {
 
 /* ---------------- 23. 电容谐振复位（正激，无复位绕组）+ 2号变压器(输出电感+辅助绕组) ---------------- */
 /* ---------------- 24. 第三方数据交叉验证：第二家供应商（鼎铖 03-56319-01/-02） ---------------- */
+/* ---------------- 25. 本轮优化项 ---------------- */
+header('25 optimisation batch: DCM / AC front-end / leakage / window / inductor / LLC / UI tools');
+{
+  /* --- 真 DCM：用很小的 AL（大间隙）让工作点进入 DCM --- */
+  let dcmCase = null;
+  for (const al of [30, 60, 100, 150, 200]) {
+    const rr = TD.design(baseInputs({ alNh: al }));
+    if (rr.points.vinMin.DCM || rr.points.vinMax.DCM) { dcmCase = { al: al, r: rr }; break; }
+  }
+  ok('a DCM operating point is reachable (small AL / big gap)', !!dcmCase, dcmCase ? ('AL=' + dcmCase.al) : '未找到');
+  if (dcmCase) {
+    const r = dcmCase.r, p = r.points.vinMin, s = r.summary;
+    ok('DCM self-consistency (energy / reset time / charge balance)', r.self.every((x) => x.pass), JSON.stringify(r.self.filter((x) => !x.pass).map((x) => x.name + '=' + x.err)));
+    const Lp = s.LpUH * 1e-6, Fs = r.inputs.fs * 1000;
+    close(p.D, Math.min(Math.sqrt(2 * s.Pin * Lp * Fs) / p.Vin, 0.95), 1e-9, 'DCM duty D = √(2·Pin·Lp·Fs)/Vin');
+    close(p.IpkPri, p.Vin * p.D / (Lp * Fs), 1e-9, 'DCM peak Ipk = Vin·D/(Lp·Fs)');
+    const Vr = s.Vo * s.n, tr = Math.min(Lp * p.IpkPri / Vr * Fs, 1 - p.D);
+    close(p.trFrac, tr, 1e-9, 'DCM reset-time fraction tr/T');
+    close(p.IrmsPri, p.IpkPri * Math.sqrt(p.D / 3), 1e-9, 'DCM primary RMS = Ipk·√(D/3)');
+    ok('DCM valley is exactly zero', p.Ivalley === 0);
+    ok('DCM mode reported in the check list', r.checks.some((c) => /工作模式/.test(c.name) && /DCM/.test(String(c.value))));
+  }
+  /* --- 电容复位的漏感项 --- */
+  const fwBase = { topology: 'Forward', vinMin: 18, vinMax: 36, vout: 19, iout: 3.947, fs: 200,
+    auditMode: '1', npGiven: 12, nsGiven: 23, alNh: 1146, ae: 52, le: 32, aw: 38, mlt: 34, resetMode: 'cap' };
+  const withLk = TD.design(baseInputs(Object.assign({}, fwBase, { lkUh: 0.8 })));
+  const noLk = TD.design(baseInputs(fwBase));
+  const cr1 = withLk.summary.capReset, cr0 = noLk.summary.capReset;
+  close(cr1.dVLk, (withLk.inputs.iout + withLk.inputs.rippleLout / 2) / withLk.summary.n * Math.sqrt(0.8e-6 / (cr1.crNf * 1e-9)), 1e-9, 'leakage spike ΔV = I_design·√(Lk/C)');
+  close(cr1.vdsPk, 36 + cr1.vResetPk + cr1.dVLk, 1e-12, 'Vds,pk = Vin_max + V_res + ΔV_leak');
+  ok('without leakage the tool warns Vds is under-estimated', cr0.dVLk === 0 && noLk.warns.some((w) => /漏感/.test(w)));
+  ok('leakage materially raises the stress', cr1.vdsPk > cr0.vdsPk + 50, cr0.vdsPk.toFixed(0) + ' → ' + cr1.vdsPk.toFixed(0) + ' V');
+  /* --- 窗口 + 挡墙胶带 --- */
+  const win = TD.design(baseInputs(Object.assign({}, fwBase, { awW: 20, awH: 4.0, marginMm: 1.5 })));
+  const awEff = (20 - 2 * 1.5) * 4.0;
+  close(win.summary.fillPct, win.summary.copperTotal * win.inputs.kPack / awEff * 100, 1e-9, 'fill uses (window width − 2·margin)·height');
+  const winNoWH = TD.design(baseInputs(Object.assign({}, fwBase, { marginMm: 1.5 })));
+  ok('margin without window dimensions warns', winNoWH.warns.some((w) => /挡墙/.test(w)));
+  /* --- 输出电感：自己的线径/股数/并联 + 辅助绕组铜面积 --- */
+  const ind = TD.design(baseInputs(Object.assign({}, fwBase, { nlGiven: 38, lmGiven: 145, naux: 25, nlDia: 0.25, nlStrands: 1, nlPar: 4 })));
+  const os = ind.summary.outStage;
+  close(os.LoutPar, 4, 1e-9, 'output inductor parallel = 4 (38T×4 as built)');
+  const Apar = Math.PI / 4 * 0.25 * 0.25 * 1 * 4;
+  close(os.LoutRdc25, TD.rhoCu(25) * (ind.inputs.mlt * 1e-3) * 38 / (Apar * 1e-6), 1e-9, 'inductor DCR from its own wire × strands × parallel');
+  ok('single-winding DCR ≈ DCE spec 433 mΩ (within 15%)', Math.abs(os.LoutRdc25 * 4 * 1000 - 433) / 433 < 0.15, (os.LoutRdc25 * 4 * 1000).toFixed(0) + ' mΩ');
+  close(os.LoutCopper, 38 * Apar + 25 * (Math.PI / 4 * 0.0625), 1e-9, 'inductor window copper includes the 25T aux winding');
+  ok('inductor window check present', ind.checks.some((c) => /输出电感窗口填充率/.test(c.name)));
+  /* --- 交流前端 --- */
+  const ac = TD.design(baseInputs(Object.assign({}, fwBase, { acMode: 'ac', vacMin: 176, vacMax: 264, fline: 50, cbusUf: 220, holdMs: 20, holdVmin: 200 })));
+  const af = ac.summary.acFront;
+  ok('AC mode overrides Vin_min/Vin_max with the bus', ac.inputs.vinMin === af.vValley && ac.inputs.vinMax === af.vpkMax, ac.inputs.vinMin.toFixed(1) + '~' + ac.inputs.vinMax.toFixed(1) + ' V');
+  close(af.vpkMin, Math.SQRT2 * 176 - 2 * 1.4, 1e-9, 'V_pk = √2·Vac_min − 2·Vf_bridge');
+  close(af.pInCheck, ac.summary.Pin, 0.15, 'bus simulator energy balance ≈ Pin');
+  close(af.vAtHold, Math.sqrt(Math.max(af.vpkMin ** 2 - 2 * ac.summary.Pin * 0.02 / 220e-6, 0)), 1e-9, 'hold-up V2 = √(Vpk² − 2Pt/C)');
+  close(af.cReqUf, 2 * ac.summary.Pin * 0.02 / (af.vpkMin ** 2 - 200 ** 2) * 1e6, 1e-9, 'required bus capacitance');
+  ok('hold-up check present', ac.checks.some((c) => /母线保持时间/.test(c.name)));
+  const acBig = TD.design(baseInputs(Object.assign({}, fwBase, { acMode: 'ac', vacMin: 176, vacMax: 264, fline: 50, cbusUf: 4700 })));
+  close(acBig.summary.acFront.pInCheck, acBig.summary.Pin, 0.15, 'big-cap: simulator energy balance also holds');
+  ok('bigger bus capacitor reduces the ripple (monotonic)',
+    acBig.summary.acFront.ripple < ac.summary.acFront.ripple, ac.summary.acFront.ripple.toFixed(1) + ' V → ' + acBig.summary.acFront.ripple.toFixed(1) + ' V');
+  /* 把源阻降到接近理想，仿真应逼近解析式 I/(2fC)——这才是对仿真本身的有效验证 */
+  const acIdeal = TD.design(baseInputs(Object.assign({}, fwBase, { acMode: 'ac', vacMin: 176, vacMax: 264, fline: 50, cbusUf: 4700, rsAc: 0.04, cbusEsr: 0.01 })));
+  const iLoad = acIdeal.summary.Pin / acIdeal.summary.acFront.vValley;
+  const ideal = iLoad / (2 * 50 * 4700e-6);
+  close(acIdeal.summary.acFront.ripple, ideal, 0.6, 'with a near-ideal source the simulator approaches I/(2fC) (±60%)');
+  ok('series resistance makes the ripple larger than the ideal bound (as physics dictates)',
+    acBig.summary.acFront.ripple > acIdeal.summary.acFront.ripple, acBig.summary.acFront.ripple.toFixed(2) + ' V (R=0.8Ω) vs ' + acIdeal.summary.acFront.ripple.toFixed(2) + ' V (R=0.05Ω)');
+  ok('bus valley is below the peak and above zero', acBig.summary.acFront.vValley > 0 && acBig.summary.acFront.vValley < acBig.summary.acFront.vpkMin);
+  const pfc = TD.design(baseInputs(Object.assign({}, fwBase, { acMode: 'pfc', pfcBus: 390 })));
+  ok('PFC mode sets a regulated bus', Math.abs(pfc.inputs.vinMin - 390 * 0.98) < 1e-9 && pfc.ok === true);
+  /* --- LLC 补充项 --- */
+  const l25 = TD.design(baseInputs({ topology: 'LLC Resonant', vinMin: 380, vinMax: 420, vinNom: 400, vout: 12, iout: 10, llcFr: 100, llcK: 5, crRated: 400 }));
+  close(l25.tank.mMinAsymptote, l25.tank.k / (l25.tank.k + 1), 1e-12, 'FHA asymptotic minimum gain k/(k+1)');
+  close(l25.tank.LrOverLm, 1 / l25.tank.k, 1e-12, 'required Lr/Lm = 1/k');
+  ok('light-load gain-limit check present', l25.checks.some((c) => /高线轻载可降增益/.test(c.name)));
+  ok('Cr voltage-rating check present when given', l25.checks.some((c) => /谐振电容耐压/.test(c.name)));
+  /* --- UI 工具 --- */
+  ok('report builder exposed', typeof windowStub.__TD_UI__.buildReport === 'function');
+  const rep = windowStub.__TD_UI__.buildReport(windowStub.__TD_LAST__());
+  ok('report has inputs/results/checks/verdict', /设计报告/.test(rep) && /输入/.test(rep) && /计算结果/.test(rep) && /校核清单/.test(rep) && /结论/.test(rep));
+  const vars = windowStub.__TD_UI__.parseVariants('A家,12,23,1146,38,145,25,0.4,2,2,0.2,2,3\nB家,12,23,1038,38,148,25,0.4,2,2,0.2,2,3');
+  ok('variant parser reads two suppliers', vars.length === 2 && vars[0].name === 'A家' && vars[0].alNh === 1146 && vars[1].alNh === 1038 && vars[0].naux === 25);
+  dom.cmpInput.value = 'A家,12,23,1146,38,145,25,0.4,2,2,0.2,2,3\nB家,12,23,1038,38,148,25,0.4,2,2,0.2,2,3';
+  windowStub.__TD_UI__.runCompare();
+  ok('comparison table rendered for both suppliers', /A家/.test(dom.cmpTable.innerHTML) && /B家/.test(dom.cmpTable.innerHTML) && /结论/.test(dom.cmpTable.innerHTML));
+  windowStub.__TD_UI__.loadMyBoard();
+  ok('"my board" preset loads the 19V/75W forward', dom.topology.value === 'Forward' && Number(dom.vout.value) === 19 && dom.resetMode.value === 'cap' && Number(dom.nlGiven.value) === 38 && Number(dom.lkUh.value) === 0.8);
+  let saveOk = true;
+  try { windowStub.__TD_UI__.savePreset(); windowStub.__TD_UI__.loadPreset(); } catch (e) { saveOk = false; }
+  ok('save/load preset tolerates a missing localStorage', saveOk);
+}
+
 header('24 second supplier (DCE 03-56319) — independent data against the same model');
 {
   /* B 家 1 号：与 A 家同结构（6-7/5-8 12T×0.40mm×2P，1-12/2-11/3-10 23T×0.20mm×2P），AL=149.5µH/12²=1038 nH/N²，
@@ -822,7 +922,9 @@ header('23 forward with capacitor reset + transformer #2 as output inductor/aux'
   ok('D may exceed 0.5 in capacitor-reset mode', s.dNeedMin <= 0.70 + 1e-9 && !r.checks.some((c) => /^Vin_min 所需占空比/.test(c.name) && c.pass === false), 'D=' + s.dNeedMin.toFixed(3));
   ok('reset capacitor block exists', !!cr && cr.crNf > 0);
   const Lm = s.LmUH * 1e-6, Fs = base.fs * 1000;
-  close(cr.crMaxNf, Math.pow(1 - s.dDesign, 2) / (Math.PI * Math.PI * Lm * Fs * Fs) * 1e9, 1e-9, 'C_max = (1-D)²/(π²·Lm·Fs²)');
+  close(cr.crMaxNf, Math.pow(1 - s.dNeedMin, 2) / (Math.PI * Math.PI * Lm * Fs * Fs) * 1e9, 1e-9, 'C_max 用实际工作占空比 D(Vin_min) 计算');
+  close(cr.dMaxUsed, s.dNeedMin, 1e-12, 'reset sizing uses the achieved duty, not the raw D_max input');
+  close(cr.vResetClosed, Math.PI * s.n * s.Vo / (1 - s.dNeedMin), 1e-9, 'closed form V_res,pk = π·n·Vo/(1-D)');
   close(cr.vResetPk, s.n * s.Vo / Fs / Math.sqrt(Lm * cr.crNf * 1e-9), 1e-9, 'V_res,pk = n·Vo·T/√(Lm·C)');
   close(cr.vdsPk, base.vinMax + cr.vResetPk, 1e-12, 'Vds,pk = Vin_max + V_res,pk');
   ok('switch-stress check present (100 V device)', r.checks.some((c) => /开关管电压应力/.test(c.name)), 'Vds=' + cr.vdsPk.toFixed(1));
