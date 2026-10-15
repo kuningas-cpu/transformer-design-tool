@@ -1866,7 +1866,8 @@ var TD = (function () {
       var vSecOff = vResPkMax / Math.max(n, 1e-9) + s.Vo;        /* 整流管关断时承受的副边电压（复位期反射 + 输出） */
       var vrRect = 1.2 * vSecOff;
       row('副边整流二极管 反向电压', 'Vr ≥ 1.2×耐压需求', (pickClass(vrRect, [20, 30, 40, 45, 60, 80, 100, 120, 150, 200, 250, 300, 400, 600]) || Math.ceil(vrRect)) + ' V',
-        '关断期副边承受 V_res,pk/n + Vo = ' + (vResPkMax / Math.max(n, 1e-9)).toFixed(0) + ' + ' + s.Vo.toFixed(1) + ' = ' + vSecOff.toFixed(0) + ' V，再留 20%');
+        '关断期副边承受 V_res,pk/n + Vo = ' + (vResPkMax / Math.max(n, 1e-9)).toFixed(0) + ' + ' + s.Vo.toFixed(1) + ' = ' + vSecOff.toFixed(0) +
+        ' V，再留 20%（原板用的是 200 V 的 STPR1620CT 共阴双管 = 整流 + 续流，余量比这里更足）');
       row('副边整流二极管 电流', 'I_F(AV) ≥ Iout，I_FSM ≥ 1.5×Is_pk', 'AV ' + I.iout.toFixed(1) + ' A / 浪涌 ' + (1.5 * s.IsPkSec).toFixed(1) + ' A',
         '平均电流 = Iout；峰值 ' + s.IsPkSec.toFixed(1) + ' A（正激类还要减去续流期电流）');
       if (!secTap) {
@@ -2460,8 +2461,10 @@ var TD = (function () {
         if (node) node.value = v[k];
       });
       render();
-      coreLibMsg('已载入 19V/75W 板（1号 12T/23T + 电容复位 1 nF；2号 38T 输出电感 + 25T 辅助；开关管 IRF540N = 100 V 档）。'
-        + '注意：按当前参数，工具判定开关管电压应力超限（C_res = 1 nF 偏小）——请看"校核清单"与"设计步骤→复位电容 C_res 的可行窗口"；漏感 Lk 请按实测修改。');
+      coreLibMsg('已载入 19V/75W 板（原理图 DMK-DCDC-074-TEST1：UC3843AP 电流型 + IRF540N(100 V) + 副边 STPR1620CT(200 V) + EL817/AZ431 隔离反馈；'
+        + '1号 12T/23T + 电容复位；2号 38T 输出电感 + 25T 辅助）。'
+        + '待确认的关键参数：① 直接并联在 T1 初级（或开关 D-S）的那只复位电容的位号与数值（原理图上有 1 nF×5、22 nF、10 nF，'
+        + '其中 1 nF 若真是复位电容，模型会给出 500 V 级峰值——与实板矛盾，所以要按位号确认）；② 实测漏感 Lk；③ 实测效率。');
     }
     var FORMROWS = {
       'Flyback': ['Vo = Vin·D/((1-D)·n)', 'ΔB = Lp·ΔI/(Np·Ae) = Vin·D/(Np·Ae·Fs)', '单极性，Bpk=ΔB；D 为开关导通占空比；Lp 由 ΔI/Ipk 决定'],
