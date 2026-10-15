@@ -1776,12 +1776,15 @@ var TD = (function () {
       } catch (e) { coreLibMsg('读取失败：' + (e.message || e)); }
     }
     function loadMyBoard() {
+      /* 推荐值见 parameter_reference.md（§L）：按承认书与两家供应商数据整理的可用起点 */
       var v = { topology: 'Forward', vinMin: 18, vinMax: 36, vout: 19, iout: 3.947, fs: 200, vf: 0.5, eta: 0.9,
         dutyMax: 0.65, deltaBTarget: 0.2, bsatDerate: 0.8, resetMode: 'cap', auditMode: '1', npGiven: 12, nsGiven: 23,
-        alNh: 1146, ae: 52, le: 32, aw: 38, mlt: 34, corePreset: 'EPC19', matPreset: 'PC40',
+        alNh: 0, alLibNh: 1146, lmMeasUh: 165, npMeasN: 12,
+        ae: 52, le: 32, aw: 38, mlt: 38, mltTol: 20, marginMm: 1.5, corePreset: 'EPC19', matPreset: 'PC44',
         wireModeP: 'mm', wireDiaP: 0.4, strandsP: 2, parP: 2, wireModeS: 'mm', wireDiaS: 0.2, strandsS: 2, parS: 3,
         nlGiven: 38, lmGiven: 145, naux: 25, nlDia: 0.25, nlStrands: 1, nlPar: 4, vdsRated: 250, lkUh: 0.8,
-        dcrLimitP: 32, ripplePct: 1, esrOhm: 0.01, rdsOnMOhm: 10, rth: 28, dtTarget: 40, tamb: 40, kPack: 1.25, kuMax: 0.4, jTarget: 4 };
+        dcrLimitP: 32, ripplePct: 1, esrOhm: 0.01, rdsOnMOhm: 10, rth: 28, dtTarget: 40, tamb: 40,
+        kPack: 1.2, kuMax: 0.35, jTarget: 4, acFactor: 1.3, bsat100: 0.39, muI: 2400, pcvRef: 60, lossA: 1.45, lossB: 2.5 };
       Object.keys(v).forEach(function (k) {
         var node = document.getElementById(k);
         if (node) node.value = v[k];
