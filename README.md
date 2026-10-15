@@ -9,8 +9,8 @@
 | 文件 | 说明 |
 |---|---|
 | `transformer_design_tool_v2.html` | 工具本体：输入 + 结果 + 校核清单 + 判决 + 电压扫描 + 设计步骤 + 磁芯对比 + 公式表，支持 CSV 导出 |
-| `verify_transformer_tool_v2.mjs` | 验证脚本：**560 项检查**（结构/首次渲染/物理不变量/手算对照/模糊测试/校核模式/输出级/LLC 谐振腔/电容复位/动态显示/面板顺序/续流管口径/按拓扑生成文字/开关管应力公式/热阻口径/两家供应商交叉验证） |
-| `verify_visibility_browser.mjs` | 真浏览器回归：用无头 Edge/Chrome 打开工具，按 7 组「输入类型 × 拓扑 × 整流器件」场景核对**实际被隐藏的输入项、面板顺序、整流器件选项措辞、公式表是否只列当前拓扑、Vds,pk 步骤行是否只在正激+电容复位时出现、热阻提示文字**（91 项检查；本机没有 Chromium 内核浏览器时自动跳过） |
+| `verify_transformer_tool_v2.mjs` | 验证脚本：**577 项检查**（结构/首次渲染/物理不变量/手算对照/模糊测试/校核模式/输出级/LLC 谐振腔/电容复位/复位电容窗口/动态显示/面板顺序/续流管口径/按拓扑生成文字/开关管应力公式/热阻口径/两家供应商交叉验证） |
+| `verify_visibility_browser.mjs` | 真浏览器回归：用无头 Edge/Chrome 打开工具，按 8 组「输入类型 × 拓扑 × 整流器件 × 耐压档」场景核对**实际被隐藏的输入项、面板顺序、整流器件选项措辞、公式表是否只列当前拓扑、Vds,pk 步骤行、热阻提示、复位电容窗口结论**（109 项检查；本机没有 Chromium 内核浏览器时自动跳过） |
 | `transformer_design_tool_v2_notes.md` | 设计说明：公式与约定、与 v1 的差异清单、适用边界、验证清单、EPC19 核算记录 |
 | `supplier_spec_EPC19_review.md` | 重庆天胜 EPC19（TST1724）承认书参数提取与核算记录 |
 | `supplier_spec_03-56319_review.md` | **第二家供应商（中山鼎铖 DCE）同一板两块变规格对比 + 交叉验证 + UC3843 辅助供电核算** |
@@ -47,7 +47,7 @@
 ## 复现验证
 
 ```
-node verify_transformer_tool_v2.mjs              # 560 项检查，全通过表示归档件完整可运行
+node verify_transformer_tool_v2.mjs              # 577 项检查，全通过表示归档件完整可运行
 node verify_transformer_tool_v2.mjs --diag       # 额外打印默认工况逐项结果与 EPC19 核算明细
 node verify_visibility_browser.mjs               # 真浏览器（无头 Edge/Chrome）核对输入项的动态显示/隐藏
 python make_excel_from_v2_engine.py              # 由同一套公式生成 transformer_design_tool_v2.xlsx
@@ -239,17 +239,48 @@ Excel 反激分支仍 19/19；并用无头浏览器截图人工核对了面板�
 **验证**：新增第 31 组 13 项（ΔT 恒等式、T_热点 恒等式、Rth_max 定义、Rth 翻倍时 ΔT 超线性、环境温度耦合、
 输出电感"同一 Rth 但损耗独立"、步骤行与提示文案），总数 547 → **560 项，0 失败**，真浏览器 91 项全过，Excel 反激分支仍 19/19。
 
+### 第八轮：100 V 开关管（IRF540N）与电容谐振复位的可行性窗口（2026-10-15）
+
+**背景**：板上开关管是 IRF540N（100 V 档），而正激 + 电容谐振复位在 Vin_max = 36 V 下，扣掉 Vin_max 与 0.85 降额后只剩 49 V 留给"复位峰值 + 漏感尖峰"。
+
+**新增能力**：工具现在直接算"复位电容的可行窗口"，把"这个耐压档能不能用"变成可判定的量：
+
+```
+Vds,pk(C) = Vin_max + (A + B)/√C      A = I_m,pk·√Lm（励磁项）, B = I_pk,pri·√Lk（漏感项）
+耐压下限  C ≥ C_min = [(A+B)/(0.85·Vds_rated − Vin_max)]²
+复位上限  C ≤ C_max = [2(1−D(Vin_min))/(π·Fs)]²/Lm        （复位必须在最小关断期内完成）
+窗口为空（C_min > C_max）⇒ 该耐压档不可行
+```
+
+输出：`C_min`、`C_max`、窗口是否为空、**最小可行标准耐压档**（100/150/200/…/1000 V）、同样电容下**允许的最大漏感 Lk_max**；
+新增两条校核行（`C_res ≤ 关断期内复位上限`、`C_res ≥ 耐压要求下限`）与告警；输出级卡片同步显示窗口结论。
+（顺带修掉一个显示 bug：漏感能量告警原先把焦耳当 mJ 打印成"0.000 mJ"，现在是 µJ。）
+
+**本板结果（Lm = 165 µH、Fs = 200 kHz、Vin 18~36 V、D(Vin_min) = 0.565 → C_max = 11.6 nF）**：
+
+| Vin_max | Lk | C_min | C_max | 结论 |
+|---|---|---|---|---|
+| 36 V | 0.8 µH | 52.6 nF | 11.6 nF | **窗口为空：100 V 档不可行，最小可行档 = 200 V** |
+| 36 V | 0.2 µH | 24.1 nF | 11.6 nF | 窗口为空 → 最小可行档 = 150 V |
+| 36 V | ≈ 0 | 6.5 nF | 11.6 nF | 可行，但 C_res 只能落在 6.5~11.6 nF 窄带 |
+
+**要判到底，需要三个实测值**：板上实际的 C_res、实测漏感 Lk、真实 Vin_max（外加是否有 RC 吸收/钳位）。
+注意 `ΔV_Lk` 用的是"漏感能量全部灌进 C_res"的上界（实际有阻尼、二极管换流与雪崩吸收，实测尖峰更低），所以窗口为空 ≠ 一定会炸管，但说明**余量不足、必须实测复核**。
+
+**验证**：新增第 32 组 17 项（窗口下限/上限公式、自动值 = 硬上限 1/4、空窗口判定、最小可行耐压档随漏感变化、C_res 过大导致复位来不及的告警与校核、µJ 单位、输出级卡片），
+真浏览器回归新增"100 V 档窗口为空"场景；总数 560 → **577 项，0 失败**，真浏览器 109 项全过，Excel 反激分支仍 19/19。
+
 ## 归档完整性
 
-归档整理于 2026-10-15，并在归档目录内重新运行验证脚本确认可用：**560 项检查全部通过**
-（真浏览器回归 `verify_visibility_browser.mjs` 另 91 项通过；Excel 反激分支 19/19 逐格一致）。
+归档整理于 2026-10-15，并在归档目录内重新运行验证脚本确认可用：**577 项检查全部通过**
+（真浏览器回归 `verify_visibility_browser.mjs` 另 109 项通过；Excel 反激分支 19/19 逐格一致）。
 校验和（SHA-256，用于日后确认归档件未被改动）：
 
 | 文件 | SHA-256 |
 |---|---|
-| `transformer_design_tool_v2.html` | `CDA651C07414896E0531AD4CE9B9B436E4D4D51FA8421B89E6D7E3BA7A98DC7D` |
-| `verify_transformer_tool_v2.mjs` | `91B86E41D8CE86F16453A7F6982F2C9AC645E9F2A880A92B670B11F19D5AF9D3` |
-| `verify_visibility_browser.mjs` | `24F2D597231184B2E6586C8DD3C54E5B489AB7E78CB3D3C681DC47A49A1A9B3D` |
+| `transformer_design_tool_v2.html` | `17BD61F5949428F3F5CD64C04660E99AD74A60F22C1024B3411D57DEBA9D4966` |
+| `verify_transformer_tool_v2.mjs` | `214948C69AEB728D5DBED43F6AB47A02EABB065D7EA4655CB6AEBAEA6921B734` |
+| `verify_visibility_browser.mjs` | `5F189808F3DEFA0C2ECC3CCA34C6B7325E377C66EA10D95F1FEF0E86DA946FFD` |
 | `supplier_spec_EPC19_review.md` | `3B12F62F67648E77FD4A4CE7DD7401B7E8FF547A844426CE10DAE0B7B84414E6` |
 
 `verify_transformer_tool_v2.mjs` 以脚本自身位置解析工具文件路径，因此归档目录整体移动或改名后仍可直接运行。

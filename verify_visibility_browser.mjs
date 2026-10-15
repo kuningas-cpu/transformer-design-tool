@@ -32,6 +32,10 @@ const hook = `
   var p = raw.split(',');
   window.addEventListener('load', function () {
     var map = { acMode: p[0], topology: p[1], rectDevice: p[2], resetMode: p[3] };
+    for (var i = 4; i < p.length; i++) {
+      var kv = p[i].split('=');
+      if (kv.length === 2) map[kv[0]] = kv[1];
+    }
     Object.keys(map).forEach(function (id) {
       var el = document.getElementById(id);
       if (el && map[id]) el.value = map[id];
@@ -133,6 +137,15 @@ const SCENARIOS = [
     s: 'dc,Push-Pull,sr2,cap', title: '推挽 + 同步整流：中心抽头选择与 SR 参数出现', topoLabel: '推挽 / Push-Pull',
     shown: ['secRect', 'rdsOnMOhm', 'vfBody', 'tDeadNs'].concat(BUCK_ONLY),
     hidden: ['rippleK', 'resetMode', 'vinNom'].concat(AC_ONLY)
+  },
+  {
+    s: 'dc,Forward,diode,cap,vdsRated=100,lkUh=0.8,vinMin=18,vinMax=36,vout=19,iout=3.947',
+    title: '正激 + 电容复位 + 100 V 管（IRF540N）：复位电容窗口为空', topoLabel: '单端正激 / Forward',
+    shown: ['vinMin', 'vinMax', 'resetMode', 'cresNf', 'vdsRated', 'lkUh'].concat(BUCK_ONLY),
+    hidden: ['rippleK', 'secRect'].concat(AC_ONLY, ['pfcBus'], LLC_ONLY, ['rdsOnMOhm', 'vfBody', 'tDeadNs']),
+    vdsRow: true,
+    rectSelect: { has: ['整流管 + 续流管'], notHas: ['无续流管'], sr2Hidden: false, hintHas: ['Buck 型副边'] },
+    vdsWindow: true
   }
 ];
 
@@ -201,6 +214,18 @@ SCENARIOS.forEach((sc) => {
     /Rth 是谁的/.test(rthHint) && /实测反推/.test(rthHint) && /不是器件\/磁芯的数据手册参数/.test(rthHint), rthHint.slice(0, 90));
   check('温升步骤行指明"变压器自身热点→环境"',
     /温升（Rth = 变压器自身/.test(stepRegion) && /Rth_max = ΔT_目标\/P_总/.test(stepRegion), stepRegion.slice(0, 0));
+  /* 复位电容窗口（只有填了开关管耐压才出结论） */
+  if (sc.vdsWindow) {
+    const iChk = dom.indexOf('id="checkTable"'), iChkEnd = dom.indexOf('<h3>', iChk);
+    const chkRegion = (iChk > 0 && iChkEnd > iChk) ? dom.slice(iChk, iChkEnd) : '';
+    const mClass = stepRegion.match(/标准耐压档 = (\d+) V/);
+    check('复位电容窗口行给出"不可行 + 最小可行耐压档（> 100 V）"',
+      /窗口为空：100 V 档/.test(stepRegion) && !!mClass && Number(mClass[1]) > 100, stepRegion.slice(-320));
+    check('校核清单出现"复位电容 ≥ 耐压要求下限"这一行且判不通过',
+      /耐压要求下限/.test(chkRegion) && /bad/.test(chkRegion.split('耐压要求下限')[1] || ''), chkRegion.slice(-260));
+    const osRegion = (() => { const i = dom.indexOf('id="outStage"'); const j = dom.indexOf('<div class="card"', i + 1); return (i > 0 && j > i) ? dom.slice(i, j) : ''; })();
+    check('输出级卡片同步给出窗口结论', /复位电容可行窗口/.test(osRegion) && /窗口为空/.test(osRegion), osRegion.slice(-260));
+  }
   console.log('    hidden = ' + [...hid].join(' '));
 });
 

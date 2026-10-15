@@ -890,12 +890,59 @@ var TD = (function () {
       var iMagPk = dReset * I.vinMin / (Lm * Fs);            /* 励磁电流峰值（关断瞬间） */
       var wMag = 0.5 * Lm * iMagPk * iMagPk;
       var vdsPkVal = I.vinMax + vResetPk + dVLk;
+      /* ---------- 复位电容的可行窗口：耐压要求 C 越大越好，复位时间要求 C 越小越好 ----------
+         Vds,pk(C) = Vin_max + (A + B)/√C ，A = I_m,pk·√Lm（励磁项）, B = I_pk,pri·√Lk（漏感项），两项都 ∝ 1/√C
+         下限：满足 0.85×耐压
+         上限：复位必须在最小关断期内完成（关断期最小 = Vin_min 处 D 最大），t_reset = (π/2)·√(Lm·C) ≤ (1-D)/Fs
+         窗口为空 → 该耐压档在这个 Vin_max / 漏感下不可行 */
+      var vdsA = iMagPk * Math.sqrt(Lm);                     /* 励磁项系数（V·√F） */
+      var lkMaxUh = null;
+      var crMinNf = 0, crWindowEmpty = false;
+      var vdsRoom = vdsRated * 0.85 - I.vinMax;              /* 留给"复位峰值 + 漏感尖峰"的电压 */
+      if (vdsRated > 0) {
+        if (vdsRoom > 1e-9) crMinNf = Math.pow((vdsA + iLkTurn * Math.sqrt(Math.max(lkH, 0))) / vdsRoom, 2) * 1e9;
+        else { crMinNf = Infinity; crWindowEmpty = true; }
+      }
+      var crHardMaxNf = Math.pow(2 * (1 - dReset) / (Math.PI * Fs), 2) / Lm * 1e9;   /* 硬上限（不预留时间余量） */
+      if (vdsRated > 0) {
+        /* 若 C 已取到硬上限，留给漏感的电压还有多少 → 反推允许的最大漏感 */
+        var dVroom = vdsRoom - vdsA / Math.sqrt(crHardMaxNf * 1e-9);
+        lkMaxUh = dVroom > 1e-9 ? Math.pow(dVroom * Math.sqrt(crHardMaxNf * 1e-9) / iDesignPri, 2) * 1e6 : 0;
+        if (crMinNf > crHardMaxNf) crWindowEmpty = true;
+      }
+      /* 在这组 Vin_max / 漏感下，最小可行的标准耐压档（供选型用） */
+      var vdsAB = vdsA + iLkTurn * Math.sqrt(Math.max(lkH, 0));
+      var vdsClassNeed = null;
+      [100, 150, 200, 250, 300, 400, 500, 600, 650, 800, 1000].forEach(function (vc) {
+        if (vdsClassNeed !== null) return;
+        var roomC = vc * 0.85 - I.vinMax;
+        if (roomC > 1e-9 && Math.pow(vdsAB / roomC, 2) * 1e9 <= crHardMaxNf + 1e-9) vdsClassNeed = vc;
+      });
       capReset = { crMaxNf: crMaxNf, crNf: crNf, crAuto: !(cresNf > 0), vResetPk: vResetPk,
         dVLk: dVLk, lkUH: lkUh, wLeak: wLeak, wMag: wMag, wRatio: wMag > 0 ? wLeak / wMag : 0,
         vResetClosed: Math.PI * nAch * Vo / (1 - dReset),
         vdsPk: vdsPkVal, vdsRated: vdsRated, vdsLimit: vdsRated * 0.85,
         iLkPri: iLkTurn, lkUsed: lkH > 0,
+        crMinNf: crMinNf, crHardMaxNf: crHardMaxNf, crWindowEmpty: crWindowEmpty, lkMaxUh: lkMaxUh, vdsRoom: vdsRoom,
+        vdsClassNeed: vdsClassNeed,
         LmUH: Lm * 1e6, dMaxUsed: dReset, dInput: I.dutyMax };
+      /* 警告：窗口为空 / 电容超出窗口 —— 这两条决定"这个耐压档能不能用" */
+      if (vdsRated > 0 && crWindowEmpty) {
+        warns.push('**耐压档不可行**：开关管 ' + vdsRated + ' V × 0.85 = ' + (vdsRated * 0.85).toFixed(1) + ' V，扣掉 Vin_max ' + I.vinMax +
+          ' V 只剩 ' + vdsRoom.toFixed(1) + ' V 给"复位峰值 + 漏感尖峰"，而复位又必须在下个周期前完成（C_res ≤ ' + crHardMaxNf.toFixed(1) +
+          ' nF）→ 即使取到该上限，V_res,pk 也要 ' + (vdsA / Math.sqrt(crHardMaxNf * 1e-9)).toFixed(1) + ' V。' +
+          (crMinNf === Infinity ? '（Vin_max 本身已超过 0.85×耐压）' : '（需要 C_res ≥ ' + crMinNf.toFixed(1) + ' nF，与上限矛盾）') +
+          (lkMaxUh !== null && isFinite(lkMaxUh) ? ' 同样的 C_res 下漏感需 ≤ ' + lkMaxUh.toFixed(3) + ' µH；' : ' ') +
+          (capReset.vdsClassNeed ? '\n本工况在这组 Vin_max 与漏感下，最小可行的标准耐压档 = **' + capReset.vdsClassNeed + ' V**。' : '\n本工况即使 1000 V 档也不可行（Vin_max 太高或漏感太大）。') +
+          '请提高耐压档（或降低 Vin_max、加大 C_res 到上限、减漏感）。');
+      } else if (vdsRated > 0 && cresNf > 0 && crNf < crMinNf) {
+        warns.push('复位电容 ' + crNf.toFixed(2) + ' nF 低于该耐压档要求的下限 ' + crMinNf.toFixed(1) +
+          ' nF（Vds,pk 会超过 0.85×耐压）→ 把 C_res 加大到 ' + crMinNf.toFixed(1) + ' nF 以上（复位上限 ' + crHardMaxNf.toFixed(1) + ' nF）。');
+      }
+      if (crNf > crHardMaxNf + 1e-9) {
+        warns.push('复位电容 ' + crNf.toFixed(2) + ' nF 超过"最小关断期内完成复位"的上限 ' + crHardMaxNf.toFixed(1) +
+          ' nF → 复位来不及，磁芯会逐步偏磁直至饱和。请减小 C_res 或降低 Vin_min 处的占空比。');
+      }
       steps.push({ t: '电容谐振复位（初级并联电容）',
         f: 'C ≤ (1-D)²/(π²·Lm·Fs²)（D 用实际工作占空比）；C 取上限时 V_res,pk = π·n·Vo/(1-D)；漏感项 ΔV = Ipk·√(Lk/C)；Vds,pk = Vin_max + V_res,pk + ΔV',
         s: 'D(实际@Vin_min) = ' + dReset.toFixed(3) + '（输入框 D_max = ' + I.dutyMax + '）→ C ≤ ' + crMaxNf.toFixed(2) +
@@ -915,6 +962,21 @@ var TD = (function () {
            (lkH > 0
              ? '；ΔV_Lk 是把漏感能量全部算进 C_res 的上界（实际有阻尼与绕组损耗，会比它低，但还叠加振铃）。漏感主导时可加大 C_res：C 翻 4 倍 → 两项各减半'
              : '；漏感填 0 → ΔV_Lk 未计入，Vds,pk 被低估，真实值还要加 I_pk,pri·√(Lk/C_res)') });
+      /* 复位电容的可行窗口单独交代：这是"能不能用这个耐压档"的判据 */
+      steps.push({ t: '复位电容 C_res 的可行窗口（耐压 vs 复位时间）',
+        f: 'Vds,pk(C) = Vin_max + (A + B)/√C（A = I_m,pk·√Lm，B = I_pk,pri·√Lk，两项都 ∝ 1/√C）→ 满足 0.85·Vds_rated 的 C 下限；'
+          + '复位必须在最小关断期内完成：t_r = (π/2)·√(Lm·C) ≤ (1-D(Vin_min))/Fs → C 上限。窗口为空 ⇒ 该耐压档不可行',
+        s: (vdsRated > 0
+            ? '耐压 ' + vdsRated + ' V × 0.85 = ' + (vdsRated * 0.85).toFixed(1) + ' V，减去 Vin_max ' + I.vinMax + ' V → 只剩 ' + vdsRoom.toFixed(1) + ' V 给复位峰值+漏感尖峰'
+              + ' ⇒ C_res ≥ ' + (isFinite(crMinNf) ? crMinNf.toFixed(1) + ' nF' : '无解（Vin_max 已超过 0.85×耐压）') + '；'
+              + '而复位要在关断期（Vin_min 处 D=' + dReset.toFixed(3) + '）内完成 ⇒ C_res ≤ ' + crHardMaxNf.toFixed(1) + ' nF'
+              + '（工具"自动取上限"的 ' + crMaxNf.toFixed(2) + ' nF 是其中 1/4，即留了 2 倍时间余量）'
+              + (crWindowEmpty
+                  ? ' → **窗口为空：' + vdsRated + ' V 档在这组 Vin_max/漏感 下不可行**；'
+                    + (isFinite(lkMaxUh) ? '同样的 C 下漏感要降到 ≤ ' + lkMaxUh.toFixed(3) + ' µH，' : '') + '否则必须提高耐压档'
+                  : ' → 窗口 [ ' + crMinNf.toFixed(1) + ' , ' + crHardMaxNf.toFixed(1) + ' ] nF')
+              + (vdsClassNeed ? '；本工况最小可行的标准耐压档 = ' + vdsClassNeed + ' V' : '；本工况到 1000 V 档仍不可行（Vin_max 太高或漏感太大）')
+            : '填了开关管耐压后，这里会给出满足它的 C_res 下限、复位允许的上限，以及两者是否矛盾') });
     }
     var common = { n: nAch, Vo: Vo, VinNom: I.vinNom > 0 ? I.vinNom : (I.vinMin + I.vinMax) / 2, Iout: I.iout, Pin: Pin, Fs: Fs, Lp: Lp, Lm: Lm, Np: Np, Ns: Ns, Ae: Ae, dIL: I.rippleLout, nSecWind: nSecWind };
     function pt(Vin) { var q = {}; for (var key in common) q[key] = common[key]; q.Vin = Vin; return operatingPoint(T, q); }
@@ -1266,7 +1328,7 @@ var TD = (function () {
     if (I.dcrLimitP > 0) addCheck('原边 DCR @25°C（对规格值' + (mltTol > 0 ? '，按最坏 MLT +' + mltTol + '%' : '') + '）', RdcPri25 * 1000 * mltWorst, 'mΩ', I.dcrLimitP, 'mΩ', RdcPri25 * 1000 * mltWorst <= I.dcrLimitP, 0.9);
     if (I.dcrLimitS > 0) addCheck('副边 DCR @25°C（对规格值' + (mltTol > 0 ? '，按最坏 MLT +' + mltTol + '%' : '') + '）', RdcSec25 * 1000 * mltWorst, 'mΩ', I.dcrLimitS, 'mΩ', RdcSec25 * 1000 * mltWorst <= I.dcrLimitS, 0.9);
     if (capReset && lkH <= 0) warns.push('电容复位未计入漏感：实际 Vds,pk 还要加上漏感尖峰 ΔV = Ipk·√(Lk/C)。测一次漏感（或按夹层绕法的 0.3%~2%·Lm 估）填进"漏感 Lk"输入，才能得到真实的开关应力。');
-    if (capReset && lkH > 0 && capReset.wRatio > 1) warns.push('漏感能量（' + capReset.wLeak.toFixed(3) + ' mJ）大于励磁能量（' + capReset.wMag.toFixed(3) + ' mJ）：复位电容主要由漏感决定，开关应力对 C 很敏感；建议用实测漏感复核，或考虑 RCD/有源钳位。');
+      if (capReset && lkH > 0 && capReset.wRatio > 1) warns.push('漏感能量（' + (capReset.wLeak * 1e6).toFixed(1) + ' µJ）大于励磁能量（' + (capReset.wMag * 1e6).toFixed(1) + ' µJ）：复位电容主要由漏感决定，开关应力对 C 很敏感；建议用实测漏感复核，或考虑 RCD/有源钳位。');
     if (acFront && acFront.mode === 'ac') {
       if (acFront.holdMs > 0 && acFront.holdVmin > 0)
         addCheck('母线保持时间：V(t_hold) ≥ 允许下限', acFront.vAtHold, 'V', acFront.holdVmin, 'V', acFront.vAtHold >= acFront.holdVmin, 0.95);
@@ -1298,6 +1360,9 @@ var TD = (function () {
     if (capReset) {
       addCheck('复位电容 ≤ 上限（谐振复位）', capReset.crNf, 'nF', capReset.crMaxNf, 'nF', capReset.crNf <= capReset.crMaxNf + 1e-9, 0.9);
       if (capReset.vdsRated > 0) addCheck('开关管电压应力 Vds,pk ≤ 0.85×耐压', capReset.vdsPk, 'V', capReset.vdsLimit, 'V', capReset.vdsPk <= capReset.vdsLimit, 0.9);
+    if (capReset) addCheck('复位电容 C_res ≤ 关断期内复位上限', capReset.crNf, 'nF', capReset.crHardMaxNf, 'nF', capReset.crNf <= capReset.crHardMaxNf + 1e-9, 0.9);
+    if (capReset && capReset.vdsRated > 0 && isFinite(capReset.crMinNf) && capReset.crMinNf > 0)
+      addCheck('复位电容 C_res ≥ 耐压要求下限（Vin_max 处）', capReset.crNf, 'nF', capReset.crMinNf, 'nF', capReset.crNf >= capReset.crMinNf - 1e-9, 99);
     }
     if (T.kind === 'bipolar') addCheck('Vin_max 处占空比下限', dNeedMax, '', 0.02, '', dNeedMax >= 0.02, 2);
     if (T.kind === 'llc') addCheck('谐振点输出电压偏差（整数匝数，可由谐振腔增益补偿）', Math.abs(vNom / (2 * nAch) - Vo) / Vo * 100, '%', 10, '%', Math.abs(vNom / (2 * nAch) - Vo) / Vo * 100 <= 10, 0.3);
@@ -1733,7 +1798,17 @@ var TD = (function () {
         '复位峰值电压 V_res,pk = ' + fmt(s.capReset.vResetPk, 1) + ' V' + (s.capReset.lkUsed ? ' + 漏感项 ΔV_Lk = ' + fmt(s.capReset.dVLk, 1) + ' V' : '（漏感未计入）') +
         ' → 开关管 Vds,pk = Vin_max + V_res,pk + ΔV_Lk ≈ ' + fmt(s.capReset.vdsPk, 1) + ' V' +
         (s.capReset.vdsRated > 0 ? '（耐压 ' + fmt(s.capReset.vdsRated, 0) + ' V × 0.85 = 限值 ' + fmt(s.capReset.vdsLimit, 1) + ' V，校核见清单；0.85 是留 15% 余量的降额约定，见页尾速查表）' : '（未填耐压，不做校核）') + '。<br>' +
-        '电容越小开关应力越高、关断期复位越快；电容超过上限则复位在下一个周期前完不成。</div>';
+        '电容越小开关应力越高、关断期复位越快；电容超过上限则复位在下一个周期前完不成。' +
+        (s.capReset.vdsRated > 0
+          ? '<br><b>复位电容可行窗口</b>（' + fmt(s.capReset.vdsRated, 0) + ' V × 0.85 = ' + fmt(s.capReset.vdsLimit, 1) + ' V，扣掉 Vin_max 剩 ' +
+            fmt(s.capReset.vdsRoom, 1) + ' V）：C_res ≥ ' + (isFinite(s.capReset.crMinNf) ? fmt(s.capReset.crMinNf, 1) + ' nF' : '无解（Vin_max 已超限）') +
+            '（耐压下限）且 ≤ ' + fmt(s.capReset.crHardMaxNf, 1) + ' nF（复位时间上限）' +
+            (s.capReset.crWindowEmpty
+              ? ' → <b>窗口为空：这个耐压档不可行</b>，本工况最小可行标准档 = ' + (s.capReset.vdsClassNeed ? s.capReset.vdsClassNeed + ' V' : '1000 V 仍不可行') +
+                '（同样 C 下漏感需 ≤ ' + (s.capReset.lkMaxUh !== null ? fmt(s.capReset.lkMaxUh, 3) : '—') + ' µH）'
+              : ' → 当前 C_res = ' + fmt(s.capReset.crNf, 1) + ' nF 落在窗口' + (s.capReset.crNf >= s.capReset.crMinNf && s.capReset.crNf <= s.capReset.crHardMaxNf ? '内' : '外') + '')
+          : '（填了开关管耐压后，这里会给出 C_res 的可行窗口）') +
+        '</div>';
     }
     if (s.acFront) {
       var a = s.acFront;

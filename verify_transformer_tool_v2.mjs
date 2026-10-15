@@ -1357,6 +1357,85 @@ header('31 Rth (K/W): the transformer hot-spot-to-ambient resistance and how it 
     /热阻 Rth \(K\/W\)/.test(html) && /不是磁芯或器件的数据手册参数/.test(html) && /借用同一个 Rth/.test(html));
 }
 
+/* ---------------- 32. capacitor-reset window: is this switch voltage class usable at all? ---------------- */
+header('32 capacitor-reset C_res window (rating lower bound vs reset-time upper bound)');
+{
+  const board = { topology: 'Forward', vinMin: 18, vinMax: 36, vout: 19, iout: 3.947, fs: 200, vf: 0.5,
+    resetMode: 'cap', lkUh: 0.8, alLibNh: 1146, ae: 52, le: 32, aw: 38, mlt: 38, auditOn: true, npGiven: 12, nsGiven: 23,
+    wireModeP: 'mm', wireDiaP: 0.4, strandsP: 2, parP: 2, wireModeS: 'mm', wireDiaS: 0.2, strandsS: 2, parS: 3 };
+  const run = (over) => TD.design(baseInputs(Object.assign({}, board, over)));
+  const rel32 = (x, y) => Math.abs(x - y) / (Math.abs(y) > 1e-12 ? Math.abs(y) : 1);
+
+  const r100 = run({ vdsRated: 100 });
+  const c100 = r100.summary.capReset;
+  ok('the window lower bound comes from the rating: C >= ((A+B)/(0.85*Vrated - Vin_max))^2',
+    isFinite(c100.crMinNf) && c100.crMinNf > 0 &&
+    rel32(c100.crMinNf, Math.pow((c100.vResetPk * Math.sqrt(c100.crNf * 1e-9) + c100.dVLk * Math.sqrt(c100.crNf * 1e-9)) / c100.vdsRoom, 2) * 1e9) < 1e-9,
+    'crMin=' + c100.crMinNf.toFixed(2) + ' room=' + c100.vdsRoom.toFixed(2));
+  /* 上限 = 复位在最小关断期（Vin_min 处 D 最大）内完成：(π/2)·√(Lm·C) ≤ (1-D)/Fs */
+  const LmB = c100.LmUH * 1e-6, dB = c100.dMaxUsed;
+  const hardMax = Math.pow(2 * (1 - dB) / (Math.PI * 200e3), 2) / LmB * 1e9;
+  ok('the reset-time upper bound is (2(1-D)/(pi*Fs))^2/Lm', rel32(c100.crHardMaxNf, hardMax) < 1e-9,
+    c100.crHardMaxNf.toFixed(2) + ' vs ' + hardMax.toFixed(2));
+  ok('the auto value keeps a 2x timing margin (1/4 of the hard bound)', rel32(c100.crMaxNf, c100.crHardMaxNf / 4) < 1e-9);
+
+  ok('100 V at Vin_max=36 V is detected as an empty window', c100.crWindowEmpty === true,
+    'C_min=' + c100.crMinNf.toFixed(1) + ' nF  C_hardMax=' + c100.crHardMaxNf.toFixed(1) + ' nF');
+  ok('the smallest usable standard voltage class is reported (200 V here)',
+    c100.vdsClassNeed === 200, String(c100.vdsClassNeed));
+  ok('and the leakage that would be needed instead is reported',
+    isFinite(c100.lkMaxUh) && c100.lkMaxUh > 0 && c100.lkMaxUh < 0.1, String(c100.lkMaxUh));
+  ok('the engine warns in plain words', r100.warns.some((w) => /耐压档不可行/.test(w) && /200 V/.test(w)),
+    r100.warns.filter((w) => /耐压档不可行/.test(w)).join(' | ').slice(0, 200));
+  const wStep = r100.steps.find((s) => /可行窗口/.test(s.t));
+  ok('the window has its own step row with the formula',
+    !!wStep && /Vds,pk\(C\) = Vin_max \+ \(A \+ B\)\/√C/.test(wStep.f) && /t_r = \(π\/2\)·√\(Lm·C\)/.test(wStep.f), wStep ? wStep.f : 'missing');
+  ok('that row reports empty window + the class to use',
+    /窗口为空/.test(wStep.s) && /标准耐压档 = 200 V/.test(wStep.s), wStep.s.slice(0, 200));
+  const chkUp = r100.checks.find((c) => /关断期内复位上限/.test(c.name));
+  const chkLo = r100.checks.find((c) => /耐压要求下限/.test(c.name));
+  ok('two new check rows: C_res <= reset-time bound and C_res >= rating bound',
+    !!chkUp && !!chkLo && chkUp.pass === true && chkLo.pass === false &&
+    rel32(chkUp.limit, c100.crHardMaxNf) < 1e-9 && rel32(chkLo.limit, c100.crMinNf) < 1e-9,
+    JSON.stringify([chkUp && chkUp.value, chkUp && chkUp.limit, chkLo && chkLo.value, chkLo && chkLo.limit]));
+
+  /* 漏感越小、耐压越高 → 窗口从空变为可用 */
+  const ladder = [[0.8, 200], [0.2, 150], [0, 100]].map(([lk, v]) => {
+    const c = run({ vdsRated: v, lkUh: lk }).summary.capReset;
+    return { lk: lk, v: v, empty: c.crWindowEmpty, need: c.vdsClassNeed };
+  });
+  ok('the usable voltage class scales with the leakage inductance',
+    ladder[0].need === 200 && ladder[1].need === 150 && ladder[2].need === 100, JSON.stringify(ladder));
+  ok('at that class the window is no longer empty',
+    ladder.every((x) => x.empty === false), JSON.stringify(ladder.map((x) => x.empty)));
+  ok('a 100 V part is fine when the leakage is negligible',
+    run({ vdsRated: 100, lkUh: 0 }).summary.capReset.crWindowEmpty === false);
+
+  /* C_res 太大 → 复位来不及，要有明确告警与校核行 */
+  const rBig = run({ vdsRated: 200, cresNf: 30 });
+  ok('C_res beyond the reset-time bound warns about core walk / incomplete reset',
+    rBig.warns.some((w) => /复位来不及/.test(w)), rBig.warns.join(' | ').slice(0, 160));
+  ok('and that shows up as a failed check row',
+    rBig.checks.find((c) => /关断期内复位上限/.test(c.name)).pass === false);
+
+  /* 单位修正：漏感能量告警应该是 µJ，不是 0.000 mJ */
+  const lkWarn = r100.warns.find((w) => /漏感能量/.test(w)) || '';
+  ok('the leakage-energy warning uses a readable unit', /µJ/.test(lkWarn) && !/mJ/.test(lkWarn), lkWarn.slice(0, 120));
+
+  /* 输出级卡片也要给出窗口 */
+  const before32 = {};
+  Object.keys(dom).forEach((k) => { before32[k] = dom[k].value; });
+  const setV5 = (id, v) => { dom[id].value = v; };
+  setV5('topology', 'Forward'); setV5('resetMode', 'cap'); setV5('vdsRated', 100); setV5('lkUh', 0.8);
+  setV5('vinMin', 18); setV5('vinMax', 36);
+  windowStub.__TD_RENDER__();
+  const osHtml = dom.outStage.innerHTML || '';
+  ok('the output-stage card shows the C_res window and the "empty window" verdict',
+    /复位电容可行窗口/.test(osHtml) && /窗口为空/.test(osHtml) && /200 V/.test(osHtml), String(osHtml).replace(/<[^>]+>/g, ' ').slice(-260));
+  Object.keys(before32).forEach((k) => { dom[k].value = before32[k]; });
+  windowStub.__TD_RENDER__();
+}
+
 if (process.argv.includes('--diag')) {
   const show = (label, r) => {
     const s = r.summary, o = s.outStage;
