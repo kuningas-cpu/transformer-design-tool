@@ -1204,6 +1204,51 @@ header('28 input parameters first, and the flyback secondary has no freewheel di
   setV2('topology', 'Flyback'); windowStub.__TD_RENDER__();
 }
 
+/* ---------------- 29. per-topology wording: scope hint, sweep/outstage text, filtered formula table ---------------- */
+header('29 per-topology wording (nothing from other topologies leaks into the page)');
+{
+  const nFb = TD.topologyNotes('Flyback', 'dc');
+  const nFw = TD.topologyNotes('Forward', 'dc');
+  const nPp = TD.topologyNotes('Push-Pull', 'dc');
+  const nLl = TD.topologyNotes('LLC Resonant', 'dc');
+  const nAc = TD.topologyNotes('Forward', 'ac');
+  const nPfc = TD.topologyNotes('Forward', 'pfc');
+  ok('flyback notes name the flyback-only inputs', /原边纹波比 K/.test(nFb.scope) && /没有续流管/.test(nFb.scope) && /电感储能/.test(nFb.sweep) && /没有 Buck 型输出电感/.test(nFb.outStage));
+  ok('forward notes name the reset scheme and the output inductor', /磁复位方式/.test(nFw.scope) && /输出电感纹波/.test(nFw.scope) && /校核模式/.test(nFw.scope));
+  ok('forward outstage text mentions rectifier + freewheel', /Buck 型副边/.test(nFw.outStage) && /续流管/.test(nFw.outStage) && !/没有续流管/.test(nFw.outStage));
+  ok('bipolar notes mention the secondary rectifier choice', /中心抽头/.test(nPp.scope) && /Bpk = ΔB_pp\/2/.test(nPp.sweep));
+  ok('llc notes name the tank and drop the inductor/ripple inputs', /谐振腔参数/.test(nLl.scope) && /没有输出电感/.test(nLl.scope) && /交替导通/.test(nLl.outStage));
+  ok('the scope line follows the input mode too', /整流母线/.test(nAc.scope) && /母线谷值/.test(nAc.scope) && /PFC 母线电压/.test(nPfc.scope));
+
+  const setV3 = (id, v) => { dom[id].value = v; };
+  const firstTable = (h) => String(h).split('<details')[0];
+  setV3('topology', 'Flyback'); setV3('acMode', 'dc'); windowStub.__TD_RENDER__();
+  const fFb = firstTable(dom.formulaTable.innerHTML);
+  ok('the formula card shows one table for the current topology plus a collapsed full table',
+    (dom.formulaTable.innerHTML.match(/<table>/g) || []).length === 2 && /<details[\s>]/.test(dom.formulaTable.innerHTML));
+  ok('the visible formula table only lists flyback', /反激 \/ Flyback/.test(fFb) && !/半桥/.test(fFb) && !/推挽/.test(fFb) && !/LLC/.test(fFb));
+  ok('the collapsed block keeps all seven topologies', ['反激 / Flyback', '单端正激 / Forward', '推挽 / Push-Pull', '半桥 / Half-Bridge', '全桥 / Full-Bridge', 'LLC 谐振 / LLC', '有源钳位反激 / ACF']
+    .every((l) => dom.formulaTable.innerHTML.indexOf(l) >= 0));
+  ok('the panel hint lists what to fill for flyback', /当前拓扑：反激 \/ Flyback/.test(dom.inputScope.textContent) && /原边纹波比 K/.test(dom.inputScope.textContent));
+  ok('the sweep card text is flyback-specific', /电感储能/.test(dom.sweepSub.textContent) && !/推挽/.test(dom.sweepSub.textContent));
+  ok('the output-stage card text is flyback-specific', /没有 Buck 型输出电感/.test(dom.outStageSub.textContent));
+
+  setV3('topology', 'Push-Pull'); windowStub.__TD_RENDER__();
+  const fPp = firstTable(dom.formulaTable.innerHTML);
+  ok('switching topology swaps both the formula table and the hints',
+    /推挽 \/ Push-Pull/.test(fPp) && !/反激/.test(fPp) && /中心抽头/.test(dom.inputScope.textContent) &&
+    /Buck 型副边/.test(dom.outStageSub.textContent) && /双极性励磁/.test(dom.sweepSub.textContent));
+  setV3('acMode', 'ac'); windowStub.__TD_RENDER__();
+  ok('switching the input mode updates the hint as well', /整流母线/.test(dom.inputScope.textContent));
+  setV3('acMode', 'dc'); setV3('topology', 'LLC Resonant'); windowStub.__TD_RENDER__();
+  const fLl = firstTable(dom.formulaTable.innerHTML);
+  ok('LLC gets its own formula row and notes',
+    /LLC 谐振 \/ LLC/.test(fLl) && !/反激/.test(fLl) && !/半桥/.test(fLl) &&
+    /谐振腔参数/.test(dom.inputScope.textContent) && /交替导通/.test(dom.outStageSub.textContent));
+  setV3('topology', 'Flyback'); windowStub.__TD_RENDER__();
+  ok('back to the default state', /反激 \/ Flyback/.test(firstTable(dom.formulaTable.innerHTML)));
+}
+
 if (process.argv.includes('--diag')) {
   const show = (label, r) => {
     const s = r.summary, o = s.outStage;

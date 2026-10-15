@@ -94,42 +94,42 @@ const DEG = (arr, c) => arr.map((id) => id + (c.has(id) ? ':H' : ':v')).join(' '
 
 const SCENARIOS = [
   {
-    s: 'dc,Flyback,diode,cap', title: 'DC 输入 + 反激：只有直流参数与反激参数',
+    s: 'dc,Flyback,diode,cap', title: 'DC 输入 + 反激：只有直流参数与反激参数', topoLabel: '反激 / Flyback',
     shown: ['vinMin', 'vinMax', 'rippleK', 'dutyMax', 'deltaBTarget', 'jTarget'],
     hidden: [].concat(AC_ONLY, ['pfcBus'], BUCK_ONLY, ['secRect'], LLC_ONLY, FWD_RESET, ['rdsOnMOhm', 'vfBody', 'tDeadNs']),
     hiddenHeads: ['LLC tank'],
     rectSelect: { has: ['无续流管'], notHas: ['整流管 + 续流管'], sr2Hidden: true, hintHas: ['没有续流管', '单管'] }
   },
   {
-    s: 'ac,Flyback,diode,cap', title: 'AC 输入 + 反激：只有交流前端参数',
+    s: 'ac,Flyback,diode,cap', title: 'AC 输入 + 反激：只有交流前端参数', topoLabel: '反激 / Flyback',
     shown: AC_ONLY.slice(),
     hidden: ['vinMin', 'vinMax', 'pfcBus'].concat(BUCK_ONLY, LLC_ONLY, FWD_RESET)
   },
   {
-    s: 'pfc,Flyback,diode,cap', title: 'AC + PFC：只留 PFC 母线电压',
+    s: 'pfc,Flyback,diode,cap', title: 'AC + PFC：只留 PFC 母线电压', topoLabel: '反激 / Flyback',
     shown: ['pfcBus'],
     hidden: AC_ONLY.concat(['vinMin', 'vinMax'], BUCK_ONLY, LLC_ONLY, FWD_RESET)
   },
   {
-    s: 'dc,Forward,diode,cap', title: 'DC + 正激（电容复位）：复位电容/输出电感/辅助绕组出现',
+    s: 'dc,Forward,diode,cap', title: 'DC + 正激（电容复位）：复位电容/输出电感/辅助绕组出现', topoLabel: '单端正激 / Forward',
     shown: FWD_RESET.concat(BUCK_ONLY),
     hidden: ['rippleK', 'secRect'].concat(AC_ONLY, ['pfcBus'], LLC_ONLY, ['rdsOnMOhm', 'vfBody', 'tDeadNs']),
     rectSelect: { has: ['整流管 + 续流管', '续流二极管'], notHas: ['无续流管'], sr2Hidden: false, hintHas: ['Buck 型副边'] }
   },
   {
-    s: 'dc,Forward,diode,winding', title: '正激 + 复位绕组：C_res/耐压/漏感自动收起',
+    s: 'dc,Forward,diode,winding', title: '正激 + 复位绕组：C_res/耐压/漏感自动收起', topoLabel: '单端正激 / Forward',
     shown: ['resetMode'],
     hidden: ['cresNf', 'vdsRated', 'lkUh', 'rippleK']
   },
   {
-    s: 'dc,LLC%20Resonant,diode,cap', title: 'LLC：谐振腔字段出现，Buck 型输出电感消失',
+    s: 'dc,LLC%20Resonant,diode,cap', title: 'LLC：谐振腔字段出现，Buck 型输出电感消失', topoLabel: 'LLC 谐振 / LLC',
     shown: LLC_ONLY.concat(['tDeadNs']),
     hidden: BUCK_ONLY.concat(['rippleLout', 'rippleK', 'resetMode', 'cresNf']),
     shownHeads: ['LLC tank'],
     rectSelect: { has: ['交替导通'], notHas: ['整流管 + 续流管'], sr2Hidden: true, hintHas: ['LLC：副边整流管'] }
   },
   {
-    s: 'dc,Push-Pull,sr2,cap', title: '推挽 + 同步整流：中心抽头选择与 SR 参数出现',
+    s: 'dc,Push-Pull,sr2,cap', title: '推挽 + 同步整流：中心抽头选择与 SR 参数出现', topoLabel: '推挽 / Push-Pull',
     shown: ['secRect', 'rdsOnMOhm', 'vfBody', 'tDeadNs'].concat(BUCK_ONLY),
     hidden: ['rippleK', 'resetMode', 'vinNom'].concat(AC_ONLY)
   }
@@ -159,6 +159,17 @@ SCENARIOS.forEach((sc) => {
   /* 面板顺序：输入（类型 + 电压）必须是第一块 */
   const iIn = dom.indexOf('输入类型与输入电压'), iSpec = dom.indexOf('规格 / Specification'), iOp = dom.indexOf('拓扑工作点');
   check('输入参数在面板最前（输入 → 规格 → 拓扑工作点）', iIn > 0 && iIn < iSpec && iSpec < iOp, iIn + '/' + iSpec + '/' + iOp);
+  /* 顶部"当前拓扑填什么"的提示 + 公式表只列当前拓扑（其余收在折叠块里） */
+  const ALL_LABELS = ['反激 / Flyback', '有源钳位反激 / ACF', '单端正激 / Forward', '推挽 / Push-Pull', '半桥 / Half-Bridge', '全桥 / Full-Bridge', 'LLC 谐振 / LLC'];
+  const scope = hintText(dom, 'inputScope');
+  check('面板顶部提示当前拓扑要填什么', scope.indexOf('当前拓扑：' + sc.topoLabel) >= 0 && scope.length > 60, scope.slice(0, 100));
+  const fStart = dom.indexOf('这里只列当前拓扑'), fDet = dom.indexOf('<details', fStart > 0 ? fStart : 0);
+  const fRegion = (fStart > 0 && fDet > fStart) ? dom.slice(fStart, fDet) : '';
+  const leaked = ALL_LABELS.filter((l) => l !== sc.topoLabel && fRegion.indexOf(l) >= 0);
+  check('公式表默认只列当前拓扑: ' + sc.topoLabel,
+    fRegion.indexOf(sc.topoLabel) >= 0 && leaked.length === 0, '混入了其他拓扑: ' + leaked.join(','));
+  const inDetails = fDet > 0 ? ALL_LABELS.filter((l) => dom.slice(fDet).indexOf(l) >= 0) : [];
+  check('折叠块里保留全部 7 种拓扑（未丢信息）', inDetails.length === ALL_LABELS.length, '折叠块里缺少: ' + ALL_LABELS.filter((l) => inDetails.indexOf(l) < 0).join(','));
   /* 次级整流器件的措辞随拓扑变：反激没有续流管，且 sr2 选项被收起 */
   const sel = selectBlock(dom, 'rectDevice');
   if (sc.rectSelect) {

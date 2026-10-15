@@ -211,3 +211,19 @@ Vin_min / Vin_max 与交流前端参数同属"输入"，放同一块里由 `data
 | 反激（单管） | `P_diode = Vf·I_avg,sec` | `I_avg,sec` 是副边波形的一周期平均值（引擎按 Pin 折算，≈`Iout/η`）→ 比输出口径保守；与同步整流用 `I_rms,sec` 同口径 |
 | LLC（交替导通） | `P_diode = Vf·Iout` | 各整流管平均电流之和 = `Iout` |
 | 同步整流 | `P_SR = Rds·I² + Vf_body·Iout·2·t_dead·Fs` | 两管都换用 `Iout²`；只换整流管用 `I_rms,rect²` 并加续流二极管损耗 |
+
+## 9. 整页按所选拓扑生成文字（2026-10-15）
+
+输入项按拓扑过滤之后，页面上剩下的"通用文字"也改成按当前选择生成，避免七种拓扑的说法混在一起：
+
+| 位置 | 生成方式 |
+|---|---|
+| 设计输入卡片顶部 `#inputScope` | `TD.topologyNotes(topology, acMode).scope`：当前拓扑 + 输入方式 → 该填哪些、哪些不用管 |
+| 输入电压扫描卡片 `#sweepSub` | `.sweep`：反激讲"电感储能、最恶劣点要逐点扫"，正激/推挽/桥式讲"伏秒积与 Vin 无关"，LLC 讲"原边方波随 Vin 变化" |
+| 输出级卡片 `#outStageSub` | `.outStage`：Buck 型副边讲输出电感 + 整流管/续流管；反激讲"只有一只整流管、无 Buck 型输出电感"；LLC 讲整流管交替导通 |
+| 拓扑公式与约定 `#formulaTable` | 默认只渲染当前拓扑那一行（标"← 当前"），其余 6 种收进 `<details>` 折叠块 |
+
+调用链：`render()` → `updateVisibility()`（收起无关输入项）→ `updateRectLabels()`（整流器件措辞/选项）→ `updateTopologyNotes()`（三段文字）→ 各结果区。
+
+文案集中放在引擎的 `topologyNotes()` 里，改词只需改这一处；测试第 29 组会核对三种拓扑族的文案、输入方式联动，
+以及"公式表默认只含当前拓扑、折叠块里 7 种都在"。

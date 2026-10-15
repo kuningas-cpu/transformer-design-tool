@@ -59,6 +59,7 @@
     <div class="card">
       <h2>设计输入 / Design Inputs</h2>
       <p class="sub">带 * 的磁芯与材质参数是预设典型值，正式设计前请用数据手册数值覆盖。所有输入都参与计算。</p>
+      <div class="hint" id="inputScope" style="margin-bottom:10px;"></div>
       <h3>输入类型与输入电压 / Input source &amp; input voltage</h3>
       <div class="three-col">
         <div class="field"><label for="acMode">输入类型</label>
@@ -218,7 +219,7 @@
   </div>
   <div class="card">
     <h2>输入电压扫描 / Input-voltage sweep</h2>
-    <p class="sub">变压器类拓扑（正激/推挽/半桥/全桥）在固定变比下伏秒积与输入电压无关；反激类是电感储能，最恶劣点必须逐点扫：磁通峰值出现在 Vin_min，纹波摆幅出现在 Vin_max。LLC 的原边方波幅值随 Vin 变化，伏秒积也随输入变化。</p>
+    <p class="sub" id="sweepSub">—</p>
     <div id="sweepTable"></div>
   </div>
   <div class="card">
@@ -227,7 +228,7 @@
   </div>
   <div class="card">
     <h2>输出级 / Output stage</h2>
-    <p class="sub">输出电感（Buck 型副边）、输出电容与同步整流/二极管损耗对比。输出电感的磁芯按当前所选磁芯估算，实际应选开气隙铁氧体或磁粉芯；输出电感的损耗与温升独立于变压器，未计入变压器温升。</p>
+    <p class="sub" id="outStageSub">—</p>
     <div id="outStage"></div>
   </div>
   <div class="card" id="tankCard">
@@ -1422,10 +1423,50 @@ var TD = (function () {
               + '总平均电流 = Iout，损耗按每只管子的实际有效值电流算，选「同步整流（副边整流管换成 MOS）」即把整流管全部换成 SR。')
     };
   }
+  /* 按"当前拓扑 + 输入方式"生成三段说明（该填什么 / 扫描怎么看 / 输出级包含什么），
+     界面用它替换固定的通用文字，避免七种拓扑的参数说明混在一起。 */
+  function topologyNotes(topology, acMode) {
+    var T = TOPOS[topology] || TOPOS['Flyback'];
+    var src = (acMode === 'ac')
+      ? '输入：Vac + 整流母线（C_bus / 工频 / 源阻 / 桥压降）→ 工具用数值仿真算出母线谷值并覆盖 Vin_min / Vin_max'
+      : (acMode === 'pfc' ? '输入：PFC 母线电压（恒定母线）→ 后级按普通 DCDC 设计'
+        : '输入：Vin_min / Vin_max');
+    var need, sweep, outSub;
+    if (T.kind === 'flyback') {
+      need = '输出：Vout / Iout、效率 η、目标磁通摆幅 ΔB_pp；工作点只需"原边纹波比 K"。'
+        + '副边只有一只整流管（没有续流管），所以不需要输出电感、正激复位参数这些与 Buck 型副边有关的东西。';
+      sweep = '反激是电感储能：磁通峰值出现在 Vin_min、纹波摆幅出现在 Vin_max，最恶劣点必须逐点扫；下表逐点给出 D、ΔB_pp、峰值/有效值电流与工作模式。';
+      outSub = '反激的输出级 = 输出电容 + 副边整流器件（只有一只整流管，没有续流管）。没有 Buck 型输出电感，所以输出电感参数不会出现在面板里；'
+        + '整流损耗按副边电流波形的周期平均值估算。';
+    } else if (T.kind === 'llc') {
+      need = 'Vin_nom（0 = 自动取中点）、谐振腔参数（fr / k / Q / Coss / 谐振电容耐压）与死区时间。'
+        + '副边整流管在半个周期内交替导通，没有续流管，也没有输出电感，因此这两组参数不出现在面板里。';
+      sweep = 'LLC 的原边方波幅值随 Vin 变化，伏秒积也随之变化；下表按 Vin 逐点给出 D、磁通与电流。谐振腔增益/软开关范围见下方"LLC 谐振腔"一节。';
+      outSub = 'LLC 副边是整流管（中心抽头 2 只 / 全桥 4 只）交替导通，没有续流管、也没有输出电感：这里只算输出电容纹波预算与整流损耗（二极管或同步整流）。';
+    } else {
+      var fwd = (T.kind === 'forward');
+      need = '输出：Vout / Iout、效率 η、输出电感纹波 ΔI_L'
+        + (fwd ? '；磁复位方式（电容谐振复位 / 复位绕组），选电容复位后再填 C_res、开关管耐压、漏感 Lk。'
+               : '；次级整流方式（中心抽头 / 全桥）。')
+        + '输出电感与辅助绕组的匝数/实测电感（如承认书给的 38 匝 / 145 µH）在"校核模式"里填。';
+      sweep = (fwd ? '正激' : '推挽 / 半桥 / 全桥')
+        + '在固定变比下伏秒积与输入电压无关（只有占空比 D 随 Vin 变），磁通最恶劣点在 Vin_min、D 最大处。'
+        + (fwd ? '' : '双极性励磁：Bpk = ΔB_pp/2。');
+      outSub = 'Buck 型副边：输出电感（AL / 气隙 / 饱和 / 损耗 / 温升）+ 输出电容纹波预算 + 整流器件损耗对比。'
+        + '整流管与续流管各走一次输出电流，两只都要计入（二极管方案 = Vf·Iout）。'
+        + '输出电感按当前所选磁芯估算，实际应选开气隙铁氧体或磁粉芯；其损耗与温升独立于变压器，未计入变压器温升。';
+    }
+    return {
+      label: T.label,
+      scope: '当前拓扑：' + T.label + '。' + src + '。' + need + '（面板已按拓扑与输入方式收起无关项；被隐藏的输入不改数值，切回去照旧。）',
+      sweep: sweep,
+      outStage: outSub
+    };
+  }
   return { design: design, coreComparison: coreComparison, CORES: CORES, MATERIALS: MATERIALS, TOPOS: TOPOS,
     setCores: setCores, parseCoreCsv: parseCoreCsv, coresToCsv: coresToCsv,
     awgToMm: awgToMm, mmToAwg: mmToAwg, skinDepthMm: skinDepthMm, rhoCu: rhoCu, MU0: MU0, RHO_CU_20: RHO_CU_20,
-    rectLabels: rectLabels };
+    rectLabels: rectLabels, topologyNotes: topologyNotes };
 })();
 /* ================= ENGINE-END ================= */
 </script>
@@ -1890,18 +1931,29 @@ var TD = (function () {
       render();
       coreLibMsg('已载入 19V/75W 板（1号 12T/23T + 电容复位；2号 38T 输出电感 + 25T 辅助）。工作点与漏感请按实测修改。');
     }
-    var rows = [
-      ['Flyback / 反激', 'Vo = Vin·D/((1-D)·n)', 'ΔB = Lp·ΔI/(Np·Ae) = Vin·D/(Np·Ae·Fs)', '单极性，Bpk=ΔB；D 为开关导通占空比；Lp 由 ΔI/Ipk 决定'],
-      ['Active Clamp Flyback', 'Vo ≈ Vin·D/((1-D)·n)', '同反激（钳位电容提供复位）', '单极性，Bpk=ΔB；漏感能量由钳位回路吸收'],
-      ['Forward / 正激', 'Vo = Vin·D/n', 'ΔB = Vin·D/(Np·Ae·Fs)', '单极性，Bpk=ΔB；变比固定时伏秒积与 Vin 无关；1:1 复位绕组要求 D≤0.5'],
-      ['Push-Pull / 推挽', 'Vo = 2·Vin·D/n', 'ΔB_pp = 2·Vin·D/(Np·Ae·Fs)', '双极性，Bpk=ΔB_pp/2；Np 为两半绕组总匝数，每个半绕组 Vin 耐受、电流为 2·Iout/n'],
-      ['Half-Bridge / 半桥', 'Vo = Vin·D/n', 'ΔB_pp = (Vin/2)·D/(Np·Ae·Fs)', '双极性，Bpk=ΔB_pp/2；原边承受 Vin/2，一个周期正负各一次'],
-      ['Full-Bridge / 全桥', 'Vo = 2·Vin·D/n', 'ΔB_pp = Vin·D/(Np·Ae·Fs)', '双极性，Bpk=ΔB_pp/2；原边承受全 Vin，两个半周期各一次'],
-      ['LLC Resonant', 'Vo = Vin_nom/(2n)（谐振点）', 'ΔB_pp = (Vin/2)·0.5/(Np·Ae·Fs)', '双极性；谐振腔增益/软开关范围不在本工具范围']
-    ];
-    var html = '<table><thead><tr><th style="width:16%">拓扑</th><th style="width:20%">输出电压方程</th><th style="width:32%">磁通（伏秒积）</th><th>约定</th></tr></thead><tbody>';
-    rows.forEach(function (r) { html += '<tr><td>' + esc(r[0]) + '</td><td class="mono">' + esc(r[1]) + '</td><td class="mono">' + esc(r[2]) + '</td><td>' + esc(r[3]) + '</td></tr>'; });
-    html += '</tbody></table>';
+    var FORMROWS = {
+      'Flyback': ['Vo = Vin·D/((1-D)·n)', 'ΔB = Lp·ΔI/(Np·Ae) = Vin·D/(Np·Ae·Fs)', '单极性，Bpk=ΔB；D 为开关导通占空比；Lp 由 ΔI/Ipk 决定'],
+      'Active Clamp Flyback': ['Vo ≈ Vin·D/((1-D)·n)', '同反激（钳位电容提供复位）', '单极性，Bpk=ΔB；漏感能量由钳位回路吸收'],
+      'Forward': ['Vo = Vin·D/n', 'ΔB = Vin·D/(Np·Ae·Fs)', '单极性，Bpk=ΔB；变比固定时伏秒积与 Vin 无关；1:1 复位绕组要求 D≤0.5'],
+      'Push-Pull': ['Vo = 2·Vin·D/n', 'ΔB_pp = 2·Vin·D/(Np·Ae·Fs)', '双极性，Bpk=ΔB_pp/2；Np 为两半绕组总匝数，每个半绕组 Vin 耐受、电流为 2·Iout/n'],
+      'Half-Bridge': ['Vo = Vin·D/n', 'ΔB_pp = (Vin/2)·D/(Np·Ae·Fs)', '双极性，Bpk=ΔB_pp/2；原边承受 Vin/2，一个周期正负各一次'],
+      'Full-Bridge': ['Vo = 2·Vin·D/n', 'ΔB_pp = Vin·D/(Np·Ae·Fs)', '双极性，Bpk=ΔB_pp/2；原边承受全 Vin，两个半周期各一次'],
+      'LLC Resonant': ['Vo = Vin_nom/(2n)（谐振点）', 'ΔB_pp = (Vin/2)·0.5/(Np·Ae·Fs)', '双极性；谐振腔增益/软开关范围不在本工具范围']
+    };
+    var topoKey = ($('topology') && FORMROWS[$('topology').value]) ? $('topology').value : 'Flyback';
+    var head = '<thead><tr><th style="width:16%">拓扑</th><th style="width:20%">输出电压方程</th><th style="width:32%">磁通（伏秒积）</th><th>约定</th></tr></thead>';
+    function formRow(key, cur) {
+      var r = FORMROWS[key];
+      var label = (TD.TOPOS[key] ? TD.TOPOS[key].label : key) + (cur ? '　← 当前' : '');
+      return '<tr><td' + (cur ? ' style="background:#eef6ff"' : '') + '>' + esc(label) + '</td><td class="mono">' + esc(r[0]) +
+        '</td><td class="mono">' + esc(r[1]) + '</td><td>' + esc(r[2]) + '</td></tr>';
+    }
+    /* 默认只给当前拓扑，避免七种拓扑的公式混在一张表里；需要对照时展开折叠块 */
+    var html = '<p class="sub" style="margin:2px 0 6px">这里只列当前拓扑（' + esc(TD.TOPOS[topoKey] ? TD.TOPOS[topoKey].label : topoKey) +
+      '）的公式；要看别的拓扑，展开下面的折叠块。</p><table>' + head + '<tbody>' + formRow(topoKey, true) + '</tbody></table>';
+    html += '<details style="margin-top:10px"><summary style="cursor:pointer;color:#2563eb;font-size:12.5px">' +
+      '展开全部 7 种拓扑的公式（对照用，换拓扑前先看一眼约束）</summary><table>' + head + '<tbody>' +
+      Object.keys(FORMROWS).map(function (k) { return formRow(k, k === topoKey); }).join('') + '</tbody></table></details>';
     $('formulaTable').innerHTML = html;
     /* 把报告/对比/保存这些工具函数暴露给 init 里的按钮（render 之后才存在，故延迟查找） */
     window.__TD_UI__ = { buildReport: buildReport, openReport: openReport, runCompare: runCompare,
@@ -1971,10 +2023,20 @@ var TD = (function () {
     var hint = $('rectHint');
     if (hint) hint.textContent = L.hint;
   }
+  /* 顶部说明、电压扫描与输出级卡片的文字都改成"按当前拓扑"生成：避免七种拓扑的说明混在一起 */
+  function updateTopologyNotes() {
+    if (!TD.topologyNotes) return;
+    var n = TD.topologyNotes($('topology') ? $('topology').value : 'Flyback',
+      $('acMode') ? String($('acMode').value) : 'dc');
+    if ($('inputScope')) $('inputScope').textContent = n.scope;
+    if ($('sweepSub')) $('sweepSub').textContent = n.sweep;
+    if ($('outStageSub')) $('outStageSub').textContent = n.outStage;
+  }
   function render() {
     try {
       updateVisibility();
       updateRectLabels();
+      updateTopologyNotes();
       var inputs = readInputs();
       var r = TD.design(inputs);
       lastResult = r;
