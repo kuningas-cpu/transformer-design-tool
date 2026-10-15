@@ -195,6 +195,12 @@ SCENARIOS.forEach((sc) => {
     hasVdsStep === !!sc.vdsRow, 'found=' + hasVdsStep);
   check('速查表解释了 0.85 降额（任何拓扑都能查到）',
     dom.indexOf('开关管耐压降额 0.85') >= 0 && dom.indexOf('BVdss') >= 0);
+  /* 热阻 Rth 是谁的 + 温升步骤行 */
+  const rthHint = hintText(dom, 'rthHint');
+  check('热阻提示写清 Rth 是谁的、怎么取值',
+    /Rth 是谁的/.test(rthHint) && /实测反推/.test(rthHint) && /不是器件\/磁芯的数据手册参数/.test(rthHint), rthHint.slice(0, 90));
+  check('温升步骤行指明"变压器自身热点→环境"',
+    /温升（Rth = 变压器自身/.test(stepRegion) && /Rth_max = ΔT_目标\/P_总/.test(stepRegion), stepRegion.slice(0, 0));
   console.log('    hidden = ' + [...hid].join(' '));
 });
 

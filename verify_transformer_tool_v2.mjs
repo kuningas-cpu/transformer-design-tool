@@ -1311,6 +1311,52 @@ header('30 switch voltage stress Vds,pk: formula, limit and where the page shows
   windowStub.__TD_RENDER__();
 }
 
+/* ---------------- 31. thermal resistance: whose Rth is it and how is it used ---------------- */
+header('31 Rth (K/W): the transformer hot-spot-to-ambient resistance and how it couples back into the losses');
+{
+  const board = { topology: 'Forward', vinMin: 18, vinMax: 36, vout: 19, iout: 3.947, fs: 200, vf: 0.5,
+    resetMode: 'cap', lkUh: 0.8, alLibNh: 1146, ae: 52, le: 32, aw: 38, mlt: 38, auditOn: true, npGiven: 12, nsGiven: 23,
+    wireModeP: 'mm', wireDiaP: 0.4, strandsP: 2, parP: 2, wireModeS: 'mm', wireDiaS: 0.2, strandsS: 2, parS: 3,
+    rth: 28, dtTarget: 40, tamb: 40 };
+  const a = TD.design(baseInputs(board));
+  const sa = a.summary, oa = sa.outStage;
+  const rel31 = (x, y) => Math.abs(x - y) / (Math.abs(y) > 1e-12 ? Math.abs(y) : 1);
+  ok('the tool states the Rth it needs: dT = (P_core + P_cu) x Rth',
+    rel31(sa.dT, (sa.Pcore + sa.Pcu) * a.inputs.rth) < 1e-9, sa.dT + ' vs ' + (sa.Pcore + sa.Pcu) * a.inputs.rth);
+  ok('Rth is referred to the winding hot spot: T_hot = T_ambient + dT',
+    rel31(sa.tempC, a.inputs.tamb + sa.dT) < 1e-9, sa.tempC + ' vs ' + (a.inputs.tamb + sa.dT));
+  ok('the allowed Rth for the target rise is dT_target / P_total',
+    rel31(sa.RthMax, a.inputs.dtTarget / (sa.Pcore + sa.Pcu)) < 1e-9, sa.RthMax + ' vs ' + a.inputs.dtTarget / (sa.Pcore + sa.Pcu));
+
+  /* 铜的 ρ(T) 反馈：Rth 翻倍时 ΔT 超过 2 倍（温升抬铜损） */
+  const b = TD.design(baseInputs(Object.assign({}, board, { rth: 56 })));
+  const ratio = b.summary.dT / sa.dT;
+  ok('doubling Rth raises dT by more than 2x because rho(T) feeds back into P_cu',
+    ratio > 2.0 && ratio < 3.0 && b.summary.Pcu > sa.Pcu, 'ratio ' + ratio.toFixed(3) + '  Pcu ' + sa.Pcu.toFixed(3) + '->' + b.summary.Pcu.toFixed(3));
+  ok('raising the ambient also raises dT (same coupling)',
+    TD.design(baseInputs(Object.assign({}, board, { tamb: 60 }))).summary.dT > sa.dT);
+
+  /* 输出电感（2 号）借用同一个 Rth，但损耗与温升独立计算 */
+  ok('the output inductor uses the same Rth input', rel31(oa.LoutdT, oa.LoutPtotal * a.inputs.rth) < 1e-9,
+    oa.LoutdT + ' vs ' + oa.LoutPtotal * a.inputs.rth);
+  ok('the output inductor dT scales exactly with Rth (its loss does not depend on it)',
+    rel31(b.summary.outStage.LoutdT / oa.LoutdT, 2) < 1e-9 && rel31(b.summary.outStage.LoutPtotal, oa.LoutPtotal) < 1e-12);
+  ok('the transformer temperature rise does not include the output inductor loss',
+    rel31(sa.dT, (sa.Pcore + sa.Pcu) * a.inputs.rth) < 1e-9 && oa.LoutPtotal > 0);
+
+  /* 页面文字：说清"是谁的热阻" */
+  const step = a.steps.find((x) => /^温升/.test(x.t)) || { t: '', f: '', s: '' };
+  ok('the design step names whose Rth it is (hot spot to ambient)',
+    /热点→环境/.test(step.t) && /ΔT = \(P_core \+ P_cu\)·Rth/.test(step.f) && /T_环境/.test(step.f), step.t + ' / ' + step.f);
+  ok('the step also says Rth is not a datasheet number and shows the substituted numbers',
+    /不是数据手册参数/.test(step.s) && /ρ\(T\)/.test(step.s) && step.s.indexOf(a.inputs.rth + ' = ') > 0, step.s.slice(0, 200));
+  ok('the input label says hot-spot to ambient', /热阻 Rth（变压器\/电感 热点→环境）/.test(html));
+  ok('the thermal section explains what Rth is and how to obtain it',
+    /id="rthHint"/.test(html) && /Rth 是谁的/.test(html) && /实测反推/.test(html) && /h ≈ 10~15 W\/\(m²·K\)/.test(html));
+  ok('the reference table has a dedicated Rth row',
+    /热阻 Rth \(K\/W\)/.test(html) && /不是磁芯或器件的数据手册参数/.test(html) && /借用同一个 Rth/.test(html));
+}
+
 if (process.argv.includes('--diag')) {
   const show = (label, r) => {
     const s = r.summary, o = s.outStage;

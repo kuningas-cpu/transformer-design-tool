@@ -196,9 +196,19 @@
       </div>
       <h3>热 / Thermal</h3>
       <div class="three-col">
-        <div class="field"><label for="rth">热阻 Rth <span class="unit">(K/W)</span></label><input id="rth" type="number" value="28" step="1" min="1"/></div>
+        <div class="field"><label for="rth">热阻 Rth（变压器/电感 热点→环境）<span class="unit">(K/W)</span></label><input id="rth" type="number" value="28" step="1" min="1"/></div>
         <div class="field"><label for="dtTarget">目标温升 ΔT <span class="unit">(K)</span></label><input id="dtTarget" type="number" value="40" step="5" min="5"/></div>
         <div class="field"><label for="tamb">环境温度 <span class="unit">(°C)</span></label><input id="tamb" type="number" value="40" step="5" min="-20"/></div>
+      </div>
+      <div class="hint" id="rthHint" style="margin-top:10px;">
+        <b>Rth 是谁的？</b>是<b>这颗变压器本身</b>的热阻——从绕组/磁芯热点到环境（取绕组温升来校核），单位 K/W。
+        工具用它算 <span class="mono">ΔT = (P_core + P_cu)·Rth</span>，再把 ΔT 加回环境温度作为绕组温度、
+        用该温度重算铜的电阻率 ρ(T) 与趋肤深度（所以温升会影响铜损，是个迭代收敛过程）。
+        <b>它不是器件/磁芯的数据手册参数</b>：同一颗磁芯，装法（是否坐在大铜箔上、是否点胶/灌封、有无风）、骨架、散热面积都影响它。
+        取值办法：① 最好<b>实测反推</b>——让样机在已知损耗 P 下工作，测热点温度 <span class="mono">Rth = (T_热点 − T_环境)/P</span>；
+        ② 估算法 <span class="mono">Rth ≈ 1/(h·A_表面)</span>，自然对流+辐射的等效 <span class="mono">h ≈ 10~15 W/(m²·K)</span>，
+        EPC19 级表面约 2×10⁻³ m² → 30 K/W 上下；③ 经验值：小 EP/EPC 变压器自由空气 20~40 K/W，有风或贴大铜箔 10~20，密闭小腔 &gt;40。
+        ★ 你这块默认 28 K/W：1 号变压器总损耗约 0.44 W → ΔT ≈ 12 K，这条校核很宽松；<b>2 号输出电感借用同一个 Rth</b>（同为 EPC19 骨架、同样装法时是合理近似）。
       </div>
       <div class="toolbar">
         <button id="resetBtn" class="secondary" type="button">重置 / Reset</button>
@@ -306,12 +316,22 @@
           <td>骨架窗口里**允许绕组占用的比例上限**（含铜、漆膜、层间胶带、挡墙胶带）。安规间距越大、层数越多，能用的比例就越低。</td>
           <td>校核 `fill ≤ Ku`，并给出"满足 Ku 所需窗口面积 Aw"，便于与骨架实际窗口对照。</td>
           <td>0.3~0.4（圆线+胶带+挡墙）；单层简单结构可到 0.45~0.5；矩形线 0.5~0.6。<br>★ 你这块若要 1500 Vac 加强绝缘：**取 0.35**，并在"窗口与绝缘"里填骨架窗口宽高与挡墙每侧宽度，工具会按 `(宽−2×挡墙)×高` 算有效窗口（填充率才真实）。</td></tr>
+        <tr><td><b>热阻 Rth (K/W)</b></td>
+          <td><b>这颗变压器自己</b>的热阻：从绕组/磁芯热点到环境（工具按绕组温升校核），<span class="mono">ΔT = (P_core + P_cu)·Rth</span>。
+            它<b>不是磁芯或器件的数据手册参数</b>，而是"磁芯 + 骨架 + 装法 + 散热面积"的系统量：同一颗磁芯，坐在大铜箔上/点胶灌封/有风 与 悬空无风 能差 2~3 倍。
+            工具把磁芯损耗与铜损当成一个热源（集中热阻模型），并用算出的热点温度反算铜的电阻率 ρ(T) 与趋肤深度——所以温升与铜损是耦合的（工具内部迭代收敛）。</td>
+          <td>温升 ΔT、所需热阻 Rth_max = ΔT_目标/P_总、绕组工作温度（进而 ρ(T)→DCR→铜损）；也决定"要不要降 J 或换更大磁芯"。
+            <b>输出电感（2 号）也借用同一个 Rth</b>，它自己的损耗与温升独立计算、不计入变压器温升。</td>
+          <td>① 最好<b>实测反推</b>：样机工作到已知损耗 P，测热点温度 → <span class="mono">Rth = (T_热点 − T_环境)/P</span>；
+            ② 估算 <span class="mono">Rth ≈ 1/(h·A_表面)</span>，自然对流+辐射等效 <span class="mono">h ≈ 10~15 W/(m²·K)</span>，EPC19 级表面约 2×10⁻³ m² → 约 30 K/W；
+            ③ 经验值（自由空气、无风）：EPC19/EP20 级 25~35 K/W；更小的 EE16/EP13 级 40~60；点胶/灌封或贴大铜箔 15~25；有风再降一档；密闭无风小腔 &gt;40。<br>
+            ★ 你这块默认 28 K/W：1 号变压器损耗约 0.44 W → ΔT ≈ 12 K，很宽松；2 号输出电感同为 EPC19 骨架、同样装法，借用同一 Rth 是合理近似（若两者装法差别大，请分别核对）。</td></tr>
       </tbody>
     </table>
     </div>
     <div class="hint">
       <strong>它们如何串起来</strong>（工具里的因果链）：<br>
-      ΔB_pp 目标 + Bsat·降额 → 定**最小匝数** → 匝数 + 线径/股数 → 定**铜面积** → k_pack + Ku + 有效窗口 → 判断**装不装得下** → MLT + 铜面积 → 定**DCR/铜损** → F_R 放大铜损 + 磁芯损耗 → 定**温升**。<br>
+      ΔB_pp 目标 + Bsat·降额 → 定**最小匝数** → 匝数 + 线径/股数 → 定**铜面积** → k_pack + Ku + 有效窗口 → 判断**装不装得下** → MLT + 铜面积 → 定**DCR/铜损** → F_R 放大铜损 + 磁芯损耗 → 定**温升**（ΔT = 总损耗 × 热阻 Rth；温升回头又抬高 ρ(T) → 铜损，故是迭代收敛的）。<br>
       也就是说：ΔB_pp 与 Bsat 降额决定磁路，k_pack/Ku/MLT 决定"能不能绕进去、有多重"，F_R 只决定"高频下有多热"。前两组填错会**改变设计结论**，F_R 填错只影响温升的乐观/保守程度。
     </div>
     <div id="formulaTable"></div>
@@ -1002,8 +1022,10 @@ var TD = (function () {
       s: 'B_ac = ' + (Bac * 1000).toFixed(1) + ' mT → Pcv = ' + Pcv.toFixed(1) + ' kW/m³ ;  Ve = ' + Ve.toFixed(0) + ' mm³ → P_core = ' + Pcore.toFixed(3) + ' W' });
     steps.push({ t: '铜损', f: 'R_dc = ρ(T)·MLT·N/(A_strand·股数·并联) ;  P_cu = Σ I_rms²·R_dc·F_R',
       s: loss.per.map(function (x) { return x.name + ': R=' + x.R.toFixed(3) + 'Ω, I_rms=' + x.I.toFixed(2) + 'A, P=' + x.P.toFixed(3) + 'W'; }).join(' ;  ') + '  → P_cu = ' + loss.Pcu.toFixed(3) + ' W' });
-    steps.push({ t: '温升', f: 'ΔT = (P_core + P_cu)·Rth',
-      s: '(' + Pcore.toFixed(3) + ' + ' + loss.Pcu.toFixed(3) + ') × ' + I.rth + ' = ' + loss.dT.toFixed(1) + ' K（绕组温度≈' + loss.tempC.toFixed(0) + '°C）；要满足 ' + I.dtTarget + ' K 需 Rth ≤ ' + (isFinite(RthMax) ? RthMax.toFixed(1) : '-') + ' K/W' });
+    steps.push({ t: '温升（Rth = 变压器自身"热点→环境"热阻）', f: 'ΔT = (P_core + P_cu)·Rth ;  T_热点 = T_环境 + ΔT ;  Rth_max = ΔT_目标/P_总',
+      s: '(' + Pcore.toFixed(3) + ' + ' + loss.Pcu.toFixed(3) + ') × ' + I.rth + ' = ' + loss.dT.toFixed(1) + ' K → 绕组热点温度 ≈ ' + I.tamb + ' + ' + loss.dT.toFixed(1) + ' = ' +
+        loss.tempC.toFixed(0) + '°C（该温度同时用于反算 ρ(T) 与趋肤深度，故铜损与温升是迭代收敛的）；要满足 ' + I.dtTarget + ' K 需 Rth ≤ ' +
+        (isFinite(RthMax) ? RthMax.toFixed(1) : '-') + ' K/W；Rth 不是数据手册参数，取值办法见页尾速查表"热阻 Rth"' });
     /* ---------- 输出级：输出电感 / 输出电容 / 同步整流 vs 二极管 ---------- */
     var os = { buckDerived: (T.kind === 'forward' || T.kind === 'bipolar') };
     /* 输出电感只存在于 Buck 型副边（正激/推挽/桥式）；其余拓扑该输入不参与任何计算 */
