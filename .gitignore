@@ -7,3 +7,4 @@ desktop.ini
 .DS_Store
 *.xlsx.tmp
 _*.json
+_ui_syntax_check.js
