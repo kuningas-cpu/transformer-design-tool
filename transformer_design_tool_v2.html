@@ -243,6 +243,11 @@
     <p class="sub" id="outStageSub">—</p>
     <div id="outStage"></div>
   </div>
+  <div class="card" id="selCard">
+    <h2>器件选型建议 / Device selection</h2>
+    <p class="sub" id="selSub">按当前设计反推"买什么器件"：耐压按 0.85 降额反推标准档位，电流按 1.5 倍裕量，损耗按占输出功率的比例给目标。</p>
+    <div id="selTable"></div>
+  </div>
   <div class="card" id="tankCard">
     <h2>LLC 谐振腔 / LLC resonant tank（FHA 一阶谐波近似）</h2>
     <p class="sub">仅 LLC 拓扑给出。增益 M(fn) = 1/√[(1 + (1/k)(1 - 1/fn²))² + (Q(fn - 1/fn))²]，fn = fsw/fr。FHA 忽略高次谐波及寄生参数，最终以仿真与实测为准。</p>
@@ -1809,10 +1814,115 @@ var TD = (function () {
       outStage: outSub
     };
   }
+  /* 器件选型建议：把设计结果翻译成"买什么器件、按什么耐压/电流档位选"。
+     耐压按 0.85 降额反推档位，电流按 1.5 倍裕量，损耗按占输出功率的比例给目标。 */
+  var VDS_CLASSES_ALL = [30, 40, 55, 60, 75, 80, 100, 120, 150, 200, 250, 300, 400, 500, 600, 650, 800, 1000, 1200];
+  function pickClass(need, list) {
+    for (var i = 0; i < list.length; i++) { if (list[i] >= need) return list[i]; }
+    return null;
+  }
+  function selectionGuide(r) {
+    if (!r || !r.ok) return [];
+    var I = r.inputs, s = r.summary, os = s.outStage, cr = s.capReset, rows = [];
+    var T = TOPOS[I.topology] || TOPOS['Flyback'];
+    var n = s.n, Po = s.Po;
+    function row(item, spec, value, why) { rows.push({ item: item, spec: spec, value: value, why: why }); }
+    /* ---------- 开关管 ---------- */
+    /* 优先用环形解（不要被"简单解/解析上界"那种过保守的估计推着去买更高耐压的管子） */
+    var vdsWorst = cr ? (cr.meas && cr.meas.peakAtVinMaxRing ? Math.max(cr.meas.peakAtVinMaxRing, cr.vdsPkRing) : cr.vdsPkRing) : 0;
+    if (!(vdsWorst > 0)) vdsWorst = 1.4 * I.vinMax;      /* 没有复位/钳位模型时的粗估 */
+    var vdsNeed = vdsWorst / 0.85;
+    var vdsClass = pickClass(vdsNeed, VDS_CLASSES_ALL);
+    row('开关管 Vds 耐压', 'Vds ≥ 峰值/0.85', (vdsClass ? vdsClass + ' V 档' : '>' + Math.ceil(vdsNeed) + ' V'),
+      '环形解峰值 ' + vdsWorst.toFixed(0) + ' V ÷ 0.85 = ' + vdsNeed.toFixed(0) + ' V' +
+      (cr && cr.vdsPk > vdsWorst * 1.2 ? '（另有更保守的"简单解"估计 ' + cr.vdsPk.toFixed(0) + ' V，那相当于复位电流不衰减；实测校准后以环形解为准）' : ''));
+    var ipkMos = s.IpkPri * 1.5;
+    row('开关管电流', 'Id(脉冲) ≥ 1.5×Ipk，Id(连续) ≥ Irms', Math.ceil(ipkMos) + ' A（峰值 ' + s.IpkPri.toFixed(1) + ' A，有效值 ' + s.IrmsPri.toFixed(1) + ' A）',
+      '1.5 倍电流裕量；导通损耗按 Rds(on)@热态 × Irms² 算');
+    /* 导通损耗预算 1.5% Po → 目标 Rds(on) */
+    var pCondBudget = 0.015 * Po;
+    var qHot = 1.5;                                      /* 热态 Rds 约为 25°C 标称的 1.5 倍 */
+    var rdsTarget = s.IrmsPri > 0 ? pCondBudget / (s.IrmsPri * s.IrmsPri * qHot) : 0;
+    row('开关管 Rds(on) 目标', 'Rds(25°C) ≤ 目标', (rdsTarget * 1000).toFixed(0) + ' mΩ',
+      '导通损耗预算 ' + (pCondBudget).toFixed(1) + ' W（1.5%×Po）÷ (' + s.IrmsPri.toFixed(1) + ' A)² ÷ 1.5(热态)');
+    row('开关管 Qg（驱动/开关损耗）', 'Qg 与驱动电流相容', 'Fs×Qg ≤ 驱动能力/3',
+      '当前 Fs = ' + I.fs + ' kHz：Qg = 70 nC 时平均栅极电流 ≈ ' + (I.fs * 1000 * 70e-9 * 1e6).toFixed(0) + ' µA 级，注意驱动峰值电流按 Qg/t_r 取');
+    /* ---------- 副边整流管 ---------- */
+      var vResPkMax = cr ? Math.max(cr.vResetPk, cr.meas ? cr.meas.vResPk : 0) : 0.6 * I.vinMax;
+    if (T.kind === 'forward' || T.kind === 'bipolar') {
+      var secTap = (T.kind === 'bipolar' && I.secRect === 'ct');
+      var vSecOff = vResPkMax / Math.max(n, 1e-9) + s.Vo;        /* 整流管关断时承受的副边电压（复位期反射 + 输出） */
+      var vrRect = 1.2 * vSecOff;
+      row('副边整流二极管 反向电压', 'Vr ≥ 1.2×耐压需求', (pickClass(vrRect, [20, 30, 40, 45, 60, 80, 100, 120, 150, 200, 250, 300, 400, 600]) || Math.ceil(vrRect)) + ' V',
+        '关断期副边承受 V_res,pk/n + Vo = ' + (vResPkMax / Math.max(n, 1e-9)).toFixed(0) + ' + ' + s.Vo.toFixed(1) + ' = ' + vSecOff.toFixed(0) + ' V，再留 20%');
+      row('副边整流二极管 电流', 'I_F(AV) ≥ Iout，I_FSM ≥ 1.5×Is_pk', 'AV ' + I.iout.toFixed(1) + ' A / 浪涌 ' + (1.5 * s.IsPkSec).toFixed(1) + ' A',
+        '平均电流 = Iout；峰值 ' + s.IsPkSec.toFixed(1) + ' A（正激类还要减去续流期电流）');
+      if (!secTap) {
+        var vSecOn = I.vinMax / Math.max(n, 1e-9);
+        var vrFree = 1.2 * vSecOn;
+        row('续流二极管 反向电压', 'Vr ≥ 1.2×Vin_max/n', (pickClass(vrFree, [20, 30, 40, 45, 60, 80, 100, 120, 150, 200, 250, 300]) || Math.ceil(vrFree)) + ' V',
+          '开通期副边承受 Vin_max/n = ' + I.vinMax + '/' + n.toFixed(3) + ' = ' + vSecOn.toFixed(0) + ' V，再留 20%');
+        row('续流二极管 电流', 'I_F(AV) ≥ Iout×(1−D_min)', 'AV ' + (I.iout * (1 - s.dNeedMax) / Math.max(1 - s.dNeedMin, 1e-9)).toFixed(1) + ' A（D_min = ' + s.dNeedMax.toFixed(3) + '）',
+          '续流期占比最大处（Vin_max）的电流');
+      }
+      if (I.rectDevice !== 'diode') {
+        var rdsSr = s.IsPkSec > 0 ? (0.01 * Po) / (s.IrmsSec * s.IrmsSec * 1.5) : 0;
+        row('同步整流 MOSFET Rds(on)', 'Rds(25°C) ≤ 目标', (rdsSr * 1000).toFixed(1) + ' mΩ',
+          'SR 损耗预算 1%×Po = ' + (0.01 * Po).toFixed(1) + ' W ÷ (' + s.IrmsSec.toFixed(1) + ' A)² ÷ 1.5(热态)');
+      }
+    }
+    /* ---------- 复位网络 ---------- */
+    if (cr) {
+      row('复位电容 C_res（让复位正好在关断期末完成）', 'C ≈ (t_off(Vin_min)/π)²/Lm', cr.crHardMaxNf.toFixed(1) + ' nF（自动上限 ' + cr.crMaxNf.toFixed(2) + ' nF，1/4 值）',
+        'Ω = t_off/√(Lm·C) 要落在 180° 附近；值越大峰值越低但开通损耗与偏磁风险上升');
+      row('复位电容 耐压', '≥ 1.5×复位峰值', Math.ceil(1.5 * Math.max(cr.vResetPk, 10)) + ' V',
+        '复位峰值 ' + cr.vResetPk.toFixed(0) + ' V（应力在电容与开关上同量级）');
+      row('复位电容 脉冲电流', '允许峰值 ≥ I_pk,loop', cr.ringIPk.toFixed(2) + ' A 峰值',
+        '复位回路电流幅值（环形解），选薄膜/高频低 ESR 电容，引脚短');
+      if (I.resetMode === 'winding' || T.kind === 'forward') {
+        row('复位绕组方案（替代电容）', 'Nr = Np（1:1），D ≤ 0.5', '复位二极管 Vr ≥ ' + Math.ceil(2.4 * I.vinMax) + ' V（2×Vin_max 再留 20%）',
+          '1:1 复位绕组的开关管应力 = 2×Vin_max = ' + (2 * I.vinMax).toFixed(0) + ' V，比电容复位低且无谐振尖峰；复位能量回馈母线（效率好），代价是多一个绕组 + D 受限');
+      }
+    }
+    /* ---------- RCD 钳位（吸收漏感尖峰 / 替代谐振复位） ---------- */
+    if (true) {
+      var lkUhIn = parseFloat(I.lkUh); if (!isFinite(lkUhIn) || lkUhIn <= 0) lkUhIn = 0.2;
+      var lk = lkUhIn * 1e-6;
+      var ipkClamp = s.IpkPri;
+      var vClamp = T.kind === 'flyback' ? (I.vinMax + 1.4 * n * s.Vo) : (1.35 * Math.max(vdsWorst, I.vinMax * 1.4));
+      row('RCD 钳位电压 V_clamp', (T.kind === 'flyback' ? 'Vin_max + 1.3~1.5×n·Vo' : '1.3~1.5×Vin_max'), Math.ceil(vClamp / 10) * 10 + ' V',
+        T.kind === 'flyback' ? '留出漏感尖峰余量又不牺牲太多效率' : '正激类把它取在 Vin_max 上方 30~50%，只夹住尖峰');
+      var eLk = 0.5 * lk * ipkClamp * ipkClamp;
+      var pClamp = eLk * I.fs * 1000;
+      row('RCD 耗散（代价）', 'P ≈ ½·Lk·Ipk²·Fs', pClamp.toFixed(2) + ' W（占输出 ' + (pClamp / Math.max(Po, 1e-9) * 100).toFixed(1) + '%）',
+        'Lk = ' + (lk * 1e6).toFixed(2) + ' µH、Ipk = ' + ipkClamp.toFixed(2) + ' A；**这是 RCD 与谐振复位最大的区别**（谐振复位把这部分能量退回母线）');
+      /* RCD 是按"每次关断把漏感能量倒进钳位电容、再用电阻把它放掉"设计的：
+         C 由允许的纹波定（ΔV = E/(C·V_clamp)），R 由耗散定（R = V_clamp²/P），两者要满足 ΔV 的稳态关系 */
+      var dVclamp = 0.1 * vClamp;
+      var cClamp = eLk / (dVclamp * vClamp);
+      var rClamp = pClamp > 1e-9 ? vClamp * vClamp / pClamp : 0;
+      row('RCD 电容 C_clamp', 'ΔV ≤ 10%×V_clamp', (cClamp * 1e9).toFixed(2) + ' nF / ≥ ' + Math.ceil(1.2 * vClamp) + ' V',
+        '每周期漏感能量 ' + (eLk * 1e6).toFixed(2) + ' µJ 倒进 C，ΔV = E/(C·V_clamp) = ' + (eLk / (cClamp * vClamp) * 1).toFixed(0) + ' V');
+      row('RCD 电阻 R_clamp', 'R = V_clamp²/P，功率 ≥ 2×耗散', (rClamp >= 1000 ? (rClamp / 1000).toFixed(1) + ' kΩ' : rClamp.toFixed(0) + ' Ω') + ' / ≥ ' + (2 * pClamp).toFixed(1) + ' W',
+        '一个周期内放完能量：平均电流 ' + (vClamp / Math.max(rClamp, 1) * 1000).toFixed(1) + ' mA，R·C = ' + (rClamp * cClamp * 1e6).toFixed(1) + ' µs（约 ' + (rClamp * cClamp * I.fs * 1000).toFixed(0) + ' 个周期）');
+      row('RCD 二极管', '快恢复/超快恢复', 'Vr ≥ ' + Math.ceil(1.2 * vClamp) + ' V，Ifsm ≥ ' + Math.ceil(1.5 * ipkClamp) + ' A，trr ≤ 100 ns',
+        '钳位二极管要快，否则漏感能量还没转走开关就已经被尖峰打到');
+    }
+    /* ---------- 输出级（非 Buck 型副边也给出电容） ---------- */
+    if (os) {
+      if (os.buckDerived) {
+        row('输出电感', 'L = Vo(1−D_min)/(ΔI_L·Fs)', os.LoutUH.toFixed(2) + ' µH / ' + os.LoutN + ' 匝',
+          'Ipk ' + os.LoutIpk.toFixed(2) + ' A、Irms ' + os.LoutIrms.toFixed(2) + ' A，Bpk ' + os.LoutBpk.toFixed(3) + ' T');
+      }
+      row('输出电容', 'C ≥ 纹波预算分解值', os.CoutUF.toFixed(1) + ' µF（ESR ≤ ' + os.CoutEsrMax.toFixed(1) + ' mΩ）',
+        '纹波电流 ' + os.CoutIcRms.toFixed(2) + ' A rms，耐压建议 ≥ ' + os.CoutVrate.toFixed(0) + ' V');
+    }
+    return rows;
+  }
   return { design: design, coreComparison: coreComparison, CORES: CORES, MATERIALS: MATERIALS, TOPOS: TOPOS,
     setCores: setCores, parseCoreCsv: parseCoreCsv, coresToCsv: coresToCsv,
     awgToMm: awgToMm, mmToAwg: mmToAwg, skinDepthMm: skinDepthMm, rhoCu: rhoCu, MU0: MU0, RHO_CU_20: RHO_CU_20,
-    rectLabels: rectLabels, topologyNotes: topologyNotes };
+    rectLabels: rectLabels, topologyNotes: topologyNotes, selectionGuide: selectionGuide };
 })();
 /* ================= ENGINE-END ================= */
 </script>
@@ -2117,6 +2227,16 @@ var TD = (function () {
     });
     html += '</tbody></table>';
     $('stepTable').innerHTML = html;
+  }
+  function renderSelection(r) {
+    var rows = TD.selectionGuide ? TD.selectionGuide(r) : [];
+    if (!rows.length) { $('selTable').innerHTML = '<div class="hint">输入有效后给出器件选型建议。</div>'; return; }
+    var html = '<table><thead><tr><th style="width:26%">器件 / 项目</th><th style="width:22%">选型依据</th><th style="width:24%">推荐值</th><th>说明</th></tr></thead><tbody>';
+    rows.forEach(function (x) {
+      html += '<tr><td>' + esc(x.item) + '</td><td class="mono">' + esc(x.spec) + '</td><td><b>' + esc(x.value) + '</b></td><td>' + esc(x.why) + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    $('selTable').innerHTML = html;
   }
   function renderCores(r) {
     var rows = TD.coreComparison(r.inputs);
@@ -2428,6 +2548,7 @@ var TD = (function () {
       renderSweep(r);
       renderSteps(r);
       renderCores(r);
+      renderSelection(r);
       renderFormulas();
     } catch (e) {
       showError(e && e.message ? e.message : String(e));

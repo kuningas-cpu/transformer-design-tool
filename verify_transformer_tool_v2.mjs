@@ -1634,6 +1634,67 @@ header('35 second capture (Vo=12 V, aux 40T): is the reset really the capacitor?
     Math.abs(aux40 - 12.7) < 0.3 && Math.abs(aux25 - 7.7) < 0.3, aux40.toFixed(2) + ' V vs ' + aux25.toFixed(2) + ' V');
 }
 
+/* ---------------- 36. device selection guide ---------------- */
+header('36 device selection: switch / rectifier / freewheel / reset network / RCD');
+{
+  const board = { topology: 'Forward', fs: 250, vinMin: 18, vinMax: 36, vout: 19, iout: 3.947, vf: 0.5,
+    resetMode: 'cap', cresNf: 3.2, vdsRated: 100, lkUh: 0.2, naux: 25, nlGiven: 38, lmGiven: 145,
+    alLibNh: 1146, ae: 52, le: 32, aw: 38, mlt: 38, auditOn: true, npGiven: 12, nsGiven: 23,
+    wireModeP: 'mm', wireDiaP: 0.4, strandsP: 2, parP: 2, wireModeS: 'mm', wireDiaS: 0.2, strandsS: 2, parS: 3 };
+  const r = TD.design(baseInputs(board));
+  const rows = TD.selectionGuide(r);
+  const of = (kw) => rows.filter((x) => x.item.indexOf(kw) >= 0);
+  const one = (kw) => (of(kw)[0] || { item: kw, spec: '', value: '', why: '' });
+  ok('the selection guide exists and returns a full table', rows.length >= 12, rows.length + ' rows');
+  ok('no row contains NaN / undefined / Infinity',
+    rows.every((x) => !/NaN|undefined|Infinity/.test(x.value + x.why + x.spec)),
+    rows.filter((x) => /NaN|undefined|Infinity/.test(x.value + x.why)).map((x) => x.item).join(', '));
+  /* 开关管：环形解 76 V ÷ 0.85 = 90 V ⇒ 100 V 档（并说明简单解更保守） */
+  const sw = one('开关管 Vds 耐压');
+  ok('switch voltage class comes from the ring solution (100 V class here)', /100 V 档/.test(sw.value) && /环形解峰值 76 V/.test(sw.why),
+    sw.value + ' | ' + sw.why);
+  ok('the guide warns that the naive solution would ask for a higher class', /简单解/.test(sw.why));
+  ok('switch current targets 1.5x peak and a conduction-loss budget for Rds(on)',
+    /13 A/.test(one('开关管电流').value) && /23 mΩ/.test(one('Rds(on)').value),
+    one('开关管电流').value + ' / ' + one('Rds(on)').value);
+  /* 副边二极管：整流管要按"复位期反射电压 + Vo"选（所以比只按 Vin/n 的续流管高一档） */
+  const vr = one('副边整流二极管 反向电压');
+  const vf = one('续流二极管 反向电压');
+  ok('rectifier Vr accounts for the reset voltage reflected to the secondary (200 V class)', /200 V/.test(vr.value), vr.value);
+  ok('freewheel Vr accounts for Vin_max/n only (100 V class)', /100 V/.test(vf.value), vf.value);
+  ok('diode current rows ask for average + surge ratings',
+    /AV 3.9 A/.test(one('副边整流二极管 电流').value) && /AV 6.5 A/.test(one('续流二极管 电流').value));
+  /* 复位电容：上限（Vin_min 处 Ω=180°）+ 耐压 + 脉冲电流 */
+  ok('the reset capacitor row gives the Omega=180 value plus the tool auto value',
+    /7\.4 nF/.test(one('复位电容 C_res').value) && /85 V/.test(one('复位电容 耐压').value) && /0\.18 A/.test(one('复位电容 脉冲电流').value),
+    one('复位电容 C_res').value + ' / ' + one('复位电容 耐压').value);
+  ok('the reset-winding alternative is offered with Nr = Np and 2xVin_max diode',
+    /Nr = Np/.test(one('复位绕组').spec) && /87 V/.test(one('复位绕组').value) && /2×Vin_max/.test(one('复位绕组').why));
+  /* RCD：耗散 = ½LkIpk²Fs，C 由 10% 纹波定，R = V²/P 且两者自洽 */
+  const eLk = 0.5 * 0.2e-6 * r.summary.IpkPri * r.summary.IpkPri;
+  const pClamp = eLk * 250e3;
+  ok('the RCD dissipation equals 1/2*Lk*Ipk^2*Fs',
+    Math.abs(parseFloat(one('RCD 耗散').value) - pClamp) < 0.05, one('RCD 耗散').value + ' vs ' + pClamp.toFixed(2) + ' W');
+  const cClampNf = parseFloat(one('RCD 电容').value);
+  const rClampK = parseFloat(one('RCD 电阻').value);
+  ok('the RCD capacitor lands in the nF range and the resistor in the kOhm range with >=2x power headroom',
+    cClampNf > 1 && cClampNf < 50 && rClampK > 1 && rClampK < 100 && /≥ 3\.4 W/.test(one('RCD 电阻').value),
+    cClampNf + ' nF / ' + rClampK + ' kΩ');
+  ok('the RCD capacitor ripple works out to ~10% of V_clamp (self-consistent design)',
+    Math.abs(eLk / (cClampNf * 1e-9 * parseFloat(one('RCD 钳位电压').value)) - 0.1 * parseFloat(one('RCD 钳位电压').value)) < 2,
+    one('RCD 电容').why);
+  ok('the RCD also lists the diode requirements', /trr ≤ 100 ns/.test(one('RCD 二极管').value));
+  /* 同步整流目标 */
+  const sr = TD.design(baseInputs(Object.assign({}, board, { rectDevice: 'sr1', rdsOnMOhm: 10 })));
+  ok('when SR is selected the guide adds an Rds(on) target for the secondary',
+    TD.selectionGuide(sr).some((x) => /同步整流/.test(x.item) && /mΩ/.test(x.value)),
+    JSON.stringify(TD.selectionGuide(sr).filter((x) => /同步整流/.test(x.item))));
+  /* 界面：卡片存在并能渲染 */
+  ok('the panel has a device-selection card', /id="selTable"/.test(html) && /器件选型建议/.test(html));
+  ok('the card is rendered with a table', /<table>/.test(dom.selTable.innerHTML || '') && /开关管 Vds 耐压/.test(dom.selTable.innerHTML || ''),
+    String(dom.selTable.innerHTML).slice(0, 120));
+}
+
 if (process.argv.includes('--diag')) {
   const show = (label, r) => {
     const s = r.summary, o = s.outStage;
