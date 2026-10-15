@@ -915,8 +915,15 @@ var TD = (function () {
         var den = 1 - Math.cos(Om);
         var iOffR = Math.abs(den) < 1e-4 ? dIr : (dIr + (vinV / Zz) * Math.sin(Om)) / den;
         if (!(iOffR > 0) || !isFinite(iOffR)) iOffR = dIr;      /* 非物理区间退回简单解 */
+        /* 关断期末复位电容上的电压（drain 端）：v_end = Vin·cosΩ − I_off·Z·sinΩ
+           开通瞬间开关把它强制到 +Vin，储能差 ½C|v_end² − Vin²| 就地在开关/回路里烧掉 —— 这是"复位没走完/走过头"的直接代价 */
+        var vEndR = vinV * Math.cos(Om) - iOffR * Zz * Math.sin(Om);
+        var dumpJ = 0.5 * crNf * 1e-9 * Math.abs(vEndR * vEndR - vinV * vinV);
+        var iMagLoop = Math.sqrt(iOffR * iOffR + Math.pow(vinV / Zz, 2));   /* 关断期回路电流幅值 */
         return { vds: vinV + Math.sqrt(vinV * vinV + Math.pow(iOffR * Zz, 2)), iOff: iOffR,
-          omDeg: Om * 180 / Math.PI, resonance: Math.abs(Math.sin(Om)) < 0.15 || Math.abs(den) < 0.05 };
+          omDeg: Om * 180 / Math.PI, resonance: Math.abs(Math.sin(Om)) < 0.15 || Math.abs(den) < 0.05,
+          vEnd: vEndR, dumpW: dumpJ * Fs, iPkLoop: iMagLoop,
+          bPk: Np > 0 ? lmH * iMagLoop / (Np * Ae) : 0 };
       }
       var ring = ringSolve(Lm, I.vinMax);
       var lkMaxUh = null;
@@ -1009,6 +1016,7 @@ var TD = (function () {
         crMinNf: crMinNf, crHardMaxNf: crHardMaxNf, crWindowEmpty: crWindowEmpty, lkMaxUh: lkMaxUh, vdsRoom: vdsRoom,
         vdsClassNeed: vdsClassNeed,
         vdsPkRing: ring.vds, ringIoff: ring.iOff, ringOmDeg: ring.omDeg, ringResonance: ring.resonance,
+        ringVend: ring.vEnd, ringDumpW: ring.dumpW, ringIPk: ring.iPkLoop, ringBpk: ring.bPk,
         meas: meas,
         LmUH: Lm * 1e6, dMaxUsed: dReset, dInput: I.dutyMax };
       /* 警告：窗口为空 / 电容超出窗口 —— 这两条决定"这个耐压档能不能用" */
@@ -1095,6 +1103,16 @@ var TD = (function () {
              (vdsRated > 0 ? '；0.85×耐压 = ' + (vdsRated * 0.85).toFixed(1) + ' V → ' + (meas.peakAtVinMaxOk ? '**通过**' : '**不通过**') : '') +
              '。若在实测点校准了 (Lm, C_res)，这里的预测才是可靠的应力值。' });
       }
+      /* 复位没走完 / 走过头 的代价：关断期末电容还带电压，开通瞬间这部分能量就地烧掉 */
+      var omDegN = ((ring.omDeg % 360) + 360) % 360;
+      steps.push({ t: '复位波形"走完没有"：Ω、关断期末电压、开通损耗与复位电流磁密',
+        f: 'Ω = t_off/√(Lm·C_res)（理想 180°，即复位正好在关断期末完成）；v_end = Vin·cosΩ − I_off·Z·sinΩ；'
+          + '开通瞬间烧掉的储能 = ½C·|v_end² − Vin²|（×Fs 得功率）；复位回路电流幅值 = √(I_off² + (Vin/Z)²) → B = Lm·I/(Np·Ae)',
+        s: 'Vin_max 处：Ω = ' + ring.omDeg.toFixed(0) + '°（归一化 ' + omDegN.toFixed(0) + '°）' + (ring.omDeg > 180 ? '，复位走过头' : '，复位没走完') +
+           '；v_end = ' + ring.vEnd.toFixed(1) + ' V → 每周期开通瞬间多烧 ' + (ring.dumpW / Fs * 1e6).toFixed(1) + ' µJ ≈ **' + ring.dumpW.toFixed(2) +
+           ' W**；复位电流幅值 ' + ring.iPkLoop.toFixed(3) + ' A → B_pk = ' + ring.bPk.toFixed(3) + ' T（允许 ' + BsatAllow.toFixed(3) + ' T）。' +
+           (ring.omDeg > 175 && ring.omDeg < 187 ? 'Ω ≈ 180°，正是峰值电压与开通损耗都最小的设计点 ✓' : '') +
+           (ring.resonance ? ' **Ω 落在 360° 整数倍附近：能量逐周期累积，电压/电流会失控。**' : '') });
       /* 复位电容的可行窗口单独交代：这是"能不能用这个耐压档"的判据 */
       steps.push({ t: '复位电容 C_res 的可行窗口（耐压 vs 复位时间）',
         f: 'Vds,pk(C) = Vin_max + (A + B)/√C（A = I_m,pk·√Lm，B = I_pk,pri·√Lk，两项都 ∝ 1/√C）→ 满足 0.85·Vds_rated 的 C 下限；'
@@ -1513,6 +1531,25 @@ var TD = (function () {
       if (measOffPoint) {
         addCheck('开关管电压应力（环形解 @Vin_max）≤ 0.85×耐压', capReset.meas.peakAtVinMaxRing, 'V', capReset.vdsLimit, 'V',
           capReset.meas.peakAtVinMaxRing <= capReset.vdsLimit, 0.9);
+      }
+      /* 复位波形本身的健康度：Ω 是否接近 180°、开通损耗、复位电流磁密 */
+      if (capReset.ringOmDeg > 0) {
+        var omN = ((capReset.ringOmDeg % 360) + 360) % 360;
+        addCheck('复位角 Ω（理想 180°＝复位正好在关断期末完成）', omN, '°', 180, '°',
+          Math.abs(omN - 180) <= 60, 0.85, 'peripheral');
+        addCheck('复位回路电流磁密 B_pk（环形解）≤ Bsat 降额', capReset.ringBpk, 'T', BsatAllow, 'T',
+          capReset.ringBpk <= BsatAllow, 0.9);
+        if (capReset.ringDumpW > Math.max(0.005 * Po, 0.05)) {
+          warns.push('复位波形没走完/走过头：Vin_max 处 Ω = ' + capReset.ringOmDeg.toFixed(0) + '°（理想 180°），关断期末复位电容上还有 ' +
+            capReset.ringVend.toFixed(0) + ' V，开通瞬间这部分储能就地烧掉 ≈ **' + capReset.ringDumpW.toFixed(2) +
+            ' W**（占输出 ' + (capReset.ringDumpW / Math.max(Po, 1e-9) * 100).toFixed(1) + '%），并伴随开通电流尖峰。' +
+            '要把 Ω 拉回 180° 附近：调 C_res ≈ (t_off(Vin_min)/π)²/Lm（复位到关断期末完成），或改 Lm/Fs。');
+        }
+        if (capReset.ringBpk > BsatAllow * 0.9) {
+          warns.push('复位电流峰值 ' + capReset.ringIPk.toFixed(3) + ' A 对应磁密 ' + capReset.ringBpk.toFixed(3) +
+            ' T，已接近/超过允许值 ' + BsatAllow.toFixed(3) + ' T —— 一旦负载、输入或启动过程扰动，磁通基线会继续抬高直至饱和（初级电流爆冲）。' +
+            '根因通常是复位没走完（Ω 偏离 180°），先把 C_res 调到让复位在关断期末完成。');
+        }
       }
       if (vdsHasMeas) {
         addCheck('开关管电压应力 Vds,pk（实测 @Vin=' + capReset.meas.vinMeas.toFixed(0) + ' V）≤ 0.85×耐压',

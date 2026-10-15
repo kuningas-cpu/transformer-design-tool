@@ -1550,6 +1550,37 @@ header('34 measured 60 V @ Vin=24 V vs the corrected resonant-reset floor (real 
     /id="vdsMeasPk"/.test(html) && /id="vdsMeasVin"/.test(html) && /vdsMeasVin: num\('vdsMeasVin', 0\)/.test(html));
   ok('the board preset carries the measurement and its input voltage (60 V @ 24 V)',
     /vdsMeasPk: 60/.test(html) && /vdsMeasVin: 24/.test(html));
+
+  /* --- 复位波形"走完没有"的代价：Ω、关断期末电容电压、开通损耗、复位电流磁密 --- */
+  const fitted = TD.design(baseInputs(Object.assign({}, board, { cresNf: 3.2, vdsMeasPk: 0, vdsMeasVin: 0 })));
+  const fc = fitted.summary.capReset;
+  const om24 = TD.design(baseInputs(Object.assign({}, board, { cresNf: 3.2, vinMin: 24, vinMax: 24, vdsMeasPk: 0 }))).summary.capReset.ringOmDeg;
+  ok('the fitted 3.2 nF puts Omega at ~182 deg at 24 V (exactly the "reset completes at the end of the off-time" point)',
+    om24 > 175 && om24 < 190, om24.toFixed(1) + '°');
+  ok('at that point the turn-on dump is small and the reset current stays far from saturation',
+    fc.ringDumpW < 0.8 && fc.ringBpk < 0.1, fc.ringDumpW.toFixed(2) + ' W, ' + fc.ringBpk.toFixed(3) + ' T');
+  ok('the ring fields are exposed (v_end, dump power, loop peak current, B)',
+    typeof fc.ringVend === 'number' && typeof fc.ringDumpW === 'number' && typeof fc.ringIPk === 'number' && typeof fc.ringBpk === 'number');
+  ok('a check row grades Omega against the ideal 180 deg',
+    fitted.checks.some((x) => /复位角 Ω/.test(x.name) && x.scope === 'peripheral'));
+  ok('a step row explains what "not completed / overshooting" costs',
+    fitted.steps.some((s) => /复位波形"走完没有"/.test(s.t) && /开通瞬间多烧/.test(s.s) && /B_pk/.test(s.s)));
+
+  /* 两边都坏：C 太小（走过头）与 C 太大（没走完） */
+  const small = TD.design(baseInputs(Object.assign({}, board, { cresNf: 1, vdsMeasPk: 0, vdsMeasVin: 0 })));
+  const sc = small.summary.capReset;
+  ok('C_res = 1 nF overshoots: Omega = 405 deg, ~9.6 W burned at turn-on, B near saturation, 471 V peak',
+    sc.ringOmDeg > 380 && sc.ringDumpW > 5 && sc.ringBpk > 0.25 && sc.vdsPkRing > 400,
+    [sc.ringOmDeg.toFixed(0) + '°', sc.ringDumpW.toFixed(2) + ' W', sc.ringBpk.toFixed(3) + ' T', sc.vdsPkRing.toFixed(0) + ' V'].join(' / '));
+  ok('that failure is reported as loss + saturation risk',
+    small.warns.some((w) => /复位波形没走完\/走过头/.test(w) && /烧掉/.test(w)) &&
+    small.warns.some((w) => /磁密/.test(w) && /饱和/.test(w)),
+    small.warns.filter((w) => /复位/.test(w)).join(' | ').slice(0, 200));
+  const big = TD.design(baseInputs(Object.assign({}, board, { cresNf: 47, vdsMeasPk: 0, vdsMeasVin: 0 })));
+  const bc = big.summary.capReset;
+  ok('C_res = 47 nF is the other failure mode: Omega = 59 deg, ~15 W burned, B = 0.45 T (saturated)',
+    bc.ringOmDeg < 90 && bc.ringDumpW > 10 && bc.ringBpk > 0.4,
+    [bc.ringOmDeg.toFixed(0) + '°', bc.ringDumpW.toFixed(2) + ' W', bc.ringBpk.toFixed(3) + ' T'].join(' / '));
 }
 
 
