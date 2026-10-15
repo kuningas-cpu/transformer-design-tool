@@ -72,8 +72,8 @@
             <option value="LLC Resonant">LLC 谐振 / LLC</option>
           </select></div>
         <div class="field"><label for="fs">开关频率 Fs <span class="unit">(kHz)</span></label><input id="fs" type="number" value="100" step="1" min="1"/></div>
-        <div class="field"><label for="vinMin">Vin_min <span class="unit">(V)</span></label><input id="vinMin" type="number" value="9" step="0.1" min="0.1"/></div>
-        <div class="field"><label for="vinMax">Vin_max <span class="unit">(V)</span></label><input id="vinMax" type="number" value="36" step="0.1" min="0.1"/></div>
+        <div class="field"><label for="vinMin">Vin_min <span class="unit">(V)</span>（选交流时由母线谷值覆盖）</label><input id="vinMin" type="number" value="9" step="0.1" min="0.1"/></div>
+        <div class="field"><label for="vinMax">Vin_max <span class="unit">(V)</span>（选交流时由母线峰值覆盖）</label><input id="vinMax" type="number" value="36" step="0.1" min="0.1"/></div>
         <div class="field"><label for="vout">Vout <span class="unit">(V)</span></label><input id="vout" type="number" value="12" step="0.1" min="0.1"/></div>
         <div class="field"><label for="iout">Iout <span class="unit">(A)</span></label><input id="iout" type="number" value="2" step="0.1" min="0.01"/></div>
         <div class="field"><label for="vf">整流压降 Vf <span class="unit">(V)</span></label><input id="vf" type="number" value="0.5" step="0.05" min="0"/></div>
@@ -81,6 +81,23 @@
         <div class="field"><label for="vinNom">Vin_nom（LLC 用，0=自动中点）<span class="unit">(V)</span></label><input id="vinNom" type="number" value="0" step="0.1" min="0"/></div>
         <div class="field"><label for="secRect">次级整流（桥式/推挽用）/ Secondary rectifier</label>
           <select id="secRect"><option value="ct">中心抽头 2 绕组 / Center-tapped</option><option value="bridge">全桥 1 绕组 / Full bridge</option></select></div>
+        <div class="field"><label for="rectDevice">次级整流器件</label>
+          <select id="rectDevice"><option value="diode">二极管（整流+续流）</option><option value="sr1">同步整流-仅整流管</option><option value="sr2">同步整流-整流+续流</option></select></div>
+      </div>
+      <h3>输入类型与交流前端 / Input source &amp; AC front-end</h3>
+      <div class="three-col">
+        <div class="field"><label for="acMode">输入类型</label>
+          <select id="acMode"><option value="dc">直流输入（用下面的 Vin_min/Vin_max）</option><option value="ac">交流 + 整流母线电容</option><option value="pfc">交流 + PFC（母线恒定）</option></select></div>
+        <div class="field"><label for="vacMin">Vac_min <span class="unit">(V rms)</span></label><input id="vacMin" type="number" value="176" step="1" min="1"/></div>
+        <div class="field"><label for="vacMax">Vac_max <span class="unit">(V rms)</span></label><input id="vacMax" type="number" value="264" step="1" min="1"/></div>
+        <div class="field"><label for="fline">工频 <span class="unit">(Hz)</span></label><input id="fline" type="number" value="50" step="1" min="1"/></div>
+        <div class="field"><label for="cbusUf">母线电容 C_bus <span class="unit">(µF)</span></label><input id="cbusUf" type="number" value="220" step="10" min="1"/></div>
+        <div class="field"><label for="cbusEsr">母线电容 ESR <span class="unit">(Ω)</span></label><input id="cbusEsr" type="number" value="0.3" step="0.05" min="0.01"/></div>
+        <div class="field"><label for="rsAc">交流源阻+线阻 <span class="unit">(Ω)</span></label><input id="rsAc" type="number" value="0.5" step="0.1" min="0.01"/></div>
+        <div class="field"><label for="vdBridge">整流桥压降 <span class="unit">(V)</span></label><input id="vdBridge" type="number" value="1.4" step="0.1" min="0"/></div>
+        <div class="field"><label for="holdMs">保持时间要求 <span class="unit">(ms，0=不校核)</span></label><input id="holdMs" type="number" value="0" step="5" min="0"/></div>
+        <div class="field"><label for="holdVmin">保持结束时允许最低母线 <span class="unit">(V)</span></label><input id="holdVmin" type="number" value="0" step="1" min="0"/></div>
+        <div class="field"><label for="pfcBus">PFC 母线电压 <span class="unit">(V)</span></label><input id="pfcBus" type="number" value="390" step="5" min="20"/></div>
       </div>
       <h3>拓扑工作点 / Operating point</h3>
       <div class="two-col">
@@ -133,8 +150,6 @@
         <div class="field"><label for="nlPar">输出电感并联绕组数</label><input id="nlPar" type="number" value="1" step="1" min="1"/></div>
         <div class="field"><label for="ripplePct">输出纹波允许值 <span class="unit">(% of Vout)</span></label><input id="ripplePct" type="number" value="1" step="0.1" min="0.05"/></div>
         <div class="field"><label for="esrOhm">输出电容 ESR <span class="unit">(Ω)</span></label><input id="esrOhm" type="number" value="0.01" step="0.001" min="0.0001"/></div>
-        <div class="field"><label for="rectDevice">次级整流器件</label>
-          <select id="rectDevice"><option value="diode">二极管（整流+续流）</option><option value="sr1">同步整流-仅整流管</option><option value="sr2">同步整流-整流+续流</option></select></div>
         <div class="field"><label for="rdsOnMOhm">同步整流 Rds(on) <span class="unit">(mΩ，仅 SR 模式用)</span></label><input id="rdsOnMOhm" type="number" value="0" step="1" min="0"/></div>
         <div class="field"><label for="vfBody">SR 体二极管压降 <span class="unit">(V，仅 SR 模式用)</span></label><input id="vfBody" type="number" value="0.8" step="0.05" min="0"/></div>
         <div class="field"><label for="tDeadNs">死区时间 t_dead <span class="unit">(ns，仅 SR/LLC 用)</span></label><input id="tDeadNs" type="number" value="0" step="20" min="0"/></div>
@@ -163,21 +178,6 @@
         <div class="field"><label for="nsGiven">给定 Ns <span class="unit">(匝)</span></label><input id="nsGiven" type="number" value="12" step="1" min="0"/></div>
         <div class="field"><label for="dcrLimitP">原边 DCR 规格上限 <span class="unit">(mΩ，0=不校核)</span></label><input id="dcrLimitP" type="number" value="0" step="1" min="0"/></div>
         <div class="field"><label for="dcrLimitS">副边 DCR 规格上限 <span class="unit">(mΩ，0=不校核)</span></label><input id="dcrLimitS" type="number" value="0" step="1" min="0"/></div>
-      </div>
-      <h3>交流输入前端 / AC front-end（可选）</h3>
-      <div class="three-col">
-        <div class="field"><label for="acMode">输入类型</label>
-          <select id="acMode"><option value="dc">直流输入（用上面的 Vin_min/Vin_max）</option><option value="ac">交流 + 整流母线电容</option><option value="pfc">交流 + PFC（母线恒定）</option></select></div>
-        <div class="field"><label for="vacMin">Vac_min <span class="unit">(V rms)</span></label><input id="vacMin" type="number" value="176" step="1" min="1"/></div>
-        <div class="field"><label for="vacMax">Vac_max <span class="unit">(V rms)</span></label><input id="vacMax" type="number" value="264" step="1" min="1"/></div>
-        <div class="field"><label for="fline">工频 <span class="unit">(Hz)</span></label><input id="fline" type="number" value="50" step="1" min="1"/></div>
-        <div class="field"><label for="cbusUf">母线电容 C_bus <span class="unit">(µF)</span></label><input id="cbusUf" type="number" value="220" step="10" min="1"/></div>
-        <div class="field"><label for="cbusEsr">母线电容 ESR <span class="unit">(Ω)</span></label><input id="cbusEsr" type="number" value="0.3" step="0.05" min="0.01"/></div>
-        <div class="field"><label for="rsAc">交流源阻+线阻 <span class="unit">(Ω)</span></label><input id="rsAc" type="number" value="0.5" step="0.1" min="0.01"/></div>
-        <div class="field"><label for="vdBridge">整流桥压降 <span class="unit">(V)</span></label><input id="vdBridge" type="number" value="1.4" step="0.1" min="0"/></div>
-        <div class="field"><label for="holdMs">保持时间要求 <span class="unit">(ms，0=不校核)</span></label><input id="holdMs" type="number" value="0" step="5" min="0"/></div>
-        <div class="field"><label for="holdVmin">保持结束时允许最低母线 <span class="unit">(V)</span></label><input id="holdVmin" type="number" value="0" step="1" min="0"/></div>
-        <div class="field"><label for="pfcBus">PFC 母线电压 <span class="unit">(V)</span></label><input id="pfcBus" type="number" value="390" step="5" min="20"/></div>
       </div>
       <h3>窗口与绝缘 / Window &amp; insulation</h3>
       <div class="three-col">
