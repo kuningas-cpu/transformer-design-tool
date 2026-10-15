@@ -72,38 +72,38 @@
             <option value="LLC Resonant">LLC 谐振 / LLC</option>
           </select></div>
         <div class="field"><label for="fs">开关频率 Fs <span class="unit">(kHz)</span></label><input id="fs" type="number" value="100" step="1" min="1"/></div>
-        <div class="field"><label for="vinMin">Vin_min <span class="unit">(V)</span>（选交流时由母线谷值覆盖）</label><input id="vinMin" type="number" value="9" step="0.1" min="0.1"/></div>
-        <div class="field"><label for="vinMax">Vin_max <span class="unit">(V)</span>（选交流时由母线峰值覆盖）</label><input id="vinMax" type="number" value="36" step="0.1" min="0.1"/></div>
+        <div class="field" data-show="ac:dc"><label for="vinMin">Vin_min <span class="unit">(V)</span>（选交流时由母线谷值覆盖）</label><input id="vinMin" type="number" value="9" step="0.1" min="0.1"/></div>
+        <div class="field" data-show="ac:dc"><label for="vinMax">Vin_max <span class="unit">(V)</span>（选交流时由母线峰值覆盖）</label><input id="vinMax" type="number" value="36" step="0.1" min="0.1"/></div>
         <div class="field"><label for="vout">Vout <span class="unit">(V)</span></label><input id="vout" type="number" value="12" step="0.1" min="0.1"/></div>
         <div class="field"><label for="iout">Iout <span class="unit">(A)</span></label><input id="iout" type="number" value="2" step="0.1" min="0.01"/></div>
         <div class="field"><label for="vf">整流压降 Vf <span class="unit">(V)</span></label><input id="vf" type="number" value="0.5" step="0.05" min="0"/></div>
         <div class="field"><label for="eta">效率 η</label><input id="eta" type="number" value="0.9" step="0.01" min="0.3" max="1"/></div>
-        <div class="field"><label for="vinNom">Vin_nom（LLC 用，0=自动中点）<span class="unit">(V)</span></label><input id="vinNom" type="number" value="0" step="0.1" min="0"/></div>
-        <div class="field"><label for="secRect">次级整流（桥式/推挽用）/ Secondary rectifier</label>
+        <div class="field" data-show="topo:LLC Resonant"><label for="vinNom">Vin_nom（LLC 用，0=自动中点）<span class="unit">(V)</span></label><input id="vinNom" type="number" value="0" step="0.1" min="0"/></div>
+        <div class="field" data-show="topo:Push-Pull,Half-Bridge,Full-Bridge"><label for="secRect">次级整流（桥式/推挽用）/ Secondary rectifier</label>
           <select id="secRect"><option value="ct">中心抽头 2 绕组 / Center-tapped</option><option value="bridge">全桥 1 绕组 / Full bridge</option></select></div>
         <div class="field"><label for="rectDevice">次级整流器件</label>
           <select id="rectDevice"><option value="diode">二极管（整流+续流）</option><option value="sr1">同步整流-仅整流管</option><option value="sr2">同步整流-整流+续流</option></select></div>
       </div>
-      <h3>输入类型与交流前端 / Input source &amp; AC front-end</h3>
+      <h3>输入类型与交流前端 / Input source &amp; AC front-end（交流前端参数仅在选"交流 + 整流母线"时出现）</h3>
       <div class="three-col">
         <div class="field"><label for="acMode">输入类型</label>
           <select id="acMode"><option value="dc">直流输入（用下面的 Vin_min/Vin_max）</option><option value="ac">交流 + 整流母线电容</option><option value="pfc">交流 + PFC（母线恒定）</option></select></div>
-        <div class="field"><label for="vacMin">Vac_min <span class="unit">(V rms)</span></label><input id="vacMin" type="number" value="176" step="1" min="1"/></div>
-        <div class="field"><label for="vacMax">Vac_max <span class="unit">(V rms)</span></label><input id="vacMax" type="number" value="264" step="1" min="1"/></div>
-        <div class="field"><label for="fline">工频 <span class="unit">(Hz)</span></label><input id="fline" type="number" value="50" step="1" min="1"/></div>
-        <div class="field"><label for="cbusUf">母线电容 C_bus <span class="unit">(µF)</span></label><input id="cbusUf" type="number" value="220" step="10" min="1"/></div>
-        <div class="field"><label for="cbusEsr">母线电容 ESR <span class="unit">(Ω)</span></label><input id="cbusEsr" type="number" value="0.3" step="0.05" min="0.01"/></div>
-        <div class="field"><label for="rsAc">交流源阻+线阻 <span class="unit">(Ω)</span></label><input id="rsAc" type="number" value="0.5" step="0.1" min="0.01"/></div>
-        <div class="field"><label for="vdBridge">整流桥压降 <span class="unit">(V)</span></label><input id="vdBridge" type="number" value="1.4" step="0.1" min="0"/></div>
-        <div class="field"><label for="holdMs">保持时间要求 <span class="unit">(ms，0=不校核)</span></label><input id="holdMs" type="number" value="0" step="5" min="0"/></div>
-        <div class="field"><label for="holdVmin">保持结束时允许最低母线 <span class="unit">(V)</span></label><input id="holdVmin" type="number" value="0" step="1" min="0"/></div>
-        <div class="field"><label for="pfcBus">PFC 母线电压 <span class="unit">(V)</span></label><input id="pfcBus" type="number" value="390" step="5" min="20"/></div>
+        <div class="field" data-show="ac:ac"><label for="vacMin">Vac_min <span class="unit">(V rms)</span></label><input id="vacMin" type="number" value="176" step="1" min="1"/></div>
+        <div class="field" data-show="ac:ac"><label for="vacMax">Vac_max <span class="unit">(V rms)</span></label><input id="vacMax" type="number" value="264" step="1" min="1"/></div>
+        <div class="field" data-show="ac:ac"><label for="fline">工频 <span class="unit">(Hz)</span></label><input id="fline" type="number" value="50" step="1" min="1"/></div>
+        <div class="field" data-show="ac:ac"><label for="cbusUf">母线电容 C_bus <span class="unit">(µF)</span></label><input id="cbusUf" type="number" value="220" step="10" min="1"/></div>
+        <div class="field" data-show="ac:ac"><label for="cbusEsr">母线电容 ESR <span class="unit">(Ω)</span></label><input id="cbusEsr" type="number" value="0.3" step="0.05" min="0.01"/></div>
+        <div class="field" data-show="ac:ac"><label for="rsAc">交流源阻+线阻 <span class="unit">(Ω)</span></label><input id="rsAc" type="number" value="0.5" step="0.1" min="0.01"/></div>
+        <div class="field" data-show="ac:ac"><label for="vdBridge">整流桥压降 <span class="unit">(V)</span></label><input id="vdBridge" type="number" value="1.4" step="0.1" min="0"/></div>
+        <div class="field" data-show="ac:ac"><label for="holdMs">保持时间要求 <span class="unit">(ms，0=不校核)</span></label><input id="holdMs" type="number" value="0" step="5" min="0"/></div>
+        <div class="field" data-show="ac:ac"><label for="holdVmin">保持结束时允许最低母线 <span class="unit">(V)</span></label><input id="holdVmin" type="number" value="0" step="1" min="0"/></div>
+        <div class="field" data-show="ac:pfc"><label for="pfcBus">PFC 母线电压 <span class="unit">(V)</span></label><input id="pfcBus" type="number" value="390" step="5" min="20"/></div>
       </div>
       <h3>拓扑工作点 / Operating point</h3>
       <div class="two-col">
         <div class="field"><label for="dutyMax">Vin_min 处占空比 D_max</label><input id="dutyMax" type="number" value="0.45" step="0.01" min="0.05" max="0.8"/></div>
-        <div class="field"><label for="rippleK">原边纹波比 K = ΔI/Ipk <span class="unit">(反激类)</span></label><input id="rippleK" type="number" value="0.4" step="0.05" min="0.05" max="2"/></div>
-        <div class="field"><label for="rippleLout">输出电感纹波 ΔI_L <span class="unit">(A，正激/桥式用)</span></label><input id="rippleLout" type="number" value="0.6" step="0.05" min="0"/></div>
+        <div class="field" data-show="topo:Flyback,Active Clamp Flyback"><label for="rippleK">原边纹波比 K = ΔI/Ipk <span class="unit">(反激类)</span></label><input id="rippleK" type="number" value="0.4" step="0.05" min="0.05" max="2"/></div>
+        <div class="field" data-show="topo:Forward,Push-Pull,Half-Bridge,Full-Bridge"><label for="rippleLout">输出电感纹波 ΔI_L <span class="unit">(A，正激/桥式用)</span></label><input id="rippleLout" type="number" value="0.6" step="0.05" min="0"/></div>
         <div class="field"><label for="deltaBTarget">目标磁通摆幅 ΔB_pp <span class="unit">(T)</span></label><input id="deltaBTarget" type="number" value="0.2" step="0.01" min="0.02" max="0.6"/></div>
         <div class="field"><label for="bsatDerate">Bsat 降额系数</label><input id="bsatDerate" type="number" value="0.8" step="0.05" min="0.3" max="1"/></div>
         <div class="field"><label for="acFactor">高频电阻系数 F_R</label><input id="acFactor" type="number" value="1.2" step="0.05" min="1" max="3"/></div>
@@ -149,35 +149,35 @@
         <div class="field"><label for="kPack">绕线填充系数 k_pack</label><input id="kPack" type="number" value="1.25" step="0.05" min="1" max="3"/></div>
         <div class="field"><label for="kuMax">窗口利用率上限 Ku</label><input id="kuMax" type="number" value="0.4" step="0.05" min="0.15" max="0.7"/></div>
       </div>
-      <h3>输出级 / Output stage（正激/推挽/桥式/LLC 适用）</h3>
+      <h3>输出级 / Output stage（输出电容与整流器件；输出电感仅 Buck 型副边：正激/推挽/桥式）</h3>
       <div class="three-col">
-        <div class="field"><label for="nlDia">输出电感线径 <span class="unit">(mm，0=按 J 自动)</span></label><input id="nlDia" type="number" value="0" step="0.01" min="0"/></div>
-        <div class="field"><label for="nlStrands">输出电感股数</label><input id="nlStrands" type="number" value="1" step="1" min="1"/></div>
-        <div class="field"><label for="nlPar">输出电感并联绕组数</label><input id="nlPar" type="number" value="1" step="1" min="1"/></div>
+        <div class="field" data-show="topo:Forward,Push-Pull,Half-Bridge,Full-Bridge"><label for="nlDia">输出电感线径 <span class="unit">(mm，0=按 J 自动)</span></label><input id="nlDia" type="number" value="0" step="0.01" min="0"/></div>
+        <div class="field" data-show="topo:Forward,Push-Pull,Half-Bridge,Full-Bridge"><label for="nlStrands">输出电感股数</label><input id="nlStrands" type="number" value="1" step="1" min="1"/></div>
+        <div class="field" data-show="topo:Forward,Push-Pull,Half-Bridge,Full-Bridge"><label for="nlPar">输出电感并联绕组数</label><input id="nlPar" type="number" value="1" step="1" min="1"/></div>
         <div class="field"><label for="ripplePct">输出纹波允许值 <span class="unit">(% of Vout)</span></label><input id="ripplePct" type="number" value="1" step="0.1" min="0.05"/></div>
         <div class="field"><label for="esrOhm">输出电容 ESR <span class="unit">(Ω)</span></label><input id="esrOhm" type="number" value="0.01" step="0.001" min="0.0001"/></div>
-        <div class="field"><label for="rdsOnMOhm">同步整流 Rds(on) <span class="unit">(mΩ，仅 SR 模式用)</span></label><input id="rdsOnMOhm" type="number" value="0" step="1" min="0"/></div>
-        <div class="field"><label for="vfBody">SR 体二极管压降 <span class="unit">(V，仅 SR 模式用)</span></label><input id="vfBody" type="number" value="0.8" step="0.05" min="0"/></div>
-        <div class="field"><label for="tDeadNs">死区时间 t_dead <span class="unit">(ns，仅 SR/LLC 用)</span></label><input id="tDeadNs" type="number" value="0" step="20" min="0"/></div>
+        <div class="field" data-show="rect:sr1,sr2"><label for="rdsOnMOhm">同步整流 Rds(on) <span class="unit">(mΩ，仅 SR 模式用)</span></label><input id="rdsOnMOhm" type="number" value="0" step="1" min="0"/></div>
+        <div class="field" data-show="rect:sr1,sr2"><label for="vfBody">SR 体二极管压降 <span class="unit">(V，仅 SR 模式用)</span></label><input id="vfBody" type="number" value="0.8" step="0.05" min="0"/></div>
+        <div class="field" data-show="rect:sr1,sr2|topo:LLC Resonant"><label for="tDeadNs">死区时间 t_dead <span class="unit">(ns，仅 SR/LLC 用)</span></label><input id="tDeadNs" type="number" value="0" step="20" min="0"/></div>
       </div>
-      <h3>LLC 谐振腔 / LLC tank（仅 LLC 拓扑使用）</h3>
+      <h3 data-show="topo:LLC Resonant">LLC 谐振腔 / LLC tank（仅 LLC 拓扑使用）</h3>
       <div class="three-col">
-        <div class="field"><label for="crRated">谐振电容耐压 <span class="unit">(V，0=不校核)</span></label><input id="crRated" type="number" value="0" step="10" min="0"/></div>
-        <div class="field"><label for="llcFr">谐振频率 fr <span class="unit">(kHz，0 = 用 Fs)</span></label><input id="llcFr" type="number" value="0" step="1" min="0"/></div>
-        <div class="field"><label for="llcK">电感比 k = Lm/Lr</label><input id="llcK" type="number" value="5" step="0.5" min="1.5" max="15"/></div>
-        <div class="field"><label for="llcQ">品质因数 Q（0 = 自动取 0.9·Q_max）</label><input id="llcQ" type="number" value="0" step="0.05" min="0"/></div>
-        <div class="field"><label for="cossP">开关管 Coss（单管）<span class="unit">(pF)</span></label><input id="cossP" type="number" value="200" step="10" min="10"/></div>
+        <div class="field" data-show="topo:LLC Resonant"><label for="crRated">谐振电容耐压 <span class="unit">(V，0=不校核)</span></label><input id="crRated" type="number" value="0" step="10" min="0"/></div>
+        <div class="field" data-show="topo:LLC Resonant"><label for="llcFr">谐振频率 fr <span class="unit">(kHz，0 = 用 Fs)</span></label><input id="llcFr" type="number" value="0" step="1" min="0"/></div>
+        <div class="field" data-show="topo:LLC Resonant"><label for="llcK">电感比 k = Lm/Lr</label><input id="llcK" type="number" value="5" step="0.5" min="1.5" max="15"/></div>
+        <div class="field" data-show="topo:LLC Resonant"><label for="llcQ">品质因数 Q（0 = 自动取 0.9·Q_max）</label><input id="llcQ" type="number" value="0" step="0.05" min="0"/></div>
+        <div class="field" data-show="topo:LLC Resonant"><label for="cossP">开关管 Coss（单管）<span class="unit">(pF)</span></label><input id="cossP" type="number" value="200" step="10" min="10"/></div>
       </div>
       <h3>校核模式 / Audit mode（评审供应商承认书用）</h3>
       <div class="three-col">
-        <div class="field"><label for="resetMode">正激磁复位方式</label>
+        <div class="field" data-show="topo:Forward"><label for="resetMode">正激磁复位方式</label>
           <select id="resetMode"><option value="cap">电容谐振复位（初级并联电容）</option><option value="winding">复位绕组（1:1 时 D≤0.5）</option></select></div>
-        <div class="field"><label for="cresNf">复位电容 C_res <span class="unit">(nF，0=自动取上限)</span></label><input id="cresNf" type="number" value="0" step="0.5" min="0"/></div>
-        <div class="field"><label for="vdsRated">开关管耐压 <span class="unit">(V，0=不校核)</span></label><input id="vdsRated" type="number" value="0" step="10" min="0"/></div>
-        <div class="field"><label for="lkUh">实测/估算漏感 Lk <span class="unit">(µH，0=未计入)</span></label><input id="lkUh" type="number" value="0" step="0.1" min="0"/></div>
-        <div class="field"><label for="nlGiven">输出电感给定匝数 <span class="unit">(0=自动)</span></label><input id="nlGiven" type="number" value="0" step="1" min="0"/></div>
-        <div class="field"><label for="lmGiven">输出电感实测电感 <span class="unit">(µH，0=自动)</span></label><input id="lmGiven" type="number" value="0" step="1" min="0"/></div>
-        <div class="field"><label for="naux">辅助绕组匝数 <span class="unit">(0=无)</span></label><input id="naux" type="number" value="0" step="1" min="0"/></div>
+        <div class="field" data-show="topo:Forward&resetMode:cap"><label for="cresNf">复位电容 C_res <span class="unit">(nF，0=自动取上限)</span></label><input id="cresNf" type="number" value="0" step="0.5" min="0"/></div>
+        <div class="field" data-show="topo:Forward&resetMode:cap"><label for="vdsRated">开关管耐压 <span class="unit">(V，0=不校核)</span></label><input id="vdsRated" type="number" value="0" step="10" min="0"/></div>
+        <div class="field" data-show="topo:Forward&resetMode:cap"><label for="lkUh">实测/估算漏感 Lk <span class="unit">(µH，0=未计入)</span></label><input id="lkUh" type="number" value="0" step="0.1" min="0"/></div>
+        <div class="field" data-show="topo:Forward,Push-Pull,Half-Bridge,Full-Bridge"><label for="nlGiven">输出电感给定匝数 <span class="unit">(0=自动)</span></label><input id="nlGiven" type="number" value="0" step="1" min="0"/></div>
+        <div class="field" data-show="topo:Forward,Push-Pull,Half-Bridge,Full-Bridge"><label for="lmGiven">输出电感实测电感 <span class="unit">(µH，0=自动)</span></label><input id="lmGiven" type="number" value="0" step="1" min="0"/></div>
+        <div class="field" data-show="topo:Forward,Push-Pull,Half-Bridge,Full-Bridge"><label for="naux">辅助绕组匝数 <span class="unit">(0=无)</span></label><input id="naux" type="number" value="0" step="1" min="0"/></div>
         <div class="field"><label for="auditMode">是否使用给定匝数</label>
           <select id="auditMode"><option value="0">关：工具自行解算匝数</option><option value="1">开：按规格书匝数校核</option></select></div>
         <div class="field"><label for="npGiven">给定 Np <span class="unit">(匝)</span></label><input id="npGiven" type="number" value="23" step="1" min="0"/></div>
@@ -1862,8 +1862,46 @@ var TD = (function () {
       '<br>请检查输入是否合法（Ae/Aw/le/MLT>0、Vin_min≤Vin_max、Fs>0）。';
   }
   function clearError() { $('errBox').hidden = true; $('errBox').innerHTML = ''; }
+  /* ---------- 动态显示：按输入类型/拓扑/整流器件只显示相关参数 ----------
+     规则写在元素自带的 data-show 属性上，语法：
+       alt1 | alt2 ...            | = 或
+       alt = cond1 & cond2 ...    & = 且
+       cond = ac|topo|rect|resetMode 与 ":" 后的候选值（逗号分隔，命中任一即成立）
+     例：data-show="topo:Forward&resetMode:cap"     仅正激且电容复位时显示
+         data-show="ac:ac|ac:pfc"                  交流或 PFC 时显示
+     说明：只隐藏"该拓扑/该输入方式下不参与计算"的输入项，被隐藏的输入仍保留数值。 */
+  function showRuleHit(node) {
+    var rule = node.getAttribute ? (node.getAttribute('data-show') || '') : '';
+    if (!rule) return true;
+    var cur = {
+      ac: $('acMode') ? String($('acMode').value) : 'dc',
+      topo: $('topology') ? String($('topology').value) : '',
+      rect: $('rectDevice') ? String($('rectDevice').value) : 'diode',
+      resetMode: $('resetMode') ? String($('resetMode').value) : 'cap'
+    };
+    var alts = String(rule).split('|');
+    for (var i = 0; i < alts.length; i++) {
+      var conds = alts[i].split('&'), all = true;
+      for (var j = 0; j < conds.length; j++) {
+        var c = conds[j], k = c.indexOf(':');
+        var key = k < 0 ? c : c.slice(0, k);
+        var vals = (k < 0 ? '' : c.slice(k + 1)).split(',');
+        if (cur[key] === undefined || vals.indexOf(cur[key]) < 0) { all = false; break; }
+      }
+      if (all) return true;
+    }
+    return false;
+  }
+  function updateVisibility() {
+    var nodes;
+    try { nodes = document.querySelectorAll('[data-show]'); } catch (e) { return; }
+    Array.prototype.forEach.call(nodes || [], function (node) {
+      node.style.display = showRuleHit(node) ? '' : 'none';
+    });
+  }
   function render() {
     try {
+      updateVisibility();
       var inputs = readInputs();
       var r = TD.design(inputs);
       lastResult = r;

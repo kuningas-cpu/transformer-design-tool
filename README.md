@@ -9,7 +9,8 @@
 | 文件 | 说明 |
 |---|---|
 | `transformer_design_tool_v2.html` | 工具本体：输入 + 结果 + 校核清单 + 判决 + 电压扫描 + 设计步骤 + 磁芯对比 + 公式表，支持 CSV 导出 |
-| `verify_transformer_tool_v2.mjs` | 验证脚本：**405 项检查**（结构/首次渲染/物理不变量/手算对照/模糊测试/校核模式/输出级/LLC 谐振腔/电容复位/两家供应商交叉验证） |
+| `verify_transformer_tool_v2.mjs` | 验证脚本：**496 项检查**（结构/首次渲染/物理不变量/手算对照/模糊测试/校核模式/输出级/LLC 谐振腔/电容复位/动态显示/两家供应商交叉验证） |
+| `verify_visibility_browser.mjs` | 真浏览器回归：用无头 Edge/Chrome 打开工具，按 7 组「输入类型 × 拓扑 × 整流器件」场景核对**实际被隐藏的输入项**（23 项检查；本机没有 Chromium 内核浏览器时自动跳过） |
 | `transformer_design_tool_v2_notes.md` | 设计说明：公式与约定、与 v1 的差异清单、适用边界、验证清单、EPC19 核算记录 |
 | `supplier_spec_EPC19_review.md` | 重庆天胜 EPC19（TST1724）承认书参数提取与核算记录 |
 | `supplier_spec_03-56319_review.md` | **第二家供应商（中山鼎铖 DCE）同一板两块变规格对比 + 交叉验证 + UC3843 辅助供电核算** |
@@ -46,8 +47,11 @@
 ## 复现验证
 
 ```
-node verify_transformer_tool_v2.mjs          # 309 项检查，全通过表示归档件完整可运行
-node verify_transformer_tool_v2.mjs --diag   # 额外打印默认工况逐项结果与 EPC19 核算明细
+node verify_transformer_tool_v2.mjs              # 496 项检查，全通过表示归档件完整可运行
+node verify_transformer_tool_v2.mjs --diag       # 额外打印默认工况逐项结果与 EPC19 核算明细
+node verify_visibility_browser.mjs               # 真浏览器（无头 Edge/Chrome）核对输入项的动态显示/隐藏
+python make_excel_from_v2_engine.py              # 由同一套公式生成 transformer_design_tool_v2.xlsx
+python make_excel_from_v2_engine.py --verify _dump.json   # 与引擎逐格比对（反激分支 19/19）
 ```
 
 ## 后续可做 —— 完成情况（2026-10-15 更新）
@@ -110,6 +114,29 @@ node verify_transformer_tool_v2.mjs --diag   # 额外打印默认工况逐项结
 - 磁芯库精确几何/材质数据（需数据手册输入；工具已提供导入通道与"实测 AL 与几何推算对照"自检行来暴露错误数据）。
 - MLT 按绕层分别建模（现为单值 + 可选最坏偏差；实测分布为内层≈32 mm、最外层≈44 mm）。
 
+### 第四轮：输入面板按「输入类型 / 拓扑 / 次级整流器件」动态显示（2026-10-15）
+
+**为什么改**：选「直流输入」时，交流前端那一大片参数（Vac / 工频 / C_bus / ESR / 源阻 / 桥压降 / 保持时间 / PFC 母线）
+仍然显示，既是干扰也容易误填；反过来选「交流」时 Vin_min / Vin_max 已被母线仿真覆盖，显示出来会让人以为要自己填。
+
+**做法**：每个条件相关的输入项在 HTML 上带一条 `data-show` 规则（竖线 = 或，& = 且，`键:值1,值2`），
+`render()` 每次先执行 `updateVisibility()`，按当前 输入类型 / 拓扑 / 次级整流器件 决定显示哪些项。
+语法与全部规则见 `transformer_design_tool_v2_notes.md`。**被隐藏的输入仍保留数值**（切回去即恢复），不参与该工况计算的项本来也不会被引擎使用。
+
+| 当前选择 | 显示 | 自动收起 |
+|---|---|---|
+| 直流输入 | Vin_min / Vin_max | Vac、工频、C_bus、ESR、源阻、桥压降、保持时间、PFC 母线 |
+| 交流 + 整流母线 | Vac、工频、C_bus、ESR、源阻、桥压降、保持时间 | Vin_min / Vin_max（由母线谷值覆盖，结果区显示实际取值）、PFC 母线 |
+| 交流 + PFC | PFC 母线电压 | 其余交流前端项 + Vin_min / Vin_max |
+| 反激 / ACF | 原边纹波比 K | 输出电感组、正激复位项、桥式整流选择、LLC 谐振腔 |
+| 正激 | 磁复位方式；选电容复位后再显示 C_res、开关管耐压、漏感 Lk | 原边纹波比 K、桥式整流选择、LLC 谐振腔 |
+| 推挽 / 半桥 / 全桥 | 次级整流选择（中心抽头 / 全桥）+ 输出电感组 | 原边纹波比 K、正激复位项、LLC 谐振腔 |
+| LLC | 谐振腔（fr / k / Q / Coss / Cr 耐压）、Vin_nom、死区时间 | 输出电感组、原边纹波比 K、正激复位项 |
+| 次级整流器件 = 二极管 | — | Rds(on)、SR 体二极管压降、死区时间 |
+
+**验证**：`verify_transformer_tool_v2.mjs` 新增第 27 组（25 项）、新增 `verify_visibility_browser.mjs`（真无头浏览器 7 场景 23 项），
+验证总数 471 → **496 项，0 失败**；并用无头浏览器截图核对直流 / 交流两种界面的实际排版无空位与错位。
+
 ## 归档完整性
 
 ## 磁芯库数据来源与可信度（2026-10-15 更新）
@@ -129,13 +156,15 @@ node verify_transformer_tool_v2.mjs --diag   # 额外打印默认工况逐项结
 **DCR 口径注意**：工具显示的是"并联后"的直流电阻；规格书通常在单个绕组上测量，
 **单绕组值 = 工具显示值 × 并联绕组数**（网页版结果区已提示这一点）。
 
-归档整理于 2026-10-15，并在归档目录内重新运行验证脚本确认可用：**309 项检查全部通过**。
+归档整理于 2026-10-15，并在归档目录内重新运行验证脚本确认可用：**496 项检查全部通过**
+（真浏览器回归 `verify_visibility_browser.mjs` 另 23 项通过；Excel 反激分支 19/19 逐格一致）。
 校验和（SHA-256，用于日后确认归档件未被改动）：
 
 | 文件 | SHA-256 |
 |---|---|
-| `transformer_design_tool_v2.html` | `FAB1DCE9DEED9C25046FF1E5E747D09AE4D60224C6961C257D748DDEEB6332D6` |
-| `verify_transformer_tool_v2.mjs` | `D7EE44BD8FAD42050B79BA7EB7F1BCEDDCE001145142594A661546B964E1D4EA` |
+| `transformer_design_tool_v2.html` | `5D164BAE975270DAFE3389206B4EB724B20F5C775AC462FC2F5E58B57DC6CF35` |
+| `verify_transformer_tool_v2.mjs` | `32CF1B00034C4F8AFEA0D9C9AC30B7EC52F5331FD9F36126BD60B5EF2990C847` |
+| `verify_visibility_browser.mjs` | `1D48F6B13F028F12C9406D91FC1C4FBF77C4A753BDA0FE30F39D1F97D9446817` |
 | `supplier_spec_EPC19_review.md` | `3B12F62F67648E77FD4A4CE7DD7401B7E8FF547A844426CE10DAE0B7B84414E6` |
 
 `verify_transformer_tool_v2.mjs` 以脚本自身位置解析工具文件路径，因此归档目录整体移动或改名后仍可直接运行。

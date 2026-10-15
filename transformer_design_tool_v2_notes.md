@@ -123,3 +123,56 @@
 
 承认书里没有而必须问清的：哪个绕组是原边/复位/辅助、工作频率与最大占空比、磁通密度（或该工况下的饱和裕量）、
 6-7 与 5-8 是并联还是独立绕组、0.42 mm（BOM）与 0.4 mm（绕线表）是裸线径还是外径、DCR 的测量端与温度。
+
+## 7. 输入面板的动态显示（data-show 规则）
+
+### 7.1 为什么
+
+七种拓扑 + 三种输入方式（直流 / 交流 + 整流母线 / 交流 + PFC）叠在一起时，面板上有三分之一以上的输入项
+与当前工况无关：选直流时整片交流前端参数（Vac、工频、C_bus、ESR、源阻、桥压降、保持时间、PFC 母线）没有用；
+选交流时 Vin_min / Vin_max 会被母线数值仿真覆盖，显示出来反而让人以为要手填；反激没有输出电感、LLC 没有原边纹波比 K。
+隐藏这些项能让"填哪些、不填哪些"一眼看清，也避免把无关数值当成有效输入。
+
+### 7.2 怎么做的
+
+1. 每个条件相关的 `<div class="field">` 或小节标题上写一条 `data-show` 属性；
+2. `render()` 的第一件事就是 `updateVisibility()`：`document.querySelectorAll('[data-show]')`，
+   逐项按规则判定，命中则 `style.display = ''`，否则 `'none'`；
+3. 输入项变化本来就会触发 `render()`（每个输入都挂了 `input`/`change` → `render`），所以切换即刷新；
+4. **隐藏不等于清空**：被隐藏的输入保留原值，切回该工况数值照旧；引擎也只在该工况真正用到它们时才读取。
+
+规则语法（`showRuleHit`，见 UI 脚本）：
+
+```
+data-show = 分支 ('|' 分支)*        竖线 = 或
+分支      = 条件 ('&' 条件)*        &   = 且
+条件      = 键 ':' 候选值 (',' 候选值)*   命中任一候选值即成立
+键        = ac        取 #acMode     (dc / ac / pfc)
+            topo      取 #topology
+            rect      取 #rectDevice (diode / sr1 / sr2)
+            resetMode 取 #resetMode  (cap / winding)
+```
+
+### 7.3 全部规则（与工具里的属性一一对应）
+
+| 键 | 取值 | 规则 | 说明 |
+|---|---|---|---|
+| `vinMin` `vinMax` | `ac:dc` | 直流输入才显示 | 交流模式下母线仿真会覆盖这两项，结果区显示实际取值 |
+| `vacMin` `vacMax` `fline` `cbusUf` `cbusEsr` `rsAc` `vdBridge` | `ac:ac` | 只有"交流 + 整流母线"用 | 母线数值仿真的输入（PFC 模式不用） |
+| `holdMs` `holdVmin` | `ac:ac` | 同上 | 保持时间校核只在整流母线模式计算 |
+| `pfcBus` | `ac:pfc` | 只有 PFC 模式用 | 恒定母线电压 |
+| `rippleK` | `topo:Flyback,Active Clamp Flyback` | 反激类 | 原边纹波比 K = ΔI/Ipk |
+| `rippleLout` `nlDia` `nlStrands` `nlPar` `nlGiven` `lmGiven` `naux` | `topo:Forward,Push-Pull,Half-Bridge,Full-Bridge` | Buck 型副边 | 输出电感只存在于正激/推挽/半桥/全桥；辅助绕组与输出电感同磁芯 |
+| `vinNom` `llcFr` `llcK` `llcQ` `cossP` `crRated` | `topo:LLC Resonant` | 仅 LLC | 谐振腔与 Vin_nom；连小节标题"LLC 谐振腔"一起隐藏 |
+| `secRect` | `topo:Push-Pull,Half-Bridge,Full-Bridge` | 仅双极性/桥式 | 中心抽头 vs 全桥 |
+| `rdsOnMOhm` `vfBody` | `rect:sr1,sr2` | 仅同步整流 | 二极管模式用 Vf 而非 Rds(on)/体二极管 |
+| `tDeadNs` | `rect:sr1,sr2` 或 `topo:LLC Resonant` | SR 或 LLC | 死区时间 |
+| `resetMode` | `topo:Forward` | 仅正激 | 电容谐振复位 vs 复位绕组 |
+| `cresNf` `vdsRated` `lkUh` | `topo:Forward&resetMode:cap` | 仅"正激 + 电容复位" | 引擎只在电容复位分支用这三项（Vds,pk 校核、漏感能量比） |
+
+### 7.4 验证
+
+- `verify_transformer_tool_v2.mjs` 第 27 组：用假 DOM 覆盖 DC / AC / PFC × 7 拓扑 × 二极管 / SR / 复位方式共 25 项断言，
+  并断言"切换回默认后状态复原"与"任何拓扑下公共规格字段（Fs / Vout / Iout / Ae / le / Aw / MLT / J…）都可见"。
+- `verify_visibility_browser.mjs`：真无头浏览器 7 个场景 23 项断言，直接解析 `--dump-dom` 里
+  `style="display: none"` 的字段清单，杜绝"假 DOM 通过、真浏览器不生效"这类偏差。

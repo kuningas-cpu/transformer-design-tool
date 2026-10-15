@@ -102,9 +102,23 @@ function makeElement(id) {
 }
 const dom = {};
 for (const id of htmlIds) dom[id] = makeElement(id);
+/* 给 fake DOM 接上带 data-show 的元素，让"按输入类型/拓扑动态显示"也进回归 */
+const taggedNodes = [];
+for (const m of html.matchAll(/<([a-z0-9]+)([^>]*\bdata-show="([^"]+)")[^>]*>/g)) {
+  const rule = m[3];
+  const tail = html.slice(m.index + m[0].length, m.index + m[0].length + 200);
+  const hit = m[0].match(/\bid="([^"]+)"/) || tail.match(/\b(?:id|for)="([^"]+)"/);
+  const node = hit ? dom[hit[1]] : null;
+  if (!node) {
+    taggedNodes.push({ id: '(heading)', style: {}, getAttribute: (k) => (k === 'data-show' ? rule : null) });
+    continue;
+  }
+  node.getAttribute = (k) => (k === 'data-show' ? rule : null);
+  taggedNodes.push(node);
+}
 const documentStub = {
   getElementById: (id) => dom[id] || null,
-  querySelectorAll: () => [],
+  querySelectorAll: (sel) => (sel === '[data-show]' ? taggedNodes : []),
   createElement: () => makeElement('created'),
   addEventListener() {}, readyState: 'complete', body: { appendChild() {}, removeChild() {} }
 };
@@ -1026,6 +1040,98 @@ header('22 core library: provenance, measured AL, CSV import/export');
   ok('comparison covers only the custom library', cmp.length === 2 && cmp.every((c) => c.model.indexOf('MY-') === 0));
   TD.setCores(builtin);
   ok('library restored after the test', TD.CORES.length === builtin.length);
+}
+
+/* ---------------- 27. dynamic field visibility (input type / topology / rectifier) ---------------- */
+header('27 dynamic fields: DC vs AC front-end vs topology vs rectifier');
+{
+  /* untagged fields are never touched by updateVisibility, so undefined == visible */
+  const vis = (id) => (dom[id] && dom[id].style ? (dom[id].style.display || '') : '(no node)');
+  const setV = (id, v) => { dom[id].value = v; };
+  const shown = (ids) => ids.every((id) => vis(id) === '');
+  const hidden = (ids) => ids.every((id) => vis(id) === 'none');
+  const before = {};
+  Object.keys(dom).forEach((k) => { before[k] = dom[k].value; });
+
+  ok('the panel carries a data-show rule on every conditionally relevant input', taggedNodes.length >= 34, 'tagged ' + taggedNodes.length);
+  ok('every tagged field maps to a real input id (no orphan rule)', taggedNodes.filter((n) => n.id !== '(heading)').length >= 33);
+
+  /* DC (default): only the DC input parameters */
+  setV('acMode', 'dc'); windowStub.__TD_RENDER__();
+  ok('DC mode shows Vin_min/Vin_max', shown(['vinMin', 'vinMax']));
+  ok('DC mode hides every AC front-end field',
+    hidden(['vacMin', 'vacMax', 'fline', 'cbusUf', 'cbusEsr', 'rsAc', 'vdBridge', 'holdMs', 'holdVmin', 'pfcBus']),
+    ['vacMin', 'cbusUf', 'pfcBus'].map((id) => id + '=' + vis(id)).join(' '));
+  ok('DC mode keeps the shared fields visible (Fs/Vout/Vf/eta/duty/D_max)', shown(['fs', 'vout', 'vf', 'eta']));
+
+  /* AC + rectifier bus: only the AC parameters (plus the bus-capacitor ones) */
+  setV('acMode', 'ac'); windowStub.__TD_RENDER__();
+  ok('AC mode shows the bridge + bus capacitor front end',
+    shown(['vacMin', 'vacMax', 'fline', 'cbusUf', 'cbusEsr', 'rsAc', 'vdBridge', 'holdMs', 'holdVmin']));
+  ok('AC mode hides Vin_min/Vin_max (the simulated bus valley overrides them)', hidden(['vinMin', 'vinMax']));
+  ok('AC mode hides the PFC-only bus voltage', hidden(['pfcBus']));
+
+  /* AC + PFC: only the regulated bus voltage of the front end */
+  setV('acMode', 'pfc'); windowStub.__TD_RENDER__();
+  ok('PFC mode shows only the PFC bus voltage out of the front end',
+    vis('pfcBus') === '' && hidden(['vacMin', 'cbusUf', 'cbusEsr', 'rsAc', 'vdBridge', 'holdMs', 'vinMin', 'vinMax']));
+  setV('acMode', 'dc'); windowStub.__TD_RENDER__();
+  ok('switching back to DC restores the DC input fields', shown(['vinMin', 'vinMax']) && hidden(['vacMin', 'pfcBus']));
+
+  /* topology: flyback family */
+  setV('topology', 'Flyback'); setV('rectDevice', 'diode'); setV('resetMode', 'cap'); windowStub.__TD_RENDER__();
+  ok('flyback shows its ripple ratio and hides the forward reset fields',
+    vis('rippleK') === '' && hidden(['resetMode', 'cresNf', 'vdsRated', 'lkUh']));
+  ok('flyback hides the whole output-inductor group (there is no Buck-side inductor)',
+    hidden(['rippleLout', 'nlGiven', 'lmGiven', 'naux', 'nlDia', 'nlStrands', 'nlPar']));
+  ok('flyback hides the bridge secondary rectifier selection and the LLC tank',
+    hidden(['secRect', 'vinNom', 'llcFr', 'llcK', 'llcQ', 'cossP', 'crRated']));
+  setV('rectDevice', 'sr1'); windowStub.__TD_RENDER__();
+  ok('SR mode shows Rds(on) / body-diode drop / dead time', shown(['rdsOnMOhm', 'vfBody', 'tDeadNs']));
+  setV('rectDevice', 'diode'); windowStub.__TD_RENDER__();
+  ok('diode rectification hides Rds(on), body-diode drop and dead time',
+    hidden(['rdsOnMOhm', 'vfBody', 'tDeadNs']));
+
+  /* topology: forward + capacitor reset (the user's board) */
+  setV('topology', 'Forward'); windowStub.__TD_RENDER__();
+  ok('forward shows the reset scheme, output-inductor group and aux winding',
+    shown(['resetMode', 'cresNf', 'vdsRated', 'lkUh', 'rippleLout', 'nlGiven', 'lmGiven', 'naux', 'nlDia', 'nlStrands', 'nlPar']));
+  ok('forward hides the flyback ripple ratio', hidden(['rippleK']));
+  setV('resetMode', 'winding'); windowStub.__TD_RENDER__();
+  ok('winding reset hides C_res / Vds rating / leakage (the engine only uses them for cap reset)',
+    shown(['resetMode']) && hidden(['cresNf', 'vdsRated', 'lkUh']));
+  setV('resetMode', 'cap'); windowStub.__TD_RENDER__();
+  ok('cap reset brings them back', shown(['cresNf', 'vdsRated', 'lkUh']));
+
+  /* topology: bipolar family */
+  setV('topology', 'Push-Pull'); windowStub.__TD_RENDER__();
+  ok('push-pull shows the center-tap/bridge choice and keeps the output inductor',
+    shown(['secRect', 'rippleLout', 'nlGiven', 'naux']) && hidden(['resetMode', 'rippleK']));
+
+  /* topology: LLC */
+  setV('topology', 'LLC Resonant'); setV('rectDevice', 'diode'); windowStub.__TD_RENDER__();
+  ok('LLC shows the tank fields, Vin_nom and the dead time',
+    shown(['vinNom', 'llcFr', 'llcK', 'llcQ', 'cossP', 'crRated', 'tDeadNs']));
+  ok('LLC hides the Buck-derived output inductor and the forward reset fields',
+    hidden(['rippleLout', 'nlGiven', 'naux', 'resetMode', 'cresNf', 'rippleK']));
+
+  /* rules never contradict each other: every topology keeps a usable panel */
+  const TOPOS = TD.TOPOS ? Object.keys(TD.TOPOS) : ['Flyback', 'Active Clamp Flyback', 'Forward', 'Push-Pull', 'Half-Bridge', 'Full-Bridge', 'LLC Resonant'];
+  let noCore = [];
+  for (const t of TOPOS) {
+    setV('topology', t); setV('rectDevice', 'diode'); setV('resetMode', 'cap'); windowStub.__TD_RENDER__();
+    const mustShow = ['fs', 'vout', 'iout', 'vf', 'eta', 'dutyMax', 'deltaBTarget', 'ae', 'le', 'aw', 'mlt', 'jTarget', 'ripplePct', 'esrOhm'];
+    if (!shown(mustShow)) noCore.push(t);
+  }
+  ok('every topology keeps the shared specification fields visible', noCore.length === 0, noCore.join(','));
+  ok('hiding fields never breaks the design render (error box stayed clean)', dom.errBox.hidden === true, dom.errBox.innerHTML);
+
+  Object.keys(before).forEach((k) => { dom[k].value = before[k]; });
+  windowStub.__TD_RENDER__();
+  ok('inputs restored: the panel is back to the pre-test state',
+    dom.acMode.value === before.acMode && dom.topology.value === before.topology &&
+    vis('vinMin') === (before.acMode === 'dc' ? '' : 'none') && vis('vacMin') === (before.acMode === 'ac' ? '' : 'none'),
+    [before.acMode, dom.acMode.value, before.topology, dom.topology.value, vis('vinMin'), vis('vacMin')].join('/'));
 }
 
 if (process.argv.includes('--diag')) {
