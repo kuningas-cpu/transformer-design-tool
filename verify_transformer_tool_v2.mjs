@@ -1134,6 +1134,76 @@ header('27 dynamic fields: DC vs AC front-end vs topology vs rectifier');
     [before.acMode, dom.acMode.value, before.topology, dom.topology.value, vis('vinMin'), vis('vacMin')].join('/'));
 }
 
+/* ---------------- 28. panel order + "a flyback has no freewheel diode" ---------------- */
+header('28 input parameters first, and the flyback secondary has no freewheel diode');
+{
+  /* 面板顺序：输入（类型 + 电压）在最前，规格其次 */
+  const rel = (a, b) => Math.abs(a - b) / (Math.abs(b) > 1e-12 ? Math.abs(b) : 1);
+  const iAc = html.indexOf('id="acMode"'), iTopo = html.indexOf('id="topology"');
+  const iVin = html.indexOf('id="vinMin"'), iVout = html.indexOf('id="vout"');
+  const iInH3 = html.indexOf('输入类型与输入电压'), iSpecH3 = html.indexOf('规格 / Specification');
+  ok('the input-type selector comes before the topology selector', iAc > 0 && iAc < iTopo, iAc + ' vs ' + iTopo);
+  ok('Vin_min/Vin_max sit in the input block, before Vout', iVin > 0 && iVin < iVout, iVin + ' vs ' + iVout);
+  ok('the input section is the first section of the panel', iInH3 > 0 && iInH3 < iSpecH3, iInH3 + ' vs ' + iSpecH3);
+  ok('the panel carries a rectifier hint element', /id="rectHint"/.test(html));
+
+  /* 措辞：反激没有续流管 */
+  const Lfb = TD.rectLabels('Flyback'), Lacf = TD.rectLabels('Active Clamp Flyback');
+  const Lfwd = TD.rectLabels('Forward'), Lpp = TD.rectLabels('Push-Pull'), Llc = TD.rectLabels('LLC Resonant');
+  ok('flyback labels report "no freewheel diode"', Lfb.flyback === true && /无续流管/.test(Lfb.diode) && /续流管/.test(Lfb.hint) && /没有续流管/.test(Lfb.hint));
+  ok('ACF is treated as flyback too', Lacf.flyback === true && /无续流管/.test(Lacf.diode));
+  ok('the SR option for a flyback is the single-switch one (sr2 removed)', /单管/.test(Lfb.sr1) && Lfb.sr2 === '');
+  /* 有续流管的只有 Buck 型副边（正激/推挽/半桥/全桥）；LLC 副边是整流管交替导通，也没有续流管 */
+  ok('buck-derived topologies keep the rectifier + freewheel wording',
+    [Lfwd, Lpp, TD.rectLabels('Half-Bridge'), TD.rectLabels('Full-Bridge')]
+      .every((L) => L.freewheel === true && /无续流管/.test(L.diode) === false && /续流管/.test(L.diode) && L.sr2 !== '' && !/没有续流管/.test(L.hint)));
+  ok('LLC is handled as "no freewheel" too (rectifiers conduct alternately)',
+    Llc.freewheel === false && Llc.sr2 === '' && /交替导通/.test(Llc.diode) && /交替导通/.test(Llc.hint));
+
+  /* 引擎：反激 + sr2 要给提示，且数值与 sr1 完全一致（等于单管 SR） */
+  const fbSr1 = TD.design(baseInputs({ rectDevice: 'sr1', rdsOnMOhm: 10 }));
+  const fbSr2 = TD.design(baseInputs({ rectDevice: 'sr2', rdsOnMOhm: 10 }));
+  ok('flyback + sr2 warns that a flyback has no freewheel diode',
+    fbSr2.warns.some((w) => /没有续流管/.test(w)), fbSr2.warns.join(' | ').slice(0, 200));
+  ok('flyback + sr2 is numerically identical to sr1 (one switch only)',
+    fbSr2.summary.outStage.rectDevice === 'sr1' &&
+    Math.abs(fbSr2.summary.outStage.Psr - fbSr1.summary.outStage.Psr) < 1e-12 &&
+    fbSr1.warns.every((w) => !/没有续流管/.test(w)));
+  /* LLC 同属"没有续流管"，sr2 也归到 sr1（用实际副边有效值电流） */
+  const llcSr1 = TD.design(baseInputs({ topology: 'LLC Resonant', vinMin: 380, vinMax: 420, vinNom: 400, vout: 12, iout: 10, rectDevice: 'sr1', rdsOnMOhm: 20, tDeadNs: 200 }));
+  const llcSr2 = TD.design(baseInputs({ topology: 'LLC Resonant', vinMin: 380, vinMax: 420, vinNom: 400, vout: 12, iout: 10, rectDevice: 'sr2', rdsOnMOhm: 20, tDeadNs: 200 }));
+  ok('LLC + sr2 also falls back to the single-rectifier model with a warning',
+    llcSr2.summary.outStage.rectDevice === 'sr1' && llcSr2.warns.some((w) => /没有续流管/.test(w)) &&
+    Math.abs(llcSr2.summary.outStage.Psr - llcSr1.summary.outStage.Psr) < 1e-12);
+
+  /* 反激二极管损耗：只用"副边单管"这一个器件，电流取副边波形在一周期内的平均值
+     （工具的口径是 Pin 折算：Iavg,sec = Pin/Vo，比输出口径 Iout 高约 1/η → 偏保守，且与 SR 用 Irms,sec 同一口径） */
+  const fbDi = TD.design(baseInputs({ rectDevice: 'diode', vf: 0.5, iout: 2 }));
+  const fbIavg = fbDi.points.vinMin.IavgSec;
+  ok('flyback diode loss = Vf x I_avg,sec (one device, the same waveform current the SR branch uses)',
+    rel(fbDi.summary.outStage.Pdiode, 0.5 * fbIavg) < 1e-9, 'got ' + fbDi.summary.outStage.Pdiode + ' want ' + 0.5 * fbIavg);
+  ok('that current is the Pin-referred average: >= Vf x Iout, within the 1/eta envelope',
+    fbDi.summary.outStage.Pdiode >= 0.5 * 2 && rel(fbDi.summary.outStage.Pdiode, 0.5 * 2) < 1 / fbDi.inputs.eta - 1 + 0.02,
+    'P=' + fbDi.summary.outStage.Pdiode.toFixed(4) + ' vs Vf*Iout=' + (0.5 * 2).toFixed(4) + ' IavgSec=' + fbIavg.toFixed(4));
+  const fwdDi = TD.design(baseInputs({ topology: 'Forward', vinMin: 48, vinMax: 72, vout: 5, iout: 10, rectDevice: 'diode', vf: 0.6 }));
+  ok('forward diode loss = Vf x Iout (rectifier D·Iout + freewheel (1-D)·Iout = Iout)',
+    rel(fwdDi.summary.outStage.Pdiode, 0.6 * 10) < 0.05, 'got ' + fwdDi.summary.outStage.Pdiode + ' want 6.0');
+
+  /* 设计步骤里的措辞 */
+  const stepOf = (r) => (r.steps.find((s) => /^整流损耗/.test(s.t)) || { t: '', f: '', s: '' });
+  const sFb = stepOf(fbDi), sFw = stepOf(fwdDi);
+  ok('flyback step says "no freewheel diode"', /无续流管/.test(sFb.t) && /无续流管/.test(sFb.f), sFb.t + ' / ' + sFb.f);
+  ok('forward step says rectifier + freewheel', /续流管/.test(sFw.t) && !/无续流管/.test(sFw.f), sFw.t + ' / ' + sFw.f);
+
+  /* 界面：hint 文案随拓扑切换（假 DOM 里 rectDevice 没有 options，标签替换走真浏览器回归） */
+  const setV2 = (id, v) => { dom[id].value = v; };
+  setV2('topology', 'Flyback'); windowStub.__TD_RENDER__();
+  ok('the UI hint explains the flyback case', /没有续流管/.test(dom.rectHint.textContent || ''), dom.rectHint.textContent);
+  setV2('topology', 'Forward'); windowStub.__TD_RENDER__();
+  ok('the UI hint explains the buck-derived case', /Buck 型副边/.test(dom.rectHint.textContent || '') && !/没有续流管/.test(dom.rectHint.textContent || ''), dom.rectHint.textContent);
+  setV2('topology', 'Flyback'); windowStub.__TD_RENDER__();
+}
+
 if (process.argv.includes('--diag')) {
   const show = (label, r) => {
     const s = r.summary, o = s.outStage;

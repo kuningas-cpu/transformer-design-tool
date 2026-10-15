@@ -71,6 +71,15 @@ function hiddenIds(dom) {
   for (const m of dom.matchAll(/<h3[^>]*style="display:\s*none;?"[^>]*>([^<]*)</g)) heads.push(m[1].trim());
   return { ids, heads };
 }
+/* 取某个 select 内部实际渲染出来的 HTML（用来核对选项文字/是否被收起） */
+function selectBlock(dom, id) {
+  const m = dom.match(new RegExp('<select id="' + id + '"[^>]*>([\\s\\S]*?)</select>'));
+  return m ? m[1] : '';
+}
+function hintText(dom, id) {
+  const m = dom.match(new RegExp('<div class="hint" id="' + id + '"[^>]*>([\\s\\S]*?)</div>'));
+  return m ? m[1].replace(/<[^>]+>/g, '') : '';
+}
 
 let nPass = 0; const fails = [];
 function check(name, cond, detail = '') {
@@ -88,7 +97,8 @@ const SCENARIOS = [
     s: 'dc,Flyback,diode,cap', title: 'DC 输入 + 反激：只有直流参数与反激参数',
     shown: ['vinMin', 'vinMax', 'rippleK', 'dutyMax', 'deltaBTarget', 'jTarget'],
     hidden: [].concat(AC_ONLY, ['pfcBus'], BUCK_ONLY, ['secRect'], LLC_ONLY, FWD_RESET, ['rdsOnMOhm', 'vfBody', 'tDeadNs']),
-    hiddenHeads: ['LLC tank']
+    hiddenHeads: ['LLC tank'],
+    rectSelect: { has: ['无续流管'], notHas: ['整流管 + 续流管'], sr2Hidden: true, hintHas: ['没有续流管', '单管'] }
   },
   {
     s: 'ac,Flyback,diode,cap', title: 'AC 输入 + 反激：只有交流前端参数',
@@ -103,7 +113,8 @@ const SCENARIOS = [
   {
     s: 'dc,Forward,diode,cap', title: 'DC + 正激（电容复位）：复位电容/输出电感/辅助绕组出现',
     shown: FWD_RESET.concat(BUCK_ONLY),
-    hidden: ['rippleK', 'secRect'].concat(AC_ONLY, ['pfcBus'], LLC_ONLY, ['rdsOnMOhm', 'vfBody', 'tDeadNs'])
+    hidden: ['rippleK', 'secRect'].concat(AC_ONLY, ['pfcBus'], LLC_ONLY, ['rdsOnMOhm', 'vfBody', 'tDeadNs']),
+    rectSelect: { has: ['整流管 + 续流管', '续流二极管'], notHas: ['无续流管'], sr2Hidden: false, hintHas: ['Buck 型副边'] }
   },
   {
     s: 'dc,Forward,diode,winding', title: '正激 + 复位绕组：C_res/耐压/漏感自动收起',
@@ -114,7 +125,8 @@ const SCENARIOS = [
     s: 'dc,LLC%20Resonant,diode,cap', title: 'LLC：谐振腔字段出现，Buck 型输出电感消失',
     shown: LLC_ONLY.concat(['tDeadNs']),
     hidden: BUCK_ONLY.concat(['rippleLout', 'rippleK', 'resetMode', 'cresNf']),
-    shownHeads: ['LLC tank']
+    shownHeads: ['LLC tank'],
+    rectSelect: { has: ['交替导通'], notHas: ['整流管 + 续流管'], sr2Hidden: true, hintHas: ['LLC：副边整流管'] }
   },
   {
     s: 'dc,Push-Pull,sr2,cap', title: '推挽 + 同步整流：中心抽头选择与 SR 参数出现',
@@ -143,6 +155,23 @@ SCENARIOS.forEach((sc) => {
   if (sc.shownHeads) {
     const miss = sc.shownHeads.filter((t) => heads.some((h) => h.indexOf(t) >= 0));
     check('相关小节标题保持显示: ' + sc.shownHeads.join(','), miss.length === 0, '被隐藏了: ' + miss.join(','));
+  }
+  /* 面板顺序：输入（类型 + 电压）必须是第一块 */
+  const iIn = dom.indexOf('输入类型与输入电压'), iSpec = dom.indexOf('规格 / Specification'), iOp = dom.indexOf('拓扑工作点');
+  check('输入参数在面板最前（输入 → 规格 → 拓扑工作点）', iIn > 0 && iIn < iSpec && iSpec < iOp, iIn + '/' + iSpec + '/' + iOp);
+  /* 次级整流器件的措辞随拓扑变：反激没有续流管，且 sr2 选项被收起 */
+  const sel = selectBlock(dom, 'rectDevice');
+  if (sc.rectSelect) {
+    const missHas = sc.rectSelect.has.filter((t) => sel.indexOf(t) < 0);
+    const badHas = sc.rectSelect.notHas.filter((t) => sel.indexOf(t) >= 0);
+    check('次级整流器件选项措辞: ' + sc.rectSelect.has.join(' / '), missHas.length === 0, '缺少: ' + missHas.join(','));
+    check('次级整流器件选项不含: ' + sc.rectSelect.notHas.join(' / '), badHas.length === 0, '出现了: ' + badHas.join(','));
+    const sr2Hidden = /value="sr2"[^>]*(hidden|disabled)/.test(sel);
+    check(sc.rectSelect.sr2Hidden ? '没有续流管的拓扑（反激/LLC）sr2 选项被收起（disabled/hidden）' : '该拓扑下 sr2 选项可用',
+      sr2Hidden === !!sc.rectSelect.sr2Hidden, 'sr2Hidden=' + sr2Hidden);
+    const hint = hintText(dom, 'rectHint');
+    const hintOk = sc.rectSelect.hintHas.every((t) => hint.indexOf(t) >= 0);
+    check('整流器件提示文字匹配当前拓扑', hintOk && hint.length > 20, hint.slice(0, 120));
   }
   console.log('    hidden = ' + [...hid].join(' '));
 });

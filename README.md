@@ -9,8 +9,8 @@
 | 文件 | 说明 |
 |---|---|
 | `transformer_design_tool_v2.html` | 工具本体：输入 + 结果 + 校核清单 + 判决 + 电压扫描 + 设计步骤 + 磁芯对比 + 公式表，支持 CSV 导出 |
-| `verify_transformer_tool_v2.mjs` | 验证脚本：**496 项检查**（结构/首次渲染/物理不变量/手算对照/模糊测试/校核模式/输出级/LLC 谐振腔/电容复位/动态显示/两家供应商交叉验证） |
-| `verify_visibility_browser.mjs` | 真浏览器回归：用无头 Edge/Chrome 打开工具，按 7 组「输入类型 × 拓扑 × 整流器件」场景核对**实际被隐藏的输入项**（23 项检查；本机没有 Chromium 内核浏览器时自动跳过） |
+| `verify_transformer_tool_v2.mjs` | 验证脚本：**515 项检查**（结构/首次渲染/物理不变量/手算对照/模糊测试/校核模式/输出级/LLC 谐振腔/电容复位/动态显示/面板顺序/续流管口径/两家供应商交叉验证） |
+| `verify_visibility_browser.mjs` | 真浏览器回归：用无头 Edge/Chrome 打开工具，按 7 组「输入类型 × 拓扑 × 整流器件」场景核对**实际被隐藏的输入项、面板顺序与整流器件选项措辞**（42 项检查；本机没有 Chromium 内核浏览器时自动跳过） |
 | `transformer_design_tool_v2_notes.md` | 设计说明：公式与约定、与 v1 的差异清单、适用边界、验证清单、EPC19 核算记录 |
 | `supplier_spec_EPC19_review.md` | 重庆天胜 EPC19（TST1724）承认书参数提取与核算记录 |
 | `supplier_spec_03-56319_review.md` | **第二家供应商（中山鼎铖 DCE）同一板两块变规格对比 + 交叉验证 + UC3843 辅助供电核算** |
@@ -47,7 +47,7 @@
 ## 复现验证
 
 ```
-node verify_transformer_tool_v2.mjs              # 496 项检查，全通过表示归档件完整可运行
+node verify_transformer_tool_v2.mjs              # 515 项检查，全通过表示归档件完整可运行
 node verify_transformer_tool_v2.mjs --diag       # 额外打印默认工况逐项结果与 EPC19 核算明细
 node verify_visibility_browser.mjs               # 真浏览器（无头 Edge/Chrome）核对输入项的动态显示/隐藏
 python make_excel_from_v2_engine.py              # 由同一套公式生成 transformer_design_tool_v2.xlsx
@@ -134,8 +134,31 @@ python make_excel_from_v2_engine.py --verify _dump.json   # 与引擎逐格比�
 | LLC | 谐振腔（fr / k / Q / Coss / Cr 耐压）、Vin_nom、死区时间 | 输出电感组、原边纹波比 K、正激复位项 |
 | 次级整流器件 = 二极管 | — | Rds(on)、SR 体二极管压降、死区时间 |
 
-**验证**：`verify_transformer_tool_v2.mjs` 新增第 27 组（25 项）、新增 `verify_visibility_browser.mjs`（真无头浏览器 7 场景 23 项），
-验证总数 471 → **496 项，0 失败**；并用无头浏览器截图核对直流 / 交流两种界面的实际排版无空位与错位。
+**验证**：`verify_transformer_tool_v2.mjs` 新增第 27 组（25 项）、新增 `verify_visibility_browser.mjs`（真无头浏览器 7 场景），
+验证总数 471 → 496 项；并用无头浏览器截图核对直流 / 交流两种界面的实际排版无空位与错位。
+
+### 第四轮补充：输入参数前置 + 「反激没有续流管」（2026-10-15）
+
+**① 输入参数移到最前**：面板顺序改为 **输入类型与输入电压 → 规格 → 拓扑工作点 → 磁芯 → 材质 → 绕组 → 输出级 → LLC → 校核模式 → 窗口与绝缘 → 热**。
+原来 Vin_min / Vin_max 混在"规格"里、交流前端单列一节，现在输入类参数（输入类型、Vin_min / Vin_max 或 Vac / 工频 / C_bus / …）合成第一块，先定输入再看输出与拓扑。
+
+**② 反激确实不需要续流管——工具的措辞原来把它当成"整流+续流"两只管子**。修正如下（数值模型本来就是对的，改的是口径表达与选项）：
+
+| 拓扑 | 续流管 | 现在的措辞 |
+|---|---|---|
+| 反激 / ACF | **没有**（副边只有一只整流管，关断期导通给输出电容充电） | 二极管（副边单管，无续流管）/ 同步整流（副边单管）；sr2 选项**收起**并归到单管 |
+| 正激 / 推挽 / 半桥 / 全桥 | 有（Buck 型副边带输出电感） | 二极管（整流管 + 续流管）/ 同步整流（只换整流管 + 续流二极管）/ 同步整流（两管都换） |
+| LLC | **没有**（副边整流管在半个周期内交替导通） | 二极管（副边整流管，交替导通，无续流管）/ 同步整流（副边整流管换成 MOS）；sr2 同样收起 |
+
+配套改动：次级整流器件下方新增随拓扑变化的提示行；设计步骤与结果行的措辞随拓扑切换；
+若直接调用引擎传 `sr2 + 反激/LLC`，会给出提示并按单管（实际副边电流波形）计算，不再按"两只管子"估算。
+
+**口径说明（评审时要留意）**：反激的二极管损耗仍按副边电流波形的周期平均值算（`P = Vf·I_avg,sec`，其中 I_avg,sec 是引擎按 Pin 折算的副边平均电流，
+比按输出口径的 `Iout` 高约 1/η，偏保守，且与同步整流用 `I_rms,sec` 是同一口径）；正激/推挽/桥式因为整流管与续流管各走一次，
+两者之和在一个周期内恰好等于 `Iout`，所以就是 `Vf·Iout`。
+
+**验证**：新增第 28 组 19 项（面板顺序、三种拓扑族的措辞矩阵、反激/LLC 的 sr2 归一与数值一致性、二极管损耗口径），
+真浏览器回归同时核对"输入在最前"与整流器件选项文字/收起状态；总数 496 → **515 项，0 失败**，真浏览器 42 项全过，Excel 反激分支仍 19/19 逐格一致。
 
 ## 归档完整性
 
@@ -156,15 +179,15 @@ python make_excel_from_v2_engine.py --verify _dump.json   # 与引擎逐格比�
 **DCR 口径注意**：工具显示的是"并联后"的直流电阻；规格书通常在单个绕组上测量，
 **单绕组值 = 工具显示值 × 并联绕组数**（网页版结果区已提示这一点）。
 
-归档整理于 2026-10-15，并在归档目录内重新运行验证脚本确认可用：**496 项检查全部通过**
-（真浏览器回归 `verify_visibility_browser.mjs` 另 23 项通过；Excel 反激分支 19/19 逐格一致）。
+归档整理于 2026-10-15，并在归档目录内重新运行验证脚本确认可用：**515 项检查全部通过**
+（真浏览器回归 `verify_visibility_browser.mjs` 另 42 项通过；Excel 反激分支 19/19 逐格一致）。
 校验和（SHA-256，用于日后确认归档件未被改动）：
 
 | 文件 | SHA-256 |
 |---|---|
-| `transformer_design_tool_v2.html` | `5D164BAE975270DAFE3389206B4EB724B20F5C775AC462FC2F5E58B57DC6CF35` |
-| `verify_transformer_tool_v2.mjs` | `32CF1B00034C4F8AFEA0D9C9AC30B7EC52F5331FD9F36126BD60B5EF2990C847` |
-| `verify_visibility_browser.mjs` | `1D48F6B13F028F12C9406D91FC1C4FBF77C4A753BDA0FE30F39D1F97D9446817` |
+| `transformer_design_tool_v2.html` | `413CAE6F029AB35D18673A056CE0D529982F8C456DF0B797D3460BB9477D24C9` |
+| `verify_transformer_tool_v2.mjs` | `DC4BA759B67C3DE50F6DAE976362F0E289874BC8E5C55ADEEF95F55F20C90594` |
+| `verify_visibility_browser.mjs` | `CC7B97FC19FB854677E4204E186F60653B5A3A1E459DB628F436F8F09629E238` |
 | `supplier_spec_EPC19_review.md` | `3B12F62F67648E77FD4A4CE7DD7401B7E8FF547A844426CE10DAE0B7B84414E6` |
 
 `verify_transformer_tool_v2.mjs` 以脚本自身位置解析工具文件路径，因此归档目录整体移动或改名后仍可直接运行。

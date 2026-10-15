@@ -59,6 +59,23 @@
     <div class="card">
       <h2>设计输入 / Design Inputs</h2>
       <p class="sub">带 * 的磁芯与材质参数是预设典型值，正式设计前请用数据手册数值覆盖。所有输入都参与计算。</p>
+      <h3>输入类型与输入电压 / Input source &amp; input voltage</h3>
+      <div class="three-col">
+        <div class="field"><label for="acMode">输入类型</label>
+          <select id="acMode"><option value="dc">直流输入（填 Vin_min / Vin_max）</option><option value="ac">交流 + 整流母线电容</option><option value="pfc">交流 + PFC（母线恒定）</option></select></div>
+        <div class="field" data-show="ac:dc"><label for="vinMin">Vin_min <span class="unit">(V)</span>（选交流时由母线谷值覆盖）</label><input id="vinMin" type="number" value="9" step="0.1" min="0.1"/></div>
+        <div class="field" data-show="ac:dc"><label for="vinMax">Vin_max <span class="unit">(V)</span>（选交流时由母线峰值覆盖）</label><input id="vinMax" type="number" value="36" step="0.1" min="0.1"/></div>
+        <div class="field" data-show="ac:ac"><label for="vacMin">Vac_min <span class="unit">(V rms)</span></label><input id="vacMin" type="number" value="176" step="1" min="1"/></div>
+        <div class="field" data-show="ac:ac"><label for="vacMax">Vac_max <span class="unit">(V rms)</span></label><input id="vacMax" type="number" value="264" step="1" min="1"/></div>
+        <div class="field" data-show="ac:ac"><label for="fline">工频 <span class="unit">(Hz)</span></label><input id="fline" type="number" value="50" step="1" min="1"/></div>
+        <div class="field" data-show="ac:ac"><label for="cbusUf">母线电容 C_bus <span class="unit">(µF)</span></label><input id="cbusUf" type="number" value="220" step="10" min="1"/></div>
+        <div class="field" data-show="ac:ac"><label for="cbusEsr">母线电容 ESR <span class="unit">(Ω)</span></label><input id="cbusEsr" type="number" value="0.3" step="0.05" min="0.01"/></div>
+        <div class="field" data-show="ac:ac"><label for="rsAc">交流源阻+线阻 <span class="unit">(Ω)</span></label><input id="rsAc" type="number" value="0.5" step="0.1" min="0.01"/></div>
+        <div class="field" data-show="ac:ac"><label for="vdBridge">整流桥压降 <span class="unit">(V)</span></label><input id="vdBridge" type="number" value="1.4" step="0.1" min="0"/></div>
+        <div class="field" data-show="ac:ac"><label for="holdMs">保持时间要求 <span class="unit">(ms，0=不校核)</span></label><input id="holdMs" type="number" value="0" step="5" min="0"/></div>
+        <div class="field" data-show="ac:ac"><label for="holdVmin">保持结束时允许最低母线 <span class="unit">(V)</span></label><input id="holdVmin" type="number" value="0" step="1" min="0"/></div>
+        <div class="field" data-show="ac:pfc"><label for="pfcBus">PFC 母线电压 <span class="unit">(V)</span></label><input id="pfcBus" type="number" value="390" step="5" min="20"/></div>
+      </div>
       <h3>规格 / Specification</h3>
       <div class="two-col">
         <div class="field"><label for="topology">拓扑 / Topology</label>
@@ -72,33 +89,17 @@
             <option value="LLC Resonant">LLC 谐振 / LLC</option>
           </select></div>
         <div class="field"><label for="fs">开关频率 Fs <span class="unit">(kHz)</span></label><input id="fs" type="number" value="100" step="1" min="1"/></div>
-        <div class="field" data-show="ac:dc"><label for="vinMin">Vin_min <span class="unit">(V)</span>（选交流时由母线谷值覆盖）</label><input id="vinMin" type="number" value="9" step="0.1" min="0.1"/></div>
-        <div class="field" data-show="ac:dc"><label for="vinMax">Vin_max <span class="unit">(V)</span>（选交流时由母线峰值覆盖）</label><input id="vinMax" type="number" value="36" step="0.1" min="0.1"/></div>
         <div class="field"><label for="vout">Vout <span class="unit">(V)</span></label><input id="vout" type="number" value="12" step="0.1" min="0.1"/></div>
         <div class="field"><label for="iout">Iout <span class="unit">(A)</span></label><input id="iout" type="number" value="2" step="0.1" min="0.01"/></div>
-        <div class="field"><label for="vf">整流压降 Vf <span class="unit">(V)</span></label><input id="vf" type="number" value="0.5" step="0.05" min="0"/></div>
+        <div class="field"><label for="vf">整流管压降 Vf <span class="unit">(V)</span></label><input id="vf" type="number" value="0.5" step="0.05" min="0"/></div>
         <div class="field"><label for="eta">效率 η</label><input id="eta" type="number" value="0.9" step="0.01" min="0.3" max="1"/></div>
         <div class="field" data-show="topo:LLC Resonant"><label for="vinNom">Vin_nom（LLC 用，0=自动中点）<span class="unit">(V)</span></label><input id="vinNom" type="number" value="0" step="0.1" min="0"/></div>
         <div class="field" data-show="topo:Push-Pull,Half-Bridge,Full-Bridge"><label for="secRect">次级整流（桥式/推挽用）/ Secondary rectifier</label>
           <select id="secRect"><option value="ct">中心抽头 2 绕组 / Center-tapped</option><option value="bridge">全桥 1 绕组 / Full bridge</option></select></div>
         <div class="field"><label for="rectDevice">次级整流器件</label>
-          <select id="rectDevice"><option value="diode">二极管（整流+续流）</option><option value="sr1">同步整流-仅整流管</option><option value="sr2">同步整流-整流+续流</option></select></div>
+          <select id="rectDevice"><option value="diode">二极管（整流管 + 续流管）</option><option value="sr1">同步整流（只换整流管 + 续流二极管）</option><option value="sr2">同步整流（整流管 + 续流管都换）</option></select></div>
       </div>
-      <h3>输入类型与交流前端 / Input source &amp; AC front-end（交流前端参数仅在选"交流 + 整流母线"时出现）</h3>
-      <div class="three-col">
-        <div class="field"><label for="acMode">输入类型</label>
-          <select id="acMode"><option value="dc">直流输入（用下面的 Vin_min/Vin_max）</option><option value="ac">交流 + 整流母线电容</option><option value="pfc">交流 + PFC（母线恒定）</option></select></div>
-        <div class="field" data-show="ac:ac"><label for="vacMin">Vac_min <span class="unit">(V rms)</span></label><input id="vacMin" type="number" value="176" step="1" min="1"/></div>
-        <div class="field" data-show="ac:ac"><label for="vacMax">Vac_max <span class="unit">(V rms)</span></label><input id="vacMax" type="number" value="264" step="1" min="1"/></div>
-        <div class="field" data-show="ac:ac"><label for="fline">工频 <span class="unit">(Hz)</span></label><input id="fline" type="number" value="50" step="1" min="1"/></div>
-        <div class="field" data-show="ac:ac"><label for="cbusUf">母线电容 C_bus <span class="unit">(µF)</span></label><input id="cbusUf" type="number" value="220" step="10" min="1"/></div>
-        <div class="field" data-show="ac:ac"><label for="cbusEsr">母线电容 ESR <span class="unit">(Ω)</span></label><input id="cbusEsr" type="number" value="0.3" step="0.05" min="0.01"/></div>
-        <div class="field" data-show="ac:ac"><label for="rsAc">交流源阻+线阻 <span class="unit">(Ω)</span></label><input id="rsAc" type="number" value="0.5" step="0.1" min="0.01"/></div>
-        <div class="field" data-show="ac:ac"><label for="vdBridge">整流桥压降 <span class="unit">(V)</span></label><input id="vdBridge" type="number" value="1.4" step="0.1" min="0"/></div>
-        <div class="field" data-show="ac:ac"><label for="holdMs">保持时间要求 <span class="unit">(ms，0=不校核)</span></label><input id="holdMs" type="number" value="0" step="5" min="0"/></div>
-        <div class="field" data-show="ac:ac"><label for="holdVmin">保持结束时允许最低母线 <span class="unit">(V)</span></label><input id="holdVmin" type="number" value="0" step="1" min="0"/></div>
-        <div class="field" data-show="ac:pfc"><label for="pfcBus">PFC 母线电压 <span class="unit">(V)</span></label><input id="pfcBus" type="number" value="390" step="5" min="20"/></div>
-      </div>
+      <div class="hint" id="rectHint" style="margin-top:10px;">次级整流器件会随拓扑换措辞：正激/推挽/桥式是 Buck 型副边，整流管与续流管都要算；反激副边只有一只整流管（关断期导通），没有续流管。</div>
       <h3>拓扑工作点 / Operating point</h3>
       <div class="two-col">
         <div class="field"><label for="dutyMax">Vin_min 处占空比 D_max</label><input id="dutyMax" type="number" value="0.45" step="0.01" min="0.05" max="0.8"/></div>
@@ -608,6 +609,18 @@ var TD = (function () {
     var naux = (isFinite(parseFloat(I.naux)) && parseFloat(I.naux) > 0) ? Math.round(parseFloat(I.naux)) : 0;
     /* 次级整流器件：diode = 二极管（整流+续流都是二极管）；sr1 = 只把整流管换成同步整流；sr2 = 整流+续流都换 */
     var rectDevice = (I.rectDevice === 'sr1' || I.rectDevice === 'sr2') ? I.rectDevice : 'diode';
+    /* 续流管只存在于 Buck 型副边（正激/推挽/桥式带输出电感）。反激副边只有一只整流管（关断期导通），
+       LLC 副边是整流管交替导通：两者都没有续流管，sr2（整流管 + 续流管都换）无意义 → 归到单管/整管 SR 计算并说明 */
+    var rectEff = rectDevice;
+    if (rectDevice === 'sr2' && (T.kind === 'flyback' || T.kind === 'llc')) {
+      rectEff = 'sr1';
+      warns.push((T.kind === 'flyback'
+        ? '反激副边只有一只整流管（关断期导通、给输出电容充电），没有续流管：'
+        : 'LLC 副边整流管在半个周期内交替导通，没有续流管：')
+        + '「同步整流（整流管 + 续流管都换）」对它无意义，已按「'
+        + (T.kind === 'flyback' ? '同步整流（副边单管）' : '同步整流（副边整流管换成 MOS）')
+        + '」（按实际副边电流波形）计算。');
+    }
     /* 磁芯库里的实测 AL（由界面在选中磁芯时带进来）：AL 填 0 时优先用它，
        因为"不开气隙"只是工艺说法——未研磨的对拼面仍有几十微米的有效气隙，
        实测 AL 往往只有理想值 µ0·µi·Ae/le 的 1/3~1/2。 */
@@ -1059,18 +1072,19 @@ var TD = (function () {
          (os.esrImpossible ? '—（ESR 未解决前无意义）' : os.CoutUF.toFixed(1) + ' µF') +
          '，电容有效值纹波电流 ' + os.CoutIcRms.toFixed(2) + ' A，耐压建议 ≥ ' + os.CoutVrate.toFixed(0) + ' V' });
     /* 同步整流 vs 二极管 */
-    /* 整流损耗：一个周期内的平均整流电流恒为 Iout，所以要按"整流管+续流管"两个器件统计
-       （二极管：Vf·Iout；SR：Rds·Iout² 或 只换整流管时 Rds·Irms,rect² + 续流二极管 Vf·(Iout−Iavg,rect)） */
-    var srDeadLoss = (rectDevice === 'diode') ? 0 : vfBody * I.iout * (2 * tDeadNs * 1e-9 * Fs);
-    os.rectDevice = rectDevice;
+    /* 整流损耗：Buck 型副边的整流管 D·Iout + 续流管 (1-D)·Iout 加起来平均恒为 Iout；
+       反激只有一只整流管、LLC 是整流管交替导通，都不存在续流管。
+       （二极管：Vf·I；SR：Rds·I² 或 只换整流管时 Rds·Irms,rect² + 续流二极管 Vf·(Iout−Iavg,rect)） */
+    var srDeadLoss = (rectEff === 'diode') ? 0 : vfBody * I.iout * (2 * tDeadNs * 1e-9 * Fs);
+    os.rectDevice = rectEff;
     if (T.kind === 'flyback') {
-      /* 反激只有一个整流二极管/开关（导通期平均即 Iout） */
+      /* 反激副边只有这一个器件：电流取副边波形的一周期平均值（Pin 折算，即 I_avg,sec） */
       os.Pdiode = I.vf * Math.max(pts.vinMin.IavgSec, I.iout * 0.999);
-      os.Psr = (rectDevice === 'diode') ? os.Pdiode : (rdsOnMOhm * 1e-3 * pts.vinMin.IrmsSec * pts.vinMin.IrmsSec + vfBody * I.iout * (2 * tDeadNs * 1e-9 * Fs));
-    } else if (rectDevice === 'diode') {
+      os.Psr = (rectEff === 'diode') ? os.Pdiode : (rdsOnMOhm * 1e-3 * pts.vinMin.IrmsSec * pts.vinMin.IrmsSec + vfBody * I.iout * (2 * tDeadNs * 1e-9 * Fs));
+    } else if (rectEff === 'diode') {
       os.Pdiode = I.vf * I.iout;                       /* 整流管 + 续流管，两者之和 */
       os.Psr = 0;
-    } else if (rectDevice === 'sr1') {
+    } else if (rectEff === 'sr1') {
       os.Pdiode = I.vf * I.iout;
       os.Psr = rdsOnMOhm * 1e-3 * pts.vinMin.IrmsSec * pts.vinMin.IrmsSec   /* 整流管用 SR */
         + I.vf * Math.max(I.iout - pts.vinMin.IavgSec, 0)                   /* 续流仍用二极管 */
@@ -1079,18 +1093,26 @@ var TD = (function () {
       os.Pdiode = I.vf * I.iout;
       os.Psr = rdsOnMOhm * 1e-3 * I.iout * I.iout + vfBody * I.iout * (2 * tDeadNs * 1e-9 * Fs);  /* 两管都换 SR */
     }
-    os.SRapplicable = (rectDevice !== 'diode');
+    os.SRapplicable = (rectEff !== 'diode');
     os.PdiodeBuck = os.Pdiode;
-    os.Icross = (rdsOnMOhm > 0 && rectDevice !== 'diode') ? I.vf / (rdsOnMOhm * 1e-3) : Infinity;
+    os.Icross = (rdsOnMOhm > 0 && rectEff !== 'diode') ? I.vf / (rdsOnMOhm * 1e-3) : Infinity;
     os.SRbetter = os.SRapplicable && (os.Psr < os.Pdiode);
     os.SRonTime = os.buckDerived ? dNeedMin / I.fs * 1000 : (1 - dNeedMin) / I.fs * 1000;   /* µs */
     os.SRdeadOK = os.buckDerived ? (dNeedMin / I.fs - 2 * tDeadNs * 1e-9) > 0 : true;
-    steps.push({ t: '整流损耗：' + (rectDevice === 'diode' ? '二极管（整流+续流）' : (rectDevice === 'sr1' ? '同步整流（仅整流管）+ 续流二极管' : '同步整流（整流+续流都换）')),
-      f: rectDevice === 'diode' ? 'P = Vf·Iout（一个周期内整流电流平均恒为 Iout：整流管 D·Iout + 续流管 (1-D)·Iout）'
-        : 'P_SR = Rds·I²（两管都换用 Iout²；只换整流管用 I_rms,rect² 并加续流二极管损耗） + Vf_body·Iout·2·t_dead·Fs',
-      s: (rectDevice === 'diode'
-          ? '二极管整流损耗 = ' + I.vf + ' V × ' + I.iout + ' A = **' + os.Pdiode.toFixed(3) + ' W**（占输出 ' +
+    var rectTxt = rectLabels(I.topology);
+    steps.push({ t: '整流损耗：' + (rectEff === 'diode' ? rectTxt.diode : rectTxt[rectEff]),
+      f: rectEff === 'diode'
+        ? (T.kind === 'flyback'
+            ? 'P = Vf·I_avg,sec（反激副边单管：关断期导通，一个周期内的平均电流 ≈ Iout，无续流管）'
+            : (T.kind === 'llc'
+                ? 'P = Vf·Iout（LLC 副边整流管交替导通，各管平均电流之和 = Iout，无续流管）'
+                : 'P = Vf·Iout（一个周期内整流电流平均恒为 Iout：整流管 D·Iout + 续流管 (1-D)·Iout）'))
+        : 'P_SR = Rds·I²（Buck 型副边两管都换用 Iout²；只换整流管用 I_rms,rect² 并加续流二极管损耗；反激/LLC 用实际副边有效值） + Vf_body·Iout·2·t_dead·Fs',
+      s: (rectEff === 'diode'
+          ? '二极管整流损耗 = ' + I.vf + ' V × ' + (T.kind === 'flyback' ? pts.vinMin.IavgSec.toFixed(3) : I.iout) + ' A = **' + os.Pdiode.toFixed(3) + ' W**（占输出 ' +
             (os.Pdiode / Math.max(Po, 1e-9) * 100).toFixed(2) + '%）；此模式不使用 MOS 的 Rds(on)/Vf_body/t_dead'
+            + (T.kind === 'flyback' ? '；反激副边只有一只整流管（关断期导通），无续流管'
+              : (T.kind === 'llc' ? '；LLC 副边整流管交替导通，无续流管' : '；Buck 型副边：整流管与续流管各走一次输出电流'))
           : ('二极管方案 ' + os.Pdiode.toFixed(3) + ' W vs 当前所选 SR 方案 ' + os.Psr.toFixed(3) + ' W（含死区体二极管 ' + srDeadLoss.toFixed(3) +
              ' W）→ ' + (os.SRbetter ? 'SR 更省 ' + (os.Pdiode - os.Psr).toFixed(3) + ' W' : '此工况二极管更划算') +
              '；临界电流 ≈ ' + (isFinite(os.Icross) ? os.Icross.toFixed(2) + ' A' : '—'))) });
@@ -1372,9 +1394,38 @@ var TD = (function () {
     });
     return rows;
   }
+  /* 次级整流器件的措辞（界面按拓扑实时替换选项文字）：
+     反激副边只有一只整流管，关断期导通给输出电容充电 → 没有续流管，sr2 无意义；
+     正激/推挽/桥式是 Buck 型副边 → 整流管在导通期、续流管在关断期，两只都要算。 */
+  function rectLabels(topology) {
+    var T = TOPOS[topology] || TOPOS['Flyback'];
+    var fb = (T.kind === 'flyback'), llc = (T.kind === 'llc');
+    /* 只有 Buck 型副边（正激/推挽/桥式带输出电感）才有"续流管"这个器件 */
+    var fw = (T.kind === 'forward' || T.kind === 'bipolar');
+    return {
+      flyback: fb, llc: llc, freewheel: fw,
+      diode: fw ? '二极管（整流管 + 续流管）'
+        : (fb ? '二极管（副边单管，无续流管）' : '二极管（副边整流管，交替导通，无续流管）'),
+      sr1: fw ? '同步整流（只换整流管 + 续流二极管）'
+        : (fb ? '同步整流（副边单管）' : '同步整流（副边整流管换成 MOS）'),
+      sr2: fw ? '同步整流（整流管 + 续流管都换）' : '',
+      short: fw ? '整流管 + 续流管' : (fb ? '副边单管，无续流管' : '副边整流管交替导通，无续流管'),
+      note: fw ? '整流管与续流管（一个周期内平均总电流 = Iout）'
+        : (fb ? '副边唯一那只整流管（关断期导通，平均电流 ≈ Iout）' : '副边整流管（交替导通，各管平均电流之和 = Iout）'),
+      hint: fw
+        ? '正激 / 推挽 / 桥式是 Buck 型副边：整流管在导通期、续流管在关断期各走一次输出电流，两只管子都要计入；'
+          + '二极管总损耗 ≈ Vf·Iout，同步整流按各自的 Rds(on)·I² 累加。'
+        : (fb
+            ? '反激：副边只有一只整流管，关断期导通给输出电容充电，没有续流管；一个周期内的平均电流 ≈ Iout，二极管损耗 ≈ Vf·Iout。'
+              + '选「同步整流（副边单管）」就是把这只管子换成 MOS。'
+            : 'LLC：副边整流管（中心抽头 2 只或全桥 4 只）在半个周期内交替导通，没有续流管；'
+              + '总平均电流 = Iout，损耗按每只管子的实际有效值电流算，选「同步整流（副边整流管换成 MOS）」即把整流管全部换成 SR。')
+    };
+  }
   return { design: design, coreComparison: coreComparison, CORES: CORES, MATERIALS: MATERIALS, TOPOS: TOPOS,
     setCores: setCores, parseCoreCsv: parseCoreCsv, coresToCsv: coresToCsv,
-    awgToMm: awgToMm, mmToAwg: mmToAwg, skinDepthMm: skinDepthMm, rhoCu: rhoCu, MU0: MU0, RHO_CU_20: RHO_CU_20 };
+    awgToMm: awgToMm, mmToAwg: mmToAwg, skinDepthMm: skinDepthMm, rhoCu: rhoCu, MU0: MU0, RHO_CU_20: RHO_CU_20,
+    rectLabels: rectLabels };
 })();
 /* ================= ENGINE-END ================= */
 </script>
@@ -1579,8 +1630,10 @@ var TD = (function () {
       rows.push(['纹波分解', 'ESR 分量 ' + fmt(os.dVesr, 4) + ' V + 容性分量 ' + fmt(os.dVcap, 4) + ' V', os.esrDominant ? 'ESR 主导：需降低 ESR 或多只并联' : '容性为主']);
       rows.push(['电容纹波电流 / 耐压', fmt(os.CoutIcRms, 2) + ' A rms，耐压建议 ≥ ' + fmt(os.CoutVrate, 0) + ' V', 'ESR 上限 ≈ ' + fmt(os.CoutEsrMax, 1) + ' mΩ']);
       if (os.rectDevice === 'diode') {
-        rows.push(['整流损耗（二极管：整流+续流）', fmt(os.Pdiode, 3) + ' W（占输出 ' + fmt(os.Pdiode / Math.max(r.summary.Po, 1e-9) * 100, 2) + '%）',
-          '二极管整流不需要填 Rds(on)/Vf_body/t_dead；Vf 已包含整流管与续流管（一个周期内平均总电流 = Iout）']);
+        var rl = TD.rectLabels(r.inputs.topology);
+        rows.push(['整流损耗（二极管：' + rl.short + '）',
+          fmt(os.Pdiode, 3) + ' W（占输出 ' + fmt(os.Pdiode / Math.max(r.summary.Po, 1e-9) * 100, 2) + '%）',
+          '二极管整流不需要填 Rds(on)/Vf_body/t_dead；Vf 已包含' + rl.note]);
       } else {
         rows.push(['整流损耗：二极管 vs 当前 SR 方案', fmt(os.Pdiode, 3) + ' W vs ' + fmt(os.Psr, 3) + ' W',
           os.SRbetter ? 'SR 更省 ' + fmt(os.Pdiode - os.Psr, 3) + ' W' : '此工况二极管更划算']);
@@ -1899,9 +1952,29 @@ var TD = (function () {
       node.style.display = showRuleHit(node) ? '' : 'none';
     });
   }
+  /* 次级整流器件的措辞随拓扑变：续流管只存在于 Buck 型副边（正激/推挽/桥式），
+     反激与 LLC 都没有续流管 → sr2 无意义，收起并归到 sr1（按实际副边电流波形计算） */
+  function updateRectLabels() {
+    var sel = $('rectDevice');
+    if (!sel || !TD.rectLabels) return;
+    var L = TD.rectLabels($('topology') ? $('topology').value : 'Flyback');
+    var opts = sel.options;
+    if (opts) {
+      for (var i = 0; i < opts.length; i++) {
+        var txt = L[opts[i].value];
+        if (typeof txt !== 'string') continue;
+        if (txt) { opts[i].text = txt; opts[i].hidden = false; opts[i].disabled = false; }
+        else { opts[i].hidden = true; opts[i].disabled = true; opts[i].text = ''; }
+      }
+      if (!L.sr2 && sel.value === 'sr2') sel.value = 'sr1';
+    }
+    var hint = $('rectHint');
+    if (hint) hint.textContent = L.hint;
+  }
   function render() {
     try {
       updateVisibility();
+      updateRectLabels();
       var inputs = readInputs();
       var r = TD.design(inputs);
       lastResult = r;
