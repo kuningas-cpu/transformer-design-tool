@@ -228,6 +228,11 @@ SCENARIOS.forEach((sc) => {
     check('设计步骤里出现"实测 Vds,pk 与解析上界对账"并给出等效值',
       /实测 Vds,pk 与解析上界对账/.test(stepRegion) && /等效复位电容/.test(stepRegion) && /等效 Fs/.test(stepRegion),
       (stepRegion.match(/等效复位电容[^；]*/) || ['(missing)'])[0]);
+    check('低于理论下限时，步骤里会反问"这组波形是在多大输入电压下测的"',
+      /这个峰值最多对应多大的输入电压/.test(stepRegion) && /最多只有 \d/.test(stepRegion),
+      (stepRegion.match(/最多只有[^。）]*/) || ['(missing)'])[0]);
+    check('步骤里给出完整下限（含 2·Vin 这一项）',
+      /Vds,pk ≥ 2·Vin_max/.test(stepRegion) && /低于这个下限/.test(stepRegion));
     const osRegion = (() => { const i = dom.indexOf('id="outStage"'); const j = dom.indexOf('<div class="card"', i + 1); return (i > 0 && j > i) ? dom.slice(i, j) : ''; })();
     check('输出级卡片同步给出窗口结论', /复位电容可行窗口/.test(osRegion) && /窗口为空/.test(osRegion), osRegion.slice(-260));
   }

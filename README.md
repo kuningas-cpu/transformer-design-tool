@@ -9,7 +9,7 @@
 | 文件 | 说明 |
 |---|---|
 | `transformer_design_tool_v2.html` | 工具本体：输入 + 结果 + 校核清单 + 判决 + 电压扫描 + 设计步骤 + 磁芯对比 + 公式表，支持 CSV 导出 |
-| `verify_transformer_tool_v2.mjs` | 验证脚本：**609 项检查**（结构/首次渲染/物理不变量/手算对照/模糊测试/校核模式/输出级/LLC 谐振腔/电容复位/复位电容窗口/实板 1 nF 工况/实测 Vds 对账与理论下限/动态显示/面板顺序/续流管口径/按拓扑生成文字/开关管应力公式/热阻口径/两家供应商交叉验证） |
+| `verify_transformer_tool_v2.mjs` | 验证脚本：**614 项检查**（结构/首次渲染/物理不变量/手算对照/模糊测试/校核模式/输出级/LLC 谐振腔/电容复位/复位电容窗口/实板 1 nF 工况/实测 Vds 对账与完整理论下限/动态显示/面板顺序/续流管口径/按拓扑生成文字/开关管应力公式/热阻口径/两家供应商交叉验证） |
 | `verify_visibility_browser.mjs` | 真浏览器回归：用无头 Edge/Chrome 打开工具，按 8 组「输入类型 × 拓扑 × 整流器件 × 耐压档」场景核对**实际被隐藏的输入项、面板顺序、整流器件选项措辞、公式表是否只列当前拓扑、Vds,pk 步骤行、热阻提示、复位电容窗口结论**（109 项检查；本机没有 Chromium 内核浏览器时自动跳过） |
 | `transformer_design_tool_v2_notes.md` | 设计说明：公式与约定、与 v1 的差异清单、适用边界、验证清单、EPC19 核算记录 |
 | `supplier_spec_EPC19_review.md` | 重庆天胜 EPC19（TST1724）承认书参数提取与核算记录 |
@@ -47,7 +47,7 @@
 ## 复现验证
 
 ```
-node verify_transformer_tool_v2.mjs              # 609 项检查，全通过表示归档件完整可运行
+node verify_transformer_tool_v2.mjs              # 614 项检查，全通过表示归档件完整可运行
 node verify_transformer_tool_v2.mjs --diag       # 额外打印默认工况逐项结果与 EPC19 核算明细
 node verify_visibility_browser.mjs               # 真浏览器（无头 Edge/Chrome）核对输入项的动态显示/隐藏
 python make_excel_from_v2_engine.py              # 由同一套公式生成 transformer_design_tool_v2.xlsx
@@ -335,17 +335,36 @@ V_res,pk ≥ π·n·Vo/(1−D)      （由"复位半周期 ≤ 关断期"与 V �
 **验证**：新增第 34 组扩展到 22 项（理论下限 44.6 V、实测低于下限的判定、纯电容方案复位来不及、串联阻尼电阻与耗散功率、三条等效反推），
 总数 605 → **609 项，0 失败**，真浏览器 111 项全过，Excel 反激分支仍 19/19。
 
+### 第十二轮：示波器波形 → 把理论下限算完整（2026-10-15）
+
+**新输入**：Tektronix DPO 2014B 实测波形照片（2 µs/div、20 V/div；drain 上是**光滑圆拱**，占满关断期，无平台、无台阶 ⇒ 不是钳位、也不像串了电阻），用户确认**没有串电阻、没有钳位、复位电容 1 nF 并在初级两端**。
+
+**修正**：之前的下限只算了励磁幅度，漏了"**复位电容在导通期已经被充到 Vin**"这一项。完整推导：
+
+```
+Vds,pk = Vin + √(Vin² + (I_m,pk·Z)²)  ≥ 2·Vin                        （即使励磁电流为零）
+I_m,pk·Z ≥ π·n·Vo/(1−D)              （复位必须在本周期内完成）
+⇒ Vds,pk ≥ Vin_max + √(Vin_max² + (π·n·Vo/(1−D))²)                   （与 Lm、C_res、Fs 无关）
+```
+
+本板各输入电压下的完整下限：18 V → **93.7 V**、24 V → **84.5 V**、30 V → **86.9 V**、36 V → **93.3 V**；而实测只有 60 V。
+工具现在会因此反问"**这组波形是在多大输入电压下测的？**"——纯电容复位时 `Vds,pk ≥ 2·Vin` ⇒ 60 V 最多对应 **Vin ≤ 30 V**（含励磁项约 24~27 V）。
+若确实是在 36 V 下测到 60 V，则说明"单管串联在初级 + 初级并联电容"这个模型与实板不符（例如双管正激这类把磁化能量回馈母线的结构），需要按实际电路改模型。
+
+**验证**：第 34 组扩展到 24 项（完整下限的构成、2·Vin 特例、实测低于下限的判定、反推最大输入电压 30 V 及其步骤行），
+真浏览器回归加"反推输入电压 + 完整下限"两项；总数 609 → **614 项，0 失败**，真浏览器 113 项全过，Excel 反激分支仍 19/19。
+
 ## 归档完整性
 
-归档整理于 2026-10-15，并在归档目录内重新运行验证脚本确认可用：**609 项检查全部通过**
-（真浏览器回归 `verify_visibility_browser.mjs` 另 111 项通过；Excel 反激分支 19/19 逐格一致）。
+归档整理于 2026-10-15，并在归档目录内重新运行验证脚本确认可用：**614 项检查全部通过**
+（真浏览器回归 `verify_visibility_browser.mjs` 另 113 项通过；Excel 反激分支 19/19 逐格一致）。
 校验和（SHA-256，用于日后确认归档件未被改动）：
 
 | 文件 | SHA-256 |
 |---|---|
-| `transformer_design_tool_v2.html` | `06B5D9C2FB5620631F5C9CF988B135F9E9C5065412314F5B31A5E8A00435A1F9` |
-| `verify_transformer_tool_v2.mjs` | `B208FC8FE736F2CEE77AAB058794B5000DE3B49E9FD8D5DFB9FFBB3D5ED90D4B` |
-| `verify_visibility_browser.mjs` | `5679977F35BF545F5ABC6DF604397E097327674AD29777E2532391AEA898B9F5` |
+| `transformer_design_tool_v2.html` | `49DB76D85850086C5FCE830C39D05813C1F52BCC50EC87D27061F61F0268BE97` |
+| `verify_transformer_tool_v2.mjs` | `634AC2899C3514FB06C4ADA1140718248D7163CD1211A396DF03D55D96DB1C7F` |
+| `verify_visibility_browser.mjs` | `1E837645B8F196908A8EAE9B2C208D9D051EC37F0013AE890C4B7A65B64403EA` |
 | `supplier_spec_EPC19_review.md` | `3B12F62F67648E77FD4A4CE7DD7401B7E8FF547A844426CE10DAE0B7B84414E6` |
 
 `verify_transformer_tool_v2.mjs` 以脚本自身位置解析工具文件路径，因此归档目录整体移动或改名后仍可直接运行。

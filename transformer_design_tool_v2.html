@@ -947,6 +947,12 @@ var TD = (function () {
         var dMaxVin = Math.min(Math.max(dNeedMax, 0.02), 0.95);
         meas.vResMinTheo = Math.PI * nAch * Vo / (1 - dMaxVin);
         meas.belowTheo = vResM < meas.vResMinTheo * 0.98;
+        /* 更完整的下限（电容在导通期已经被充到 Vin，所以 drain 峰值 = Vin + √(Vin² + (I·Z)²)）：
+           Vds,pk ≥ Vin_max + √(Vin_max² + (π·n·Vo/(1−D))²)   —— 与 Lm、C、Fs 无关 */
+        meas.vdsFloorTheo = I.vinMax + Math.sqrt(I.vinMax * I.vinMax + meas.vResMinTheo * meas.vResMinTheo);
+        meas.belowVdsFloor = vdsMeasPk < meas.vdsFloorTheo * 0.98;
+        /* 纯电容复位时峰值至少 2·Vin ⇒ 反过来：这个峰值最多只可能是多大输入电压测出来的 */
+        meas.vinImplied = vdsMeasPk / 2;
       }
       capReset = { crMaxNf: crMaxNf, crNf: crNf, crAuto: !(cresNf > 0), vResetPk: vResetPk,
         dVLk: dVLk, lkUH: lkUh, wLeak: wLeak, wMag: wMag, wRatio: wMag > 0 ? wLeak / wMag : 0,
@@ -1013,10 +1019,24 @@ var TD = (function () {
              (biggerClamp ? '，与实测同量级 ' : '（与实测差 ' + meas.dVtoClamp.toFixed(1) + ' V）') + '（需要副边整流能反向导通，单管+续流的正激做不到）；'
            + '④ 纯电容 + 无阻尼时模型给的上冲时间 = (π/2)·√(Lm·C) ≈ ' + meas.tRiseModelUs.toFixed(2) + ' µs ——请拿示波器上的实际上升时间对照，'
              + '明显更快说明有阻尼，明显更慢说明 Lm·C 比模型大。'
-           + '⑤ 理论下限（最关键）：无损谐振复位在 Vin_max 处的最小峰值 = π·n·Vo/(1−D) = ' + meas.vResMinTheo.toFixed(1) +
-             ' V，**与 Lm、C、Fs 都无关**（只要复位能在本周期内完成）；实测峰值 ' + meas.vResPk.toFixed(1) + ' V ' +
-             (meas.belowTheo ? '**低于这个下限 → 纯电容谐振复位在数学上不成立**：复位回路里一定有阻尼电阻或钳位器件（否则这么小的峰不可能出现）'
-                              : '高于这个下限，纯电容解释有可能成立（再核对 Lm、C、Fs 即可）') + '。' });
+           + '⑤ 理论下限（最关键）：复位电容在**导通期已经被充到 Vin**（开关把 drain 拉到 0，绕组另一端是 Vin），'
+             + '所以 drain 峰值 = Vin + √(Vin² + (I_m,pk·Z)²) ≥ Vin + π·n·Vo/(1−D)·... 这里给出完整下限 '
+             + 'Vds,pk ≥ Vin_max + √(Vin_max² + (π·n·Vo/(1−D))²) = ' + meas.vdsFloorTheo.toFixed(1) +
+             ' V（其中 π·n·Vo/(1−D) = ' + meas.vResMinTheo.toFixed(1) + ' V 是"复位必须在本周期内完成"给的最小励磁幅度；'
+             + '整个下限与 Lm、C_res、Fs 都无关）；**即使励磁电流为零，峰值也不会低于 2·Vin_max = ' + (2 * I.vinMax).toFixed(0) + ' V**。实测 ' +
+             meas.vdsMeasPk.toFixed(1) + ' V ' +
+             (meas.belowVdsFloor
+               ? '**低于这个下限 → 纯电容谐振复位（开关串联在初级、复位电容并联在初级）在数学上不成立**：要么复位回路里还有别的东西（阻尼电阻/钳位），'
+                 + '要么开关管的接法不是"单管串联在初级"（例如双管正激这种把磁化能量回馈到母线的结构，drain 只被钳在 Vin 附近），要么测量的输入电压/峰值需要复核。'
+               : '高于这个下限，纯电容解释有可能成立（再核对 Lm、C、Fs 即可）') + '。' });
+        if (meas.belowVdsFloor) {
+          steps.push({ t: '反推：这个峰值最多对应多大的输入电压',
+            f: '纯电容复位时 Vds,pk ≥ 2·Vin_max（复位电容在导通期已被充到 Vin，复位期间母线还要再灌入 Vin·Q 的电荷）⇒ Vin ≤ Vds,pk(实测)/2',
+            s: '实测 ' + meas.vdsMeasPk.toFixed(1) + ' V 若真是纯电容复位的峰值，则当时的输入电压最多只有 ' + meas.vinImplied.toFixed(1) +
+               ' V（再把励磁项算进去还要更低：Vin ≈ ' + Math.max(meas.vinImplied - 10, 0).toFixed(0) + '~' + meas.vinImplied.toFixed(0) +
+               ' V）。请核对这组波形是在多大的输入电压下测的；如果确实是在 Vin_max = ' + I.vinMax +
+               ' V 测的，那说明复位通路/开关接法与"单管正激 + 初级并联电容"这个模型不一致（工具需要按实际电路改模型）。' });
+        }
       }
       /* 复位电容的可行窗口单独交代：这是"能不能用这个耐压档"的判据 */
       steps.push({ t: '复位电容 C_res 的可行窗口（耐压 vs 复位时间）',

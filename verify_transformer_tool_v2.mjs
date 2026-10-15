@@ -1504,6 +1504,17 @@ header('34 measured Vds,pk (60 V) reconciled against the analytic reset model');
   ok('a series damping resistance is offered as the quantitative alternative',
     mw.rSeriesOhm > 1500 && mw.rSeriesOhm < 2500 && mw.rSeriesLossW > 1.0 && mw.rSeriesLossW < 2.0,
     mw.rSeriesOhm.toFixed(0) + ' Ω, ' + mw.rSeriesLossW.toFixed(2) + ' W');
+  /* 完整下限：电容在导通期已被充到 Vin，所以峰值 = Vin + √(Vin² + (I·Z)²) ≥ Vin + √(Vin² + (π·n·Vo/(1−D))²) */
+  ok('the drain-peak floor accounts for the Vin the capacitor already holds',
+    Math.abs(mw.vdsFloorTheo - (36 + Math.sqrt(36 * 36 + mw.vResMinTheo * mw.vResMinTheo))) < 1e-9 &&
+    mw.vdsFloorTheo > 90 && mw.vdsFloorTheo < 96, mw.vdsFloorTheo.toFixed(2));
+  ok('even with zero magnetising current the floor is 2 x Vin', 2 * 36 === 72 && mw.vdsFloorTheo > 72);
+  ok('the measured 60 V is flagged as below that floor', mw.belowVdsFloor === true, mw.vdsFloorTheo.toFixed(1) + ' vs 60');
+  ok('the implied input voltage for a pure capacitor reset is Vds,pk/2 = 30 V',
+    Math.abs(mw.vinImplied - 30) < 1e-9, String(mw.vinImplied));
+  const revStep = withMeas.steps.find((s) => /这个峰值最多对应多大的输入电压/.test(s.t));
+  ok('a reverse-derivation step asks the user to check the input voltage used',
+    !!revStep && /最多只有 30\.0 V/.test(revStep.s) && /Vin_max = 36 V/.test(revStep.s), revStep ? revStep.s.slice(0, 160) : 'missing');
 
   const chkMeas = withMeas.checks.find((c) => /电压应力/.test(c.name) && /实测/.test(c.name));
   const chkAna = withMeas.checks.find((c) => /电压应力/.test(c.name) && !/实测/.test(c.name));
