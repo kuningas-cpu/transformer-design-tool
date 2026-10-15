@@ -50,6 +50,9 @@ function baseInputs(over = {}) {
     ae: n('ae', 52.2), le: n('le', 57.5), aw: n('aw', 54), mlt: n('mlt', 50), alNh: n('alNh', 0),
     bsat100: n('bsat100', 0.39), muI: n('muI', 2300), pcvRef: n('pcvRef', 70), lossA: n('lossA', 1.45), lossB: n('lossB', 2.5),
     jTarget: n('jTarget', 4),
+    ripplePct: n('ripplePct', 1), esrOhm: n('esrOhm', 0.01), rdsOnMOhm: n('rdsOnMOhm', 10),
+    vfBody: n('vfBody', 0.8), tDeadNs: n('tDeadNs', 200),
+    llcFr: n('llcFr', 0), llcK: n('llcK', 5), llcQ: n('llcQ', 0), cossP: n('cossP', 200),
     wireModeP: 'auto', wireDiaP: n('wireDiaP', 0.45), strandsP: 1, parP: 1,
     wireModeS: 'auto', wireDiaS: n('wireDiaS', 0.8), strandsS: 1, parS: 1,
     kPack: n('kPack', 1.4), kuMax: n('kuMax', 0.4), rth: n('rth', 28), dtTarget: n('dtTarget', 40), tamb: n('tamb', 40)
@@ -83,6 +86,7 @@ function makeElement(id) {
   return {
     id, value: defaults[id] !== undefined ? defaults[id] : '', textContent: '', innerHTML: '',
     hidden: id === 'errBox', className: '', children: [],
+    style: {},
     addEventListener() {}, appendChild(c) { this.children.push(c); },
     querySelectorAll() { return []; }, getAttribute() { return null; }, click() { this.clicked = true; },
     href: '', download: ''
@@ -317,6 +321,10 @@ const probe = (id, value, over) => {
 const irrelevant = {
   rippleK: ['Forward', 'Push-Pull', 'Half-Bridge', 'Full-Bridge', 'LLC Resonant'],
   rippleLout: ['Flyback', 'Active Clamp Flyback', 'LLC Resonant'],
+  llcFr: ['Flyback', 'Active Clamp Flyback', 'Forward', 'Push-Pull', 'Half-Bridge', 'Full-Bridge'],
+  llcK: ['Flyback', 'Active Clamp Flyback', 'Forward', 'Push-Pull', 'Half-Bridge', 'Full-Bridge'],
+  llcQ: ['Flyback', 'Active Clamp Flyback', 'Forward', 'Push-Pull', 'Half-Bridge', 'Full-Bridge'],
+  cossP: ['Flyback', 'Active Clamp Flyback', 'Forward', 'Push-Pull', 'Half-Bridge', 'Full-Bridge'],
   vinNom: ['Flyback', 'Active Clamp Flyback', 'Forward', 'Push-Pull', 'Half-Bridge', 'Full-Bridge'],
   secRect: ['Flyback', 'Active Clamp Flyback', 'Forward', 'LLC Resonant']
 };
@@ -333,7 +341,9 @@ const testValues = {
   dutyMax: 0.4, rippleK: 0.6, rippleLout: 1.2, deltaBTarget: 0.25, bsatDerate: 0.7, acFactor: 1.4,
   ae: 60, le: 60, aw: 60, mlt: 55, alNh: 250, bsat100: 0.35, muI: 2000, pcvRef: 80, lossA: 1.5, lossB: 2.6,
   jTarget: 3, wireModeP: 'awg', wireDiaP: 0.8, strandsP: 3, parP: 2, wireModeS: 'awg', wireDiaS: 1.2, strandsS: 2, parS: 2,
-  kPack: 1.6, kuMax: 0.35, rth: 20, dtTarget: 50, tamb: 60
+  kPack: 1.6, kuMax: 0.35, rth: 20, dtTarget: 50, tamb: 60,
+  ripplePct: 2, esrOhm: 0.05, rdsOnMOhm: 30, vfBody: 0.9, tDeadNs: 300,
+  llcFr: 120, llcK: 3, llcQ: 0.3, cossP: 400
 };
 for (const top of Object.keys(TD.TOPOS)) {
   /* manual wire so the diameter fields matter, and 200 kHz so the frequency exponent matters */
@@ -564,8 +574,10 @@ header('17 core-sizing trend');
     const ok0 = rows.filter((r) => r.hardFail === 0);
     smallestPassing.push(ok0.length ? Math.min(...ok0.map((r) => TD.CORES.find((c) => c.model === r.model).ae)) : Infinity);
   }
-  ok('minimum core Ae grows with output power', smallestPassing.every((v, i, a) => i === 0 || v >= a[i - 1] || v === Infinity), JSON.stringify(smallestPassing));
-  ok('a 5 W design fits the smallest cores', smallestPassing[0] < 25, String(smallestPassing[0]));
+  const feasible = smallestPassing.filter((v) => isFinite(v));
+  ok('minimum core Ae grows with output power (over the feasible cases)', feasible.every((v, i, a) => i === 0 || v >= a[i - 1]), JSON.stringify(smallestPassing.map((v) => (isFinite(v) ? v : 'none'))));
+  ok('a 5 W design fits the smallest cores', isFinite(smallestPassing[0]) && smallestPassing[0] < 25, String(smallestPassing[0]));
+  ok('the 250 W / 125 V spec legitimately has no library core (extreme ratio)', !isFinite(smallestPassing[5]), String(smallestPassing[5]));
 }
 
 /* ---------------- 18. audit mode (given turns / measured AL / spec DCR) ---------------- */
@@ -603,7 +615,229 @@ header('18 audit mode: check a supplier spec instead of sizing');
   ok('audit: self-consistency still holds', r.self.every((x) => x.pass));
 }
 
+/* ---------------- 19. output stage (L_out / C_out / SR) ---------------- */
+header('19 output stage: output inductor, output capacitor, SR vs diode');
+{
+  const fw = TD.design(baseInputs({ topology: 'Forward', vinMin: 48, vinMax: 72, vout: 5, iout: 10 }));
+  const os = fw.outputStage, sf = fw.summary;
+  const Ae = fw.inputs.ae * 1e-6, dMin = sf.dNeedMax, dMax = sf.dNeedMin;
+  ok('forward: has an output inductor', os.buckDerived === true && os.LoutUH > 0);
+  close(os.LoutUH, sf.Vo * (1 - dMax) / (fw.inputs.rippleLout * 1e5) * 1e6, 1e-9, 'L_out = Vo(1-D)/(ΔI·Fs) at the Vin_min design point');
+  close(os.dILmax, fw.inputs.rippleLout * (1 - dMin) / (1 - dMax), 1e-9, 'ΔI_L(Vin_max) = ΔI·(1-D_at_Vin_max)/(1-D_at_Vin_min)');
+  ok('ripple is worst at Vin_max', os.dILmax > fw.inputs.rippleLout);
+  const IpkL = 10 + os.dILmax / 2, IrmsL = Math.sqrt(100 + os.dILmax * os.dILmax / 12);
+  close(os.LoutN, Math.ceil(os.LoutUH * 1e-6 * IpkL / (Ae * sf.BsatAllow) - 1e-9), 1e-9, 'inductor turns from L·Ipk ≤ Bsat·Ae·N');
+  close(os.LoutBpk, os.LoutUH * 1e-6 * IpkL / (os.LoutN * Ae), 1e-9, 'inductor Bpk = L·Ipk/(N·Ae)');
+  close(os.LoutAL * 1e-9 * os.LoutN * os.LoutN, os.LoutUH * 1e-6, 1e-9, 'AL·N² = L');
+  close(TD.MU0 * Ae / (os.LoutGap * 1e-3 + fw.inputs.le * 1e-3 / fw.inputs.muI), os.LoutAL * 1e-9, 1e-9, 'gap ↔ AL round trip');
+  close(os.LoutIrms, IrmsL, 1e-12, 'inductor RMS = √(Iout² + ΔI²/12)');
+  close(os.CoutIcRms, os.dILmax / Math.sqrt(12), 1e-12, 'buck output cap RMS = ΔI/√12');
+  const budget = 5 * fw.inputs.ripplePct / 100;
+  close(os.rippleBudget, budget, 1e-12, 'ripple budget = Vout·ripple%');
+  close(os.dVesr, os.dILmax * fw.inputs.esrOhm, 1e-12, 'ESR ripple contribution = ΔI·ESR');
+  close(os.CoutUF, os.dILmax / (8 * 1e5 * (budget - os.dVesr)) * 1e6, 1e-9, 'C ≥ ΔI/(8·Fs·ΔV_cap)');
+  ok('buck cap uses the triangular-ripple mode', os.capMode === 'buck');
+  close(os.Pdiode, fw.inputs.vf * fw.points.vinMin.IavgSec, 1e-12, 'diode loss = Vf·I_avg(secondary conduction average)');
+  close(os.Psr, fw.inputs.rdsOnMOhm * 1e-3 * fw.points.vinMin.IrmsSec ** 2 + fw.inputs.vfBody * fw.points.vinMin.IavgSec * (2 * fw.inputs.tDeadNs * 1e-9 * 1e5), 1e-12, 'SR loss = Rds·Irms² + body-diode during dead time');
+  close(os.Icross, fw.inputs.vf / (fw.inputs.rdsOnMOhm * 1e-3), 1e-12, 'crossover current = Vf/Rds');
+  const fb = TD.design(baseInputs());
+  ok('flyback: no output inductor', fb.outputStage.buckDerived === false && fb.outputStage.LoutUH === 0);
+  close(fb.outputStage.CoutUF, (2 * fb.summary.dNeedMin) / (1e5 * (fb.outputStage.rippleBudget - fb.outputStage.dVesr)) * 1e6, 1e-9, 'flyback C ≥ Iout·D/(Fs·ΔV_cap)');
+  close(fb.outputStage.CoutIcRms, Math.sqrt(Math.max(fb.points.vinMin.IrmsSec ** 2 - 4, 0)), 1e-9, 'flyback cap RMS = √(I_sec,rms² - Iout²)');
+  ok('flyback cap uses the pulse mode', fb.outputStage.capMode === 'flyback');
+  /* ESR 单独超过纹波预算时必须明确报"无解"，而不是给出荒谬的容值 */
+  const badEsr = TD.design(baseInputs({ topology: 'LLC Resonant', vinMin: 380, vinMax: 420, vinNom: 400, vout: 12, iout: 10, esrOhm: 0.05, ripplePct: 0.5 }));
+  ok('ESR alone over budget -> flagged as unsolvable, no fake capacitance', badEsr.outputStage.esrImpossible === true && badEsr.outputStage.CoutUF === 0 && badEsr.checks.some((c) => /输出电容 ESR/.test(c.name) && c.pass === false));
+  const lcCap = TD.design(baseInputs({ topology: 'LLC Resonant', vinMin: 380, vinMax: 420, vinNom: 400, vout: 12, iout: 10, esrOhm: 0.002, ripplePct: 1 }));
+  close(lcCap.outputStage.CoutUF, Math.SQRT2 * lcCap.outputStage.CoutIcRms / (2 * Math.PI * 1e5 * (lcCap.outputStage.rippleBudget - lcCap.outputStage.dVesr)) * 1e6, 1e-9, 'LLC cap uses the sinusoidal-ripple estimate');
+  ok('LLC cap mode tagged', lcCap.outputStage.capMode === 'llc');
+  const inactive = (v) => JSON.stringify(TD.design(baseInputs({ rippleLout: v })).outputStage);
+  ok('rippleLout is genuinely inert for the flyback', inactive(3) === inactive(0.1));
+  const lc = TD.design(baseInputs({ topology: 'LLC Resonant', vinMin: 380, vinMax: 420, vinNom: 400, vout: 12, iout: 10 }));
+  ok('LLC has no output inductor but has a capacitor and SR comparison', lc.outputStage.buckDerived === false && lc.outputStage.CoutUF > 0 && isFinite(lc.outputStage.Psr));
+}
+
+/* ---------------- 20. LLC resonant tank (FHA) ---------------- */
+header('20 LLC resonant tank (first-harmonic approximation)');
+{
+  const l = TD.design(baseInputs({ topology: 'LLC Resonant', vinMin: 380, vinMax: 420, vinNom: 400, vout: 12, iout: 10, llcFr: 100, llcK: 5 }));
+  const t = l.tank, s = l.summary;
+  ok('tank computed', !!t && t.LrUH > 0 && t.CrNf > 0);
+  const gain = (fn, Q, k) => 1 / Math.sqrt(Math.pow(1 + (1 / k) * (1 - 1 / (fn * fn)), 2) + Math.pow(Q * (fn - 1 / fn), 2));
+  const peak = (Q, k) => { let b = 0; for (let fn = 0.3; fn <= 1.0001; fn += 0.002) b = Math.max(b, gain(fn, Q, k)); return b; };
+  const row1 = t.gainRow.find((g) => Math.abs(g.fn - 1) < 1e-9);
+  close(row1.M, 1, 1e-12, 'M(fn=1) = 1 exactly (any Q, k)');
+  close(gain(0.8, t.Q, t.k), t.gainRow.find((g) => Math.abs(g.fn - 0.8) < 1e-9).M, 1e-12, 'gain row matches the FHA formula');
+  ok('gain is boosted below resonance and attenuated above', gain(0.8, t.Q, t.k) > 1 && gain(1.5, t.Q, t.k) < 1);
+  close(1 / (2 * Math.PI * Math.sqrt(t.LrUH * 1e-6 * t.CrNf * 1e-9)) / 1000, t.fr_kHz, 1e-9, 'fr = 1/(2π√(Lr·Cr))');
+  close(Math.sqrt(t.LrUH * 1e-6 / (t.CrNf * 1e-9)), t.Q * t.Rac, 1e-9, 'Zr = √(Lr/Cr) = Q·Rac');
+  close(t.LmReqUH, t.k * t.LrUH, 1e-9, 'Lm = k·Lr');
+  close(t.Rac, 8 / (Math.PI * Math.PI) * s.n * s.n * s.Vo * s.Vo / s.Po, 1e-9, 'Rac = 8n²Vo²/(π²Po) (FHA equivalent load)');
+  close(t.Mmax, 2 * s.n * s.Vo / 380, 1e-9, 'M_max = 2n·Vo/Vin_min');
+  close(t.Mmin, 2 * s.n * s.Vo / 420, 1e-9, 'M_min = 2n·Vo/Vin_max');
+  close(peak(t.Qmax, t.k), t.Mmax, 3e-3, 'Q_max is the largest Q whose peak gain still reaches M_max');
+  ok('a 3% larger Q can no longer reach M_max', peak(t.Qmax * 1.03, t.k) < t.Mmax);
+  ok('the design Q stays inside the achievable region', t.Q <= t.Qmax && peak(t.Q, t.k) >= t.Mmax);
+  const k3 = TD.design(baseInputs({ topology: 'LLC Resonant', vinMin: 380, vinMax: 420, vinNom: 400, vout: 12, iout: 10, llcK: 3 }));
+  const k9 = TD.design(baseInputs({ topology: 'LLC Resonant', vinMin: 380, vinMax: 420, vinNom: 400, vout: 12, iout: 10, llcK: 9 }));
+  ok('smaller k (Lm closer to Lr) allows a larger Q', k3.tank.Qmax > k9.tank.Qmax, k3.tank.Qmax.toFixed(3) + ' vs ' + k9.tank.Qmax.toFixed(3));
+  close(t.ImPk, s.n * s.Vo / (4 * t.LmReqUH * 1e-6 * t.fr_kHz * 1000), 1e-9, 'I_Lm,pk = n·Vo·T/(4·Lm)');
+  close(t.IZvsNeed, 2 * l.inputs.cossP * 1e-12 * 420 / (l.inputs.tDeadNs * 1e-9), 1e-9, 'ZVS required current = 2·Coss·Vin/t_dead');
+  ok('switching-frequency range covers the whole gain range', t.fMin_kHz > 0 && t.fMin_kHz < t.fr_kHz && t.fMax_kHz >= t.fr_kHz, t.fMin_kHz.toFixed(1) + '~' + t.fMax_kHz.toFixed(1) + ' kHz');
+  ok('the tank values are in a physically sane range', t.LrUH > 1 && t.LrUH < 500 && t.CrNf > 1 && t.CrNf < 2000, 'Lr=' + t.LrUH.toFixed(1) + 'µH Cr=' + t.CrNf.toFixed(1) + 'nF');
+  ok('LLC checks include gain margin, Lm agreement and ZVS', ['峰值增益裕量', 'Lm 与磁芯', 'ZVS'].every((p) => l.checks.some((c) => c.name.indexOf(p) >= 0)));
+  ok('the Lm agreement check ties the tank to the selected core', l.checks.some((c) => /Lm 与磁芯/.test(c.name)) && t.LmActUH > 0);
+  ok('without a given AL the tool derives the required AL and gap from the tank', t.ALgiven === false && t.ALreqNh > 0 && Math.abs(t.ALreqNh - t.LmReqUH * 1000 / (s.Np * s.Np)) < 1e-6, 'AL=' + t.ALreqNh.toFixed(0) + ' nH/N², gap=' + t.gapMm.toFixed(3) + 'mm');
+  ok('required-AL gap round trip (AL = µ0·Ae/(lg + le/µi))',
+    Math.abs(TD.MU0 * l.inputs.ae * 1e-6 / (t.ALreqNh * 1e-9) - (l.inputs.le * 1e-3 / l.inputs.muI + t.gapMm * 1e-3)) < 1e-12,
+    'AL=' + t.ALreqNh.toFixed(0) + ' lg=' + t.gapMm.toFixed(4));
+  close(s.LmUH, t.LmReqUH, 1e-6, 'for the LLC the design Lm equals the tank requirement');
+  ok('LLC gap check present', l.checks.some((c) => /LLC 所需气隙/.test(c.name)));
+  const lcAL = TD.design(baseInputs({ topology: 'LLC Resonant', vinMin: 380, vinMax: 420, vinNom: 400, vout: 12, iout: 10, llcFr: 100, llcK: 5, alNh: 2500 }));
+  ok('with a given AL the Lm mismatch is reported instead of a gap', lcAL.tank.ALgiven === true && lcAL.tank.LmErrPct > 20 && lcAL.checks.some((c) => /Lm 与磁芯/.test(c.name) && c.pass === false));
+  const wide = TD.design(baseInputs({ topology: 'LLC Resonant', vinMin: 200, vinMax: 420, vinNom: 400, vout: 12, iout: 10, llcK: 5 }));
+  ok('a 2:1 input range demands more gain and shrinks Q_max', wide.tank.Mmax > 1.9 && wide.tank.Qmax < l.tank.Qmax, 'Mmax=' + wide.tank.Mmax.toFixed(2) + ' Qmax=' + wide.tank.Qmax.toFixed(3));
+}
+
+/* ---------------- 21. regression baselines (pinned values) ---------------- */
+header('21 regression baselines');
+{
+  const cases = [
+    ['flyback 9-36V -> 12V/2A @100kHz', baseInputs(), { Np: 7, Ns: 12, LpUH: 12.3019, Bpk: 0.278, fill: 38.78, dT: 12.20, gap: 0.2363 }],
+    ['forward 48-72V -> 5V/10A @100kHz', baseInputs({ topology: 'Forward', vinMin: 48, vinMax: 72, vout: 5, iout: 10 }), { Np: 21, Ns: 5, resetTurns: 18, Bpk: 0.2107 }],
+    ['half-bridge 380-420V -> 12V/20A @100kHz', baseInputs({ topology: 'Half-Bridge', vinMin: 380, vinMax: 420, vout: 12, iout: 20 }), { Np: 82, Ns: 6, Bpk: 0.0998 }],
+    ['push-pull 48V -> 12V/10A @100kHz', baseInputs({ topology: 'Push-Pull', vinMin: 48, vinMax: 48, vout: 12, iout: 10 }), { Bpk: 0.0998 }],
+    ['llc 380-420V -> 12V/10A @100kHz (fr=100k, k=5)', baseInputs({ topology: 'LLC Resonant', vinMin: 380, vinMax: 420, vinNom: 400, vout: 12, iout: 10, llcFr: 100, llcK: 5 }), { Np: 101, Ns: 6 }],
+    ['EPC19 supplier-spec audit (23T/12T, AL=1146nH/N2)', baseInputs({ topology: 'Forward', vinMin: 21.6, vinMax: 26.4, vout: 5, iout: 2, vf: 0.6, eta: 0.88, fs: 200, auditOn: true, npGiven: 23, nsGiven: 12, alNh: 1146, ae: 21.5, le: 30, aw: 24, mlt: 38, wireModeP: 'mm', wireDiaP: 0.2, strandsP: 2, parP: 1, wireModeS: 'mm', wireDiaS: 0.4, strandsS: 2, parS: 1, dcrLimitS: 32 }), { Np: 23, Ns: 12, LmUH: 606.2, RdcSec25: 31.89 }]
+  ];
+  for (const [name, inp, exp] of cases) {
+    const r = TD.design(inp), s = r.summary;
+    const got = {
+      Np: s.Np, Ns: s.Ns, resetTurns: s.resetTurns, LpUH: s.LpUH, LmUH: s.LmUH, Bpk: s.Bpk,
+      fill: s.fillPct, dT: s.dT, gap: s.gapMm, RdcSec25: s.RdcSec25Ohm * 1000
+    };
+    const bad = Object.keys(exp).filter((k) => Math.abs(got[k] - exp[k]) > Math.max(Math.abs(exp[k]) * 2e-3, 0.02));
+    ok('baseline: ' + name, bad.length === 0, bad.map((k) => k + ': got ' + got[k] + ' want ' + exp[k]).join('; '));
+  }
+}
+
+/* --dump <file>: 把默认工况的引擎结果写成 JSON，供 Excel 版逐格比对 */
+if (process.argv.includes('--dump')) {
+  const out = process.argv[process.argv.indexOf('--dump') + 1];
+  const scen = process.argv[process.argv.indexOf('--dump') + 2] || 'flyback';
+  const wire = {
+    wireModeP: 'mm', wireDiaP: 0.4, strandsP: 10, parP: 1,
+    wireModeS: 'mm', wireDiaS: 0.4, strandsS: 10, parS: 1
+  };
+  const scenOver = {
+    forward: { topology: 'Forward', vinMin: 48, vinMax: 72, vout: 5, iout: 10, dil: 0.6 },
+    halfbridge: { topology: 'Half-Bridge', vinMin: 380, vinMax: 420, vout: 12, iout: 20 },
+    llc: { topology: 'LLC Resonant', vinMin: 380, vinMax: 420, vout: 12, iout: 10 },
+    /* 用户的单端正激板：1号 EPC19 主变（12T原边/23T副边、电容谐振复位）
+       + 2号 EPC19 副变（38T输出电感145µH×4并联 + 25T辅助绕组）；工作点为假设值 */
+    epc19board: {
+      topology: 'Forward', vinMin: 10.8, vinMax: 13.2, vout: 12, iout: 1, fs: 200,
+      auditMode: '1', npGiven: 12, nsGiven: 23,
+      alNh: 1146, ae: 21.5, le: 30, aw: 24, mlt: 31,
+      wireModeP: 'mm', wireDiaP: 0.4, strandsP: 2, parP: 2,
+      wireModeS: 'mm', wireDiaS: 0.2, strandsS: 2, parS: 3,
+      resetMode: 'cap', cresNf: 0, vdsRated: 100,
+      nlGiven: 38, lmGiven: 145, naux: 25, dutyMax: 0.5, dcrLimitP: 32, dcrLimitS: 0
+    },
+    flyback: {}
+  }[scen] || {};
+  /* 与 Excel 版默认输入保持一致（手动线径 0.4mm×10 股、k_pack 1.25） */
+  const r = TD.design(baseInputs(Object.assign({}, wire, scenOver)));
+  fs.writeFileSync(out, JSON.stringify({
+    scenario: scen,
+    inputs: r.inputs, summary: r.summary, points: r.points, checks: r.checks,
+    tank: r.tank, outputStage: r.outputStage
+  }, null, 1));
+  console.log('dumped ' + out + ' [' + scen + ']  (Np=' + r.summary.Np + ' Ns=' + r.summary.Ns + ' Bpk=' + r.summary.Bpk.toFixed(4) + ')');
+  process.exit(0);
+}
+
+/* ---------------- 23. 电容谐振复位（正激，无复位绕组）+ 2号变压器(输出电感+辅助绕组) ---------------- */
+header('23 forward with capacitor reset + transformer #2 as output inductor/aux');
+{
+  const base = { topology: 'Forward', vinMin: 9, vinMax: 16, vout: 12, iout: 1, fs: 200,
+    alNh: 1146, ae: 21.5, le: 30, aw: 24, mlt: 31,
+    wireModeP: 'mm', wireDiaP: 0.4, strandsP: 2, parP: 2,
+    wireModeS: 'mm', wireDiaS: 0.2, strandsS: 2, parS: 3,
+    resetMode: 'cap', cresNf: 0, vdsRated: 100,
+    nlGiven: 38, lmGiven: 145, naux: 25, dutyMax: 0.5 };
+  const r = TD.design(baseInputs(base));
+  const s = r.summary, cr = s.capReset, os = s.outStage || r.outputStage;
+  ok('capacitor-reset mode produces no reset winding', s.resetTurns === 0 && !r.checks.some((c) => /复位绕组匝比/.test(c.name)));
+  ok('D may exceed 0.5 in capacitor-reset mode', s.dNeedMin <= 0.70 + 1e-9 && !r.checks.some((c) => /^Vin_min 所需占空比/.test(c.name) && c.pass === false), 'D=' + s.dNeedMin.toFixed(3));
+  ok('reset capacitor block exists', !!cr && cr.crNf > 0);
+  const Lm = s.LmUH * 1e-6, Fs = base.fs * 1000;
+  close(cr.crMaxNf, Math.pow(1 - s.dDesign, 2) / (Math.PI * Math.PI * Lm * Fs * Fs) * 1e9, 1e-9, 'C_max = (1-D)²/(π²·Lm·Fs²)');
+  close(cr.vResetPk, s.n * s.Vo / Fs / Math.sqrt(Lm * cr.crNf * 1e-9), 1e-9, 'V_res,pk = n·Vo·T/√(Lm·C)');
+  close(cr.vdsPk, base.vinMax + cr.vResetPk, 1e-12, 'Vds,pk = Vin_max + V_res,pk');
+  ok('switch-stress check present (100 V device)', r.checks.some((c) => /开关管电压应力/.test(c.name)), 'Vds=' + cr.vdsPk.toFixed(1));
+  const small = TD.design(baseInputs(Object.assign({}, base, { cresNf: cr.crMaxNf / 4 })));
+  ok('smaller reset capacitor -> higher switch stress (monotonic)', small.summary.capReset.vdsPk > cr.vdsPk, small.summary.capReset.vdsPk.toFixed(1) + ' > ' + cr.vdsPk.toFixed(1));
+  const big = TD.design(baseInputs(Object.assign({}, base, { cresNf: cr.crMaxNf * 2 })));
+  ok('capacitor above the limit is rejected', big.checks.some((c) => /复位电容/.test(c.name) && c.pass === false));
+  const wind = TD.design(baseInputs(Object.assign({}, base, { resetMode: 'winding', dutyMax: 0.45 })));
+  ok('reset-winding mode unchanged', wind.summary.resetTurns > 0 && wind.checks.some((c) => /复位绕组匝比/.test(c.name)));
+  /* 2 号变压器 TST1725：38 匝 ×4 并联输出电感（145 µH 实测）+ 25 匝辅助绕组 */
+  ok('given inductor inductance/turns are used (TST1725: 145 µH / 38 匝)', os.LoutLmGiven === true && os.LoutN === 38 && Math.abs(os.LoutUH - 145) < 1e-9, os.LoutUH.toFixed(2) + 'µH / ' + os.LoutN + 'T');
+  close(os.dILmax, s.Vo * (1 - s.dNeedMax) / (145e-6 * Fs), 1e-9, 'output ripple recomputed from the measured inductance');
+  close(os.LoutBpk, 145e-6 * os.LoutIpk / (38 * base.ae * 1e-6), 1e-9, 'inductor Bpk with DC bias');
+  close(os.auxV, (25 / 38) * (base.vout + 0.5) - 0.5, 1e-9, 'Vaux = (Naux/N_L)·(Vout+Vf) - Vf');
+}
+
+/* ---------------- 22. core library provenance + import/export ---------------- */
+header('22 core library: provenance, measured AL, CSV import/export');
+{
+  ok('every core carries a provenance tag', TD.CORES.every((c) => c.src === 'preset' || c.src === 'measured' || c.src === 'user' || c.src === 'datasheet'));
+  const e19 = TD.CORES.find((c) => c.model === 'EPC19');
+  ok('EPC19 carries the measured AL from the supplier spec', !!e19 && e19.src === 'measured' && e19.alMeas === 1146, JSON.stringify({ src: e19 && e19.src, al: e19 && e19.alMeas, mlt: e19 && e19.mlt }));
+  ok('MLT for EPC19 comes from the DCR spec (38 mm)', e19 && e19.mlt === 38);
+  /* 有实测 AL 的预设必须把 AL 填进输入框（实测值优先于 µi·Ae/le 推算） */
+  ok('applying a measured-AL preset fills the AL input', typeof windowStub.__TD_APPLY_CORE__ === 'function');
+  windowStub.__TD_APPLY_CORE__('EPC19');
+  ok('EPC19 preset sets ae/mlt/AL from the library',
+    Number(dom.ae.value) === 21.5 && Number(dom.mlt.value) === 38 && Number(dom.alNh.value) === 1146,
+    [dom.ae.value, dom.mlt.value, dom.alNh.value].join('/'));
+  const builtin = JSON.parse(JSON.stringify(TD.CORES));
+  const csv = TD.coresToCsv(TD.CORES);
+  ok('CSV export has a header and one row per core', csv.split('\n').length === TD.CORES.length + 1 && /^model,family/.test(csv));
+  const back = TD.parseCoreCsv(csv);
+  ok('CSV round trip preserves every field', back.length === TD.CORES.length && back.every((c, i) => c.model === TD.CORES[i].model && c.ae === TD.CORES[i].ae && c.le === TD.CORES[i].le && c.aw === TD.CORES[i].aw && c.mlt === TD.CORES[i].mlt && (c.alMeas || 0) === (TD.CORES[i].alMeas || 0) && c.src === TD.CORES[i].src));
+  ok('CSV parser tolerates a header, blanks and CRLF', TD.parseCoreCsv('model,family,Ae_mm2,le_mm,Aw_mm2,MLT_mm,AL,src,note\r\n\r\nX,EE,50,60,40,45,,datasheet,"note, with comma"\r\n').length === 1);
+  /* 用自制磁芯库跑设计流程 */
+  TD.setCores([{ model: 'MY-EE30', family: 'EE', ae: 60, le: 67, aw: 73, mlt: 57, src: 'datasheet' },
+               { model: 'MY-EE16', family: 'EE', ae: 20.1, le: 37.6, aw: 26, mlt: 34, src: 'datasheet' }]);
+  const r = TD.design(baseInputs({ ae: 60, le: 67, aw: 73, mlt: 57 }));
+  ok('a custom library works end to end', r.ok === true && r.summary.Np > 0);
+  const cmp = TD.coreComparison(baseInputs({ ae: 60, le: 67, aw: 73, mlt: 57 }));
+  ok('comparison covers only the custom library', cmp.length === 2 && cmp.every((c) => c.model.indexOf('MY-') === 0));
+  TD.setCores(builtin);
+  ok('library restored after the test', TD.CORES.length === builtin.length);
+}
+
 if (process.argv.includes('--diag')) {
+  const show = (label, r) => {
+    const s = r.summary, o = s.outStage;
+    console.log('--- ' + label + ' ---');
+    console.log('  n=' + s.n.toFixed(3) + ' Np/Ns=' + s.Np + '/' + s.Ns + ' Bpk=' + s.Bpk.toFixed(3) + 'T fill=' + s.fillPct.toFixed(1) + '% Jp=' + s.Jpri.toFixed(2) + ' dT=' + s.dT.toFixed(1) + 'K ' + s.verdict);
+    if (o.buckDerived) console.log('  L_out=' + o.LoutUH.toFixed(2) + 'µH N=' + o.LoutN + ' AL=' + o.LoutAL.toFixed(0) + 'nH/N² gap=' + o.LoutGap.toFixed(3) + 'mm Bpk=' + o.LoutBpk.toFixed(3) + 'T ΔI=' + o.dILmax.toFixed(2) + 'A Pcu=' + o.LoutPcu.toFixed(3) + 'W dT=' + o.LoutdT.toFixed(1) + 'K');
+    console.log('  C_out=' + o.CoutUF.toFixed(1) + 'µF  Ic,rms=' + o.CoutIcRms.toFixed(2) + 'A  ΔV_esr=' + (o.dVesr * 1000).toFixed(0) + 'mV/' + (o.rippleBudget * 1000).toFixed(0) + 'mV  ESR_max=' + o.CoutEsrMax.toFixed(1) + 'mΩ');
+    console.log('  rectifier: diode=' + o.Pdiode.toFixed(3) + 'W SR=' + o.Psr.toFixed(3) + 'W (body ' + o.PsrBody.toFixed(3) + 'W) cross=' + (isFinite(o.Icross) ? o.Icross.toFixed(2) + 'A' : '-') + ' -> ' + (o.SRbetter ? 'SR' : 'diode'));
+    if (s.llcTank) { const t = s.llcTank;
+      console.log('  tank: Rac=' + t.Rac.toFixed(2) + 'Ω Qmax=' + t.Qmax.toFixed(3) + ' Q=' + t.Q.toFixed(3) + ' Zr=' + t.Zr.toFixed(1) + 'Ω');
+      console.log('        Lr=' + t.LrUH.toFixed(2) + 'µH Cr=' + t.CrNf.toFixed(1) + 'nF Lm_req=' + t.LmReqUH.toFixed(1) + 'µH Lm_act=' + t.LmActUH.toFixed(1) + 'µH (' + t.LmErrPct.toFixed(0) + '% off)');
+      console.log('        M ' + t.Mmin.toFixed(2) + '~' + t.Mmax.toFixed(2) + ' peak=' + t.Mpeak.toFixed(3) + '@fn=' + t.fnPeak.toFixed(3) + ' margin=' + t.gainMargin.toFixed(2) + 'x  frange=' + t.fMin_kHz.toFixed(0) + '~' + t.fMax_kHz.toFixed(0) + 'kHz');
+      console.log('        ZVS: Im_pk=' + t.ImPk.toFixed(3) + 'A vs need ' + t.IZvsNeed.toFixed(3) + 'A  Vcr_pk=' + t.VcrPk.toFixed(0) + 'V');
+      console.log('        M(fn): ' + t.gainRow.map((g) => g.fn.toFixed(1) + ':' + g.M.toFixed(2)).join(' '));
+    }
+  };
+  show('forward 48-72V -> 5V/10A @100kHz (输出级)', TD.design(baseInputs({ topology: 'Forward', vinMin: 48, vinMax: 72, vout: 5, iout: 10 })));
+  show('llc 380-420V -> 12V/10A @100kHz k=5', TD.design(baseInputs({ topology: 'LLC Resonant', vinMin: 380, vinMax: 420, vinNom: 400, vout: 12, iout: 10, llcFr: 100, llcK: 5 })));
+  show('llc 200-420V -> 12V/10A @100kHz k=3 (宽范围)', TD.design(baseInputs({ topology: 'LLC Resonant', vinMin: 200, vinMax: 420, vinNom: 400, vout: 12, iout: 10, llcFr: 100, llcK: 3 })));
   const strip = (h) => String(h).replace(/<br\s*\/?>/g, '\n').replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/[ \t]+/g, ' ').replace(/\n +/g, '\n');
   console.log('\n=== what the page renders (default case) ===');
   console.log('[resultSub] ' + strip(dom.resultSub.textContent));

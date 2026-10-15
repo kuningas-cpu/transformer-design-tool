@@ -5,3 +5,5 @@ deprecated_do_not_use/
 Thumbs.db
 desktop.ini
 .DS_Store
+*.xlsx.tmp
+_*.json
