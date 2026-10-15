@@ -100,6 +100,8 @@
         <div class="field"><label for="mlt">平均匝长 MLT <span class="unit">(mm)</span> *</label><input id="mlt" type="number" value="50" step="0.5" min="5"/></div>
         <div class="field"><label for="alNh">AL <span class="unit">(nH/N²)</span>，0 = 用库内实测 AL／理想无气隙值</label><input id="alNh" type="number" value="0" step="10" min="0"/></div>
         <div class="field"><label for="alLibNh">磁芯库实测 AL <span class="unit">(nH/N²，选预设时自动带入)</span></label><input id="alLibNh" type="number" value="0" step="10" min="0"/></div>
+        <div class="field"><label for="lmMeasUh">承认书电感量 L <span class="unit">(µH，0=不用)</span></label><input id="lmMeasUh" type="number" value="0" step="1" min="0"/></div>
+        <div class="field"><label for="npMeasN">该电感测量绕组的匝数 N <span class="unit">(如 6-7 为 12)</span></label><input id="npMeasN" type="number" value="0" step="1" min="0"/></div>
       </div>
       <h3>材质 / Material</h3>
       <div class="two-col">
@@ -563,6 +565,10 @@ var TD = (function () {
        因为"不开气隙"只是工艺说法——未研磨的对拼面仍有几十微米的有效气隙，
        实测 AL 往往只有理想值 µ0·µi·Ae/le 的 1/3~1/2。 */
     var alLibNh = numOr(I.alLibNh, 0);
+    /* 承认书通常只给"电感量 + 圈比"，不给 AL → 直接填 L 与测量绕组匝数，工具自己算 AL = L/N² */
+    var lmMeasUh = numOr(I.lmMeasUh, 0);
+    var npMeasN = (isFinite(parseFloat(I.npMeasN)) && parseFloat(I.npMeasN) > 0) ? Math.round(parseFloat(I.npMeasN)) : 0;
+    var alFromL = (lmMeasUh > 0 && npMeasN > 0) ? lmMeasUh * 1e3 / (npMeasN * npMeasN) : 0;   /* nH/N² */
     var lkUh = numOr(I.lkUh, 0);              /* 实测/估算漏感（µH），0 = 未计入 */
     /* MLT 按绕层波动 ±%（默认 0：MLT 若已由承认书 DCR 反推，就不该再叠加；填 20 表示按最坏情况留余量） */
     var mltTol = (isFinite(parseFloat(I.mltTol)) && parseFloat(I.mltTol) >= 0) ? parseFloat(I.mltTol) : 0;
@@ -759,8 +765,9 @@ var TD = (function () {
     var voutAtDmax = voutFromDuty(T, nAch, I.vinMin, dMax, I.vf);
     var nSecWind = (T.kind === 'bipolar' && I.secRect === 'ct') ? 2 : 1;
     var ALideal = MU0 * I.muI * Ae / le;                 /* 无气隙理想值 µ0·µi·Ae/le */
-    var ALsource = I.alNh > 0 ? 'user' : (alLibNh > 0 ? 'library' : 'ideal');
-    var ALauto = ALsource === 'user' ? I.alNh * 1e-9 : (ALsource === 'library' ? alLibNh * 1e-9 : ALideal);
+    var ALsource = I.alNh > 0 ? 'user' : (alFromL > 0 ? 'fromL' : (alLibNh > 0 ? 'library' : 'ideal'));
+    var ALauto = ALsource === 'user' ? I.alNh * 1e-9
+      : (ALsource === 'fromL' ? alFromL * 1e-9 : (ALsource === 'library' ? alLibNh * 1e-9 : ALideal));
     /* 由所用 AL 反推"等效有效气隙"（含工艺性气隙）：l_g,eff = µ0·Ae/AL − le/µi */
     var gapEffMm = (MU0 * Ae / ALauto - le / Math.max(I.muI, 1)) * 1000;
     var Lm = ALauto * Np * Np;
@@ -770,6 +777,7 @@ var TD = (function () {
     steps.push({ t: 'AL 取值与等效有效气隙', f: 'AL_ideal = µ0·µi·Ae/le ;  l_g,eff = µ0·Ae/AL − le/µi',
       s: '本磁芯/材质理想无气隙 AL = ' + alIdealNh.toFixed(0) + ' nH/N²；' +
          (ALsource === 'user' ? '按你填写的实测 AL = ' + alUsedNh.toFixed(0) + ' nH/N²'
+          : ALsource === 'fromL' ? '按承认书"电感量 ' + lmMeasUh + ' µH @"' + npMeasN + ' 匝" → AL = L/N² = ' + alUsedNh.toFixed(0) + ' nH/N²'
           : ALsource === 'library' ? 'AL 填 0 → 用磁芯库实测 AL = ' + alUsedNh.toFixed(0) + ' nH/N²'
           : 'AL 填 0 且磁芯库无实测值 → 按理想无气隙值 ' + alUsedNh.toFixed(0) + ' nH/N²') +
          ' → 等效有效气隙 ' + gapEffMm.toFixed(3) + ' mm（含工艺性气隙）' +
@@ -1303,6 +1311,7 @@ var TD = (function () {
     'auditMode','npGiven','nsGiven','dcrLimitP','dcrLimitS',
     'resetMode','cresNf','vdsRated','nlGiven','lmGiven','naux',
     'alLibNh',
+    'lmMeasUh','npMeasN',
     'lkUh','mltTol','marginMm','awW','awH','nlDia','nlStrands','nlPar','crRated',
     'acMode','vacMin','vacMax','fline','cbusUf','cbusEsr','rsAc','vdBridge','holdMs','holdVmin','pfcBus',
     'ripplePct','esrOhm','rdsOnMOhm','vfBody','tDeadNs','llcFr','llcK','llcQ','cossP',
@@ -1386,6 +1395,7 @@ var TD = (function () {
       nlGiven: num('nlGiven', 0), lmGiven: num('lmGiven', 0), naux: num('naux', 0),
       lkUh: num('lkUh', 0), mltTol: num('mltTol', 0), marginMm: num('marginMm', 0),
       alLibNh: num('alLibNh', 0),
+      lmMeasUh: num('lmMeasUh', 0), npMeasN: num('npMeasN', 0),
       awW: num('awW', 0), awH: num('awH', 0),
       nlDia: num('nlDia', 0), nlStrands: num('nlStrands', 1), nlPar: num('nlPar', 1),
       crRated: num('crRated', 0),

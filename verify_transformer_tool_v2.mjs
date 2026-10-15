@@ -802,6 +802,16 @@ header('26 AL source: "no air gap" is a process statement, not zero effective ga
   const user = TD.design(baseInputs(Object.assign({}, fwTurn, { alNh: 1038, alLibNh: 1146 })));
   ok('explicit AL wins over the library value', user.summary.alSource === 'user' && Math.abs(user.summary.alUsedNh - 1038) < 1e-9);
   close(user.summary.LmUH, 1038e-9 * 144 * 1e6, 1e-9, 'DCE spec AL=1038 (149.5 µH/12²) → Lm = 149.5 µH');
+  /* ④ 承认书只给"电感量 + 圈比"：直接填 L 与测量绕组匝数，工具自己算 AL = L/N² */
+  const fromL = TD.design(baseInputs(Object.assign({}, fwTurn, { alNh: 0, alLibNh: 0, lmMeasUh: 165, npMeasN: 12 })));
+  ok('AL can be derived from the spec sheet L and the measured winding turns', fromL.summary.alSource === 'fromL');
+  close(fromL.summary.alUsedNh, 165 * 1e3 / 144, 1e-12, 'AL = 165 µH / 12² = 1146 nH/N²');
+  close(fromL.summary.LmUH, 165, 1e-9, 'Lm comes back as exactly the spec sheet inductance (165 µH)');
+  ok('the derivation is shown in the step table', fromL.steps.some((st) => /电感量 165 µH @"?12 匝/.test(st.s)));
+  const wrongN = TD.design(baseInputs(Object.assign({}, fwTurn, { alNh: 0, alLibNh: 0, lmMeasUh: 165, npMeasN: 23 })));
+  ok('using the wrong winding turns (23 instead of 12) changes AL by 3.7×  — the trap is documented',
+    Math.abs((fromL.summary.alUsedNh / wrongN.summary.alUsedNh) - (23 * 23) / (12 * 12)) < 1e-9, fromL.summary.alUsedNh.toFixed(0) + ' vs ' + wrongN.summary.alUsedNh.toFixed(0) + ' nH/N²');
+  ok('±10% spec tolerance maps to an AL band the user can read off', Math.abs(fromL.summary.alUsedNh * 0.9 - 1031) < 5 && Math.abs(fromL.summary.alUsedNh * 1.1 - 1261) < 5, (fromL.summary.alUsedNh * 0.9).toFixed(0) + '~' + (fromL.summary.alUsedNh * 1.1).toFixed(0) + ' nH/N²');
 }
 
 header('25 optimisation batch: DCM / AC front-end / leakage / window / inductor / LLC / UI tools');
