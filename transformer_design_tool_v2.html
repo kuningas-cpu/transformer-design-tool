@@ -129,6 +129,12 @@
         <div class="field"><label for="lossA">频率指数 α *</label><input id="lossA" type="number" value="1.45" step="0.05" min="1" max="2.5"/></div>
         <div class="field"><label for="lossB">磁通指数 β *</label><input id="lossB" type="number" value="2.5" step="0.05" min="1.5" max="3.5"/></div>
       </div>
+      <div class="hint" style="margin-top:8px;">
+        <strong>这几项怎么取（材质表）</strong>：<b>Bsat@100°C</b> 用数据手册在接近实际热态温度下的值（同 25°C 值混用会差 20~30%；开气隙不改变 Bsat，只改变达到同一 B 所需的安匝）。
+        <b>Pcv 锚点</b>是"材质 + 测试条件"：请取**你实际工作频率、温度附近**的损耗密度，α/β 取同一段曲线的拟合值（频率远离 100 kHz 时工具会主动告警）。
+        <b>µi</b> 只影响"无实测 AL 时的理想值推算"与气隙估算的二阶项——**只要填了实测 AL，µi 的误差基本不影响结果**。
+        <b>α/β 不是材质常数</b>，而是 Steinmetz 公式在某个频率/磁通区间上的拟合指数：换区间就要换值。
+      </div>
       <h3>绕组 / Windings</h3>
       <div class="three-col">
         <div class="field"><label for="jTarget">目标电流密度 J <span class="unit">(A/mm²)</span></label><input id="jTarget" type="number" value="4" step="0.1" min="1" max="12"/></div>
@@ -916,6 +922,10 @@ var TD = (function () {
     }
     var Bac = maxDB / 2;
     var Pcv = I.pcvRef * Math.pow(I.fs / 100, I.lossA) * Math.pow((Bac * 1000) / 100, I.lossB);
+    /* Pcv 锚点是按 100 kHz/100 mT 标定的：工作频率远离 100 kHz 时，请直接用实际频率处的损耗密度当锚点，
+       α/β 只做小幅外推，否则损耗估算会明显偏差 */
+    if (Math.abs(I.fs - 100) > 25) warns.push('磁芯损耗锚点 Pcv_ref 默认按 100 kHz/100 mT 标定，而当前工作频率是 ' + I.fs +
+      ' kHz：请把"Pcv 锚点"改成数据手册在**你实际频率附近**的损耗密度（α/β 取同一段曲线的拟合值），否则磁芯损耗估算会有明显偏差。');
     var Ve = I.ae * I.le;
     var Pcore = Pcv * Ve * 1e-6;
     var loss = { Pcore: Pcore, Pcu: 0, Ptotal: 0, dT: 0, tempC: I.tamb, per: [] };

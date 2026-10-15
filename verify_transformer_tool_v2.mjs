@@ -715,6 +715,14 @@ header('20 LLC resonant tank (first-harmonic approximation)');
     'AL=' + t.ALreqNh.toFixed(0) + ' lg=' + t.gapMm.toFixed(4));
   close(s.LmUH, t.LmReqUH, 1e-6, 'for the LLC the design Lm equals the tank requirement');
   ok('LLC gap check present', l.checks.some((c) => /LLC 所需气隙/.test(c.name)));
+  /* Pcv 锚点的适用频率提醒：远离 100 kHz 时应告警，100 kHz 附近不应告警 */
+  const fsNear = TD.design(baseInputs({ fs: 100 }));
+  const fsFar = TD.design(baseInputs({ fs: 300 }));
+  ok('Pcv anchor warning appears when Fs is far from the 100 kHz calibration point',
+    fsFar.warns.some((w) => /Pcv 锚点/.test(w)) && !fsNear.warns.some((w) => /Pcv 锚点/.test(w)), 'fs=100 vs 300 kHz');
+  ok('alpha has no effect at 100 kHz (it only scales away from the anchor)',
+    (() => { const a = TD.design(baseInputs({ fs: 100, lossA: 1.3 })), b = TD.design(baseInputs({ fs: 100, lossA: 1.7 }));
+      return Math.abs(a.summary.Pcv - b.summary.Pcv) < 1e-9; })(), 'alpha 1.3 vs 1.7 @100kHz');
   const lcAL = TD.design(baseInputs({ topology: 'LLC Resonant', vinMin: 380, vinMax: 420, vinNom: 400, vout: 12, iout: 10, llcFr: 100, llcK: 5, alNh: 2500 }));
   ok('with a given AL the Lm mismatch is reported instead of a gap', lcAL.tank.ALgiven === true && lcAL.tank.LmErrPct > 20 && lcAL.checks.some((c) => /Lm 与磁芯/.test(c.name) && c.pass === false));
   const wide = TD.design(baseInputs({ topology: 'LLC Resonant', vinMin: 200, vinMax: 420, vinNom: 400, vout: 12, iout: 10, llcK: 5 }));
