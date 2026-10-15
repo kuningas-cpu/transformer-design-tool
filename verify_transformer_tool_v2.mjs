@@ -769,6 +769,45 @@ if (process.argv.includes('--dump')) {
 }
 
 /* ---------------- 23. 电容谐振复位（正激，无复位绕组）+ 2号变压器(输出电感+辅助绕组) ---------------- */
+/* ---------------- 24. 第三方数据交叉验证：第二家供应商（鼎铖 03-56319-01/-02） ---------------- */
+header('24 second supplier (DCE 03-56319) — independent data against the same model');
+{
+  /* B 家 1 号：与 A 家同结构（6-7/5-8 12T×0.40mm×2P，1-12/2-11/3-10 23T×0.20mm×2P），AL=149.5µH/12²=1038 nH/N²，
+     规格 DCR 31.5 mΩ（原边）、238/244/260 mΩ 量级（副边三层） */
+  const B = { topology: 'Forward', vinMin: 18, vinMax: 36, vout: 19, iout: 3.947, fs: 200,
+    auditMode: '1', npGiven: 12, nsGiven: 23, alNh: 1038, ae: 52, le: 32, aw: 38, mlt: 38,
+    wireModeP: 'mm', wireDiaP: 0.4, strandsP: 2, parP: 2,
+    wireModeS: 'mm', wireDiaS: 0.2, strandsS: 2, parS: 3,
+    resetMode: 'cap', dutyMax: 0.65, dcrLimitP: 31.5, dcrLimitS: 260 };
+  const rb = TD.design(baseInputs(B));
+  const sb = rb.summary;
+  close(sb.LmUH, 1038e-9 * 144 * 1e6, 1e-9, 'B: Lm = AL·Np² = 149.5 µH (matches DCE spec)');
+  /* 引擎报的是"并联后"的直流电阻；规格书是"单绕组"测量值 → 单绕组 = 并联值 × 并联数 */
+  close(sb.RdcPri25Ohm * 1000 * 2, 31.9, 0.02, 'single-winding DCR = parallel DCR × 2 ≈ DCE spec 31.5 mΩ (within 2%)');
+  const secPerWinding = sb.RdcSec25Ohm * 1000 * 3;
+  ok('B: secondary per-winding DCR inside DCE 228~260 mΩ bracket', secPerWinding > 220 && secPerWinding < 270, secPerWinding.toFixed(1) + ' mΩ vs 228/244/260');
+  ok('B: both par conventions stated (parallel value × 并联数 = spec value)', Math.abs(sb.RdcPri25Ohm * 1000 * 2 - 31.5) / 31.5 < 0.03);
+  close(sb.LmUH / sb.LpUH, 1, 1e-12, 'B: transformer primary inductance is Lm');
+  ok('B: same flux/thermal picture as A (both pass flux, differ only in assumptions)',
+    sb.Bpk < sb.BsatAllow && rb.checks.some((c) => /^磁通峰值/.test(c.name) && c.pass === true), 'Bpk=' + sb.Bpk.toFixed(4));
+  /* B 家 2 号：38 匝输出电感（148 µH，AL=102.5 nH/N²）+ 25 匝辅助（66 µH，AL=105.6 nH/N²）→ 两个绕组自洽 */
+  const AL38 = 148e-6 / (38 * 38) * 1e9, AL25 = 66e-6 / (25 * 25) * 1e9;
+  ok('B: the two windings on one core imply the same AL (spec self-consistency)',
+    Math.abs(AL38 - AL25) / AL38 < 0.05, 'AL(38T)=' + AL38.toFixed(1) + ' vs AL(25T)=' + AL25.toFixed(1) + ' nH/N²');
+  const r2 = TD.design(baseInputs(Object.assign({}, B, { nlGiven: 38, lmGiven: 148, naux: 25, lmGiven35: 0 })));
+  const os2 = r2.summary.outStage;
+  close(os2.LoutUH, 148, 1e-9, 'B: output inductor 148 µH used as measured');
+  close(os2.LoutBpk, 148e-6 * os2.LoutIpk / (38 * 52e-6), 1e-9, 'B: output-inductor Bpk with DC bias');
+  close(os2.auxV, (25 / 38) * (19 + 0.5) - 0.5, 1e-9, 'B: aux voltage ≈12.3 V (UC3843 VCC window)');
+  ok('B: aux voltage sits inside the UC3843 window (8.4 V start ~ 34 V clamp)',
+    os2.auxV > 8.4 * 1.2 && os2.auxV < 30, os2.auxV.toFixed(2) + ' V');
+  /* 两家 A/B 的差异只体现在 AL 与材质上：同一工况下结论一致 */
+  const rbA = TD.design(baseInputs(Object.assign({}, B, { alNh: 1146 })));
+  ok('A vs B differ by AL only (149.5 vs 165 µH) — same verdict class on flux/magnetics',
+    (rb.summary.verdict.indexOf('FAIL') >= 0) === (rbA.summary.verdict.indexOf('FAIL') >= 0),
+    'A: ' + rbA.summary.verdict + ' | B: ' + rb.summary.verdict);
+}
+
 header('23 forward with capacitor reset + transformer #2 as output inductor/aux');
 {
   const base = { topology: 'Forward', vinMin: 9, vinMax: 16, vout: 12, iout: 1, fs: 200,

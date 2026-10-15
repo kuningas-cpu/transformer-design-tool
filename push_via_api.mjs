@@ -28,7 +28,7 @@ async function api(method, path, body) {
 const message = git('log', '-1', '--format=%B');
 const meta = git('log', '-1', '--format=%an%x1f%ae%x1f%aI%x1f%cn%x1f%ce%x1f%cI').trim().split('\x1f');
 const [an, ae, aI, cn, ce, cI] = meta;
-const parents = git('log', '-1', '--format=%P').trim().split(' ').filter(Boolean);
+let parents = git('log', '-1', '--format=%P').trim().split(' ').filter(Boolean);
 const localSha = git('rev-parse', 'HEAD').trim();
 const entries = git('ls-tree', '-r', '-z', 'HEAD').split('\0').filter(Boolean).map((l) => {
   const m = l.match(/^(\d+) (\w+) ([0-9a-f]+)\t(.*)$/);
@@ -38,10 +38,17 @@ console.log('本地 HEAD =', localSha.slice(0, 12), '| 文件', entries.length, 
 
 const me = await api('GET', '/user');
 console.log('令牌身份 =', me.login, '| 目标 =', `${OWNER}/${REPO}`);
+/* 本地历史与远端不一致时（例如上次推送的 commit 对象元数据不同），用远端 main 作父提交 */
+if (process.argv.includes('--parent-from-remote')) {
+  const h = await api('GET', `/repos/${OWNER}/${REPO}/commits/main`);
+  console.log('改用远端 main 作为父提交:', h.sha.slice(0, 12));
+  parents = [h.sha];
+}
 if (DRY) { entries.forEach((e) => console.log('  would upload', e.path)); process.exit(0); }
 
 for (const e of entries) {
-  const content = fs.readFileSync(e.path).toString('base64');
+  /* 从 git 对象读内容（而不是工作区文件），保证与提交内容一致 */
+  const content = execFileSync('git', ['cat-file', 'blob', e.sha]).toString('base64');
   const blob = await api('POST', `/repos/${OWNER}/${REPO}/git/blobs`, { content, encoding: 'base64' });
   if (blob.sha !== e.sha) throw new Error('blob SHA 不一致: ' + e.path);
   console.log('  blob ✓', e.path);

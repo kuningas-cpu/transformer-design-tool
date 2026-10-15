@@ -1193,7 +1193,9 @@ var TD = (function () {
       ['所需 AL / 气隙', r.T.kind === 'flyback' ? (fmt(s.ALreqNh, 0) + ' nH/N² / ' + fmt(s.gapMm, 3) + ' mm') : (fmt(s.ALusedNh, 0) + ' nH/N²（无气隙）')],
       ['原边线径×股数×并联 / J_p', fmt(s.wirePd, 3) + ' mm ×' + s.wirePstrands + '×' + s.wirePpar + ' / ' + fmt(s.Jpri, 2) + ' A/mm²' + (s.wirePauto ? '（自动）' : '')],
       ['副边线径×股数×并联 / J_s', fmt(s.wireSd, 3) + ' mm ×' + s.wireSstrands + '×' + s.wireSpar + ' / ' + fmt(s.Jsec, 2) + ' A/mm²' + (s.wireSauto ? '（自动）' : '')],
-      ['直流电阻 DCR 原边/副边 @25°C（热态）', fmt(s.RdcPri25Ohm * 1000, 1) + '/' + fmt(s.RdcSec25Ohm * 1000, 1) + ' mΩ（' + fmt(s.RdcPriOhm * 1000, 1) + '/' + fmt(s.RdcSecOhm * 1000, 1) + ' mΩ）'],
+      ['直流电阻 DCR 原边/副边 @25°C（热态）',
+        fmt(s.RdcPri25Ohm * 1000, 1) + '/' + fmt(s.RdcSec25Ohm * 1000, 1) + ' mΩ（' + fmt(s.RdcPriOhm * 1000, 1) + '/' + fmt(s.RdcSecOhm * 1000, 1) + ' mΩ）'
+        + (r.inputs.parP > 1 || r.inputs.parS > 1 ? '｜注意：这是并联后的值，单绕组规格 = 该值 × 并联数（P×' + r.inputs.parP + ' / S×' + r.inputs.parS + '）' : '')],
       ['窗口填充率（上限 ' + (r.inputs.kuMax * 100).toFixed(0) + '%）', fmt(s.fillPct, 1) + '%  · 需 Aw ≥ ' + fmt(s.AwReq, 1) + ' mm²'],
       ['磁芯损耗 P_core（Pcv=' + fmt(s.Pcv, 1) + ' kW/m³）', fmt(s.Pcore, 3) + ' W'],
       ['铜损 P_cu（含 F_R=' + fmt(s.acFactor, 2) + '）', fmt(s.Pcu, 3) + ' W'],
