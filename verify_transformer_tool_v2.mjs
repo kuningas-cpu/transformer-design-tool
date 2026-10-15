@@ -1598,18 +1598,26 @@ header('35 second capture (Vo=12 V, aux 40T): is the reset really the capacitor?
   const c = r.summary.capReset, m = c.meas;
   ok('the measured duty (31.2%) matches a forward converter with Vin ≈ 21 V',
     Math.abs(r.summary.dNeedMin - 0.312) < 0.006, r.summary.dNeedMin.toFixed(4));
-  ok('the pure-capacitor floor at 21 V is 46.7 V — above the measured 37.6 V',
-    Math.abs(m.vdsFloorTheo - 46.7) < 0.8 && m.vdsMeasPk < m.vdsFloorTheo,
-    m.vdsFloorTheo.toFixed(1) + ' V vs ' + m.vdsMeasPk.toFixed(1) + ' V');
-  ok('the measured peak sits ~10 V above Vin + n*Vo = 27.5 V (leakage-spike order)',
-    Math.abs(m.vClampRefl - 27.5) < 0.2 && m.vdsMeasPk - m.vClampRefl > 5 && m.vdsMeasPk - m.vClampRefl < 18,
-    m.vClampRefl.toFixed(1) + ' V, +' + (m.vdsMeasPk - m.vClampRefl).toFixed(1) + ' V');
-  ok('the tool calls this a clamp / energy-return reset, not a resonant one',
-    r.warns.some((w) => /低于"纯电容谐振复位"的理论下限/.test(w) && /这只电容只是缓冲/.test(w) && /轻载\/空载/.test(w)),
-    r.warns.filter((w) => /理论下限/.test(w)).join(' | ').slice(0, 240));
-  ok('the reconciliation step also says so and asks for light-load captures',
-    (r.steps.find((s) => /实测 Vds,pk 与模型对账/.test(s.t)) || { s: '' }).s.indexOf('钳位型复位') > 0 &&
-    (r.steps.find((s) => /实测 Vds,pk 与模型对账/.test(s.t)) || { s: '' }).s.indexOf('空载') > 0);
+  /* 读数口径：示波器"幅值"=高电平−低电平（把漏感尖峰排除在外），真峰值要用"最大值−最小值"。
+     这两项读数分别对应两种判断，工具两种情况都要给出正确的提示 */
+  const plateauOnly = TD.design(baseInputs(Object.assign({}, board, { vdsMeasPk: 37.6, vdsMeasVin: 21 })));
+  ok('if the "amplitude" reading (37.6 V) is entered, the tool says it is below the hard floor 2·Vin and asks about the reading convention',
+    plateauOnly.summary.capReset.meas.vdsMeasPk < plateauOnly.summary.capReset.meas.hardFloor &&
+    plateauOnly.warns.some((w) => /硬下限 2·Vin/.test(w) && /最大值 − 最小值/.test(w) && /幅值\/高电平/.test(w)),
+    plateauOnly.warns.filter((w) => /硬下限/.test(w)).join(' | ').slice(0, 200));
+  /* 真峰值 = 最大值 27.99 − 最小值 (−29.20) = 57.2 V，Vin = 24 V（含压降折算后的占空比 0.30~0.31 ✓） */
+  const truePeak = TD.design(baseInputs(Object.assign({}, board, { vinMin: 24, vinMax: 24, vdsMeasPk: 57.2, vdsMeasVin: 24 })));
+  const tp = truePeak.summary.capReset.meas;
+  ok('with the true peak (max−min = 57.2 V) at Vin = 24 V the numbers land in the resonant-reset optimum band',
+    tp.peakRatio > 2.3 && tp.peakRatio < 2.5 && tp.minRatioOmegaPi > 2.1 && tp.minRatioOmegaPi < 2.25 &&
+    truePeak.steps.some((s) => /峰值 \/ Vin 的健康度判据/.test(s.t) && /略高于最优点/.test(s.s)),
+    tp.peakRatio.toFixed(2) + '×Vin vs 最优 ' + tp.minRatioOmegaPi.toFixed(2) + '×Vin');
+  ok('that is read as a capacitor-resonant reset (not a clamp), with the hump filling the off-time',
+    !truePeak.warns.some((w) => /硬下限/.test(w)) && truePeak.summary.capReset.ringOmDeg > 150 && truePeak.summary.capReset.ringOmDeg < 260,
+    truePeak.summary.capReset.ringOmDeg.toFixed(0) + '°');
+  ok('the hard floor is 2·Vin and the optimum is ~2.2·Vin (both independent of Lm, C_res and Fs)',
+    Math.abs(tp.hardFloor - 48) < 1e-9 && Math.abs(tp.minRatioOmegaPi - 2.18) < 0.1,
+    tp.hardFloor + ' V / ' + tp.minRatioOmegaPi.toFixed(3) + '×');
   /* 上升时间判据：24 ns 只能是漏感换流，不可能是电容被励磁电流充电 */
   const Lm = c.LmUH * 1e-6, iPk = c.dMaxUsed * 21 / (Lm * 252.5e3);
   const need1 = 37.6 / (iPk / 1e-9) * 1e9, need32 = 37.6 / (iPk / 3.2e-9) * 1e9;

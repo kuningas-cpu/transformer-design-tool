@@ -176,7 +176,7 @@
           <select id="resetMode"><option value="cap">电容谐振复位（初级并联电容）</option><option value="winding">复位绕组（1:1 时 D≤0.5）</option></select></div>
         <div class="field" data-show="topo:Forward&resetMode:cap"><label for="cresNf">复位电容 C_res <span class="unit">(nF，0=自动取上限)</span></label><input id="cresNf" type="number" value="0" step="0.5" min="0"/></div>
         <div class="field" data-show="topo:Forward&resetMode:cap"><label for="vdsRated">开关管耐压 Vds_rated <span class="unit">(V，0=不校核；限值取 0.85×耐压)</span></label><input id="vdsRated" type="number" value="0" step="10" min="0"/></div>
-        <div class="field" data-show="topo:Forward&resetMode:cap"><label for="vdsMeasPk">实测 Vds,pk <span class="unit">(V，0=不用；示波器上 Vin_max 处的峰值)</span></label><input id="vdsMeasPk" type="number" value="0" step="5" min="0"/></div>
+        <div class="field" data-show="topo:Forward&resetMode:cap"><label for="vdsMeasPk">实测 Vds,pk <span class="unit">(V，0=不用；填"最大值 − 最小值/开通电平"，即含漏感尖峰的真峰值，不要填示波器的"幅值/高电平")</span></label><input id="vdsMeasPk" type="number" value="0" step="5" min="0"/></div>
         <div class="field" data-show="topo:Forward&resetMode:cap"><label for="vdsMeasVin">实测时的输入电压 <span class="unit">(V，0=按 Vin_max 处理)</span></label><input id="vdsMeasVin" type="number" value="0" step="1" min="0"/></div>
         <div class="field" data-show="topo:Forward&resetMode:cap"><label for="lkUh">实测/估算漏感 Lk <span class="unit">(µH，0=未计入)</span></label><input id="lkUh" type="number" value="0" step="0.1" min="0"/></div>
         <div class="field" data-show="topo:Forward,Push-Pull,Half-Bridge,Full-Bridge"><label for="nlGiven">输出电感给定匝数 <span class="unit">(0=自动)</span></label><input id="nlGiven" type="number" value="0" step="1" min="0"/></div>
@@ -1072,7 +1072,7 @@ var TD = (function () {
            + '固定 C_res（' + crNf.toFixed(2) + ' nF）时 Lm ≈ ' + meas.lmFromMeasUh.toFixed(0) + ' µH；'
            + '而当前输入的是 C_res = ' + crNf.toFixed(2) + ' nF / Lm = ' + (Lm * 1e6).toFixed(0) + ' µH（比值 ' + meas.cRatio.toFixed(2) + ' / ' + meas.lmRatio.toFixed(2) + '）。'
            + '若两个反推值里有一个接近你的实际元件参数，就按它校准；若都差得多，说明还有别的机制（阻尼/钳位/副边回馈）。'
-           + (Math.abs(meas.vdsMeasPk - meas.vClampRefl) < Math.max(15, 0.45 * meas.vResPk)
+           + (meas.vdsMeasPk >= meas.hardFloor * 0.98 && Math.abs(meas.vdsMeasPk - meas.vClampRefl) < Math.max(15, 0.45 * meas.vResPk)
                ? ' **注意：实测峰值只比 "Vin + n·Vo"（= ' + meas.vClampRefl.toFixed(1) + ' V）高 ' + (meas.vdsMeasPk - meas.vClampRefl).toFixed(1) +
                  ' V —— 这个差距正好是漏感尖峰的量级**，说明 drain 是被"副边回馈/钳位"压住的（钳位型复位），而不是由复位电容的谐振决定的：'
                  + '谐振型复位的峰值下限是 ' + meas.vdsFloorTheo.toFixed(1) + ' V，比实测高。'
@@ -1095,6 +1095,25 @@ var TD = (function () {
              '。用环形解按实测 ' + meas.vdsMeasPk.toFixed(1) + ' V 反推：需要的 Lm ≈ ' + meas.lmFromMeasUh.toFixed(0) + ' µH' +
              (Np > 0 ? '（等价 AL ≈ ' + meas.alFromMeasNh.toFixed(0) + ' nH/N² 于 ' + Np + ' 匝）' : '') +
              '，而当前输入的是 ' + (Lm * 1e6).toFixed(0) + ' µH（差 ' + meas.lmRatio.toFixed(2) + ' 倍）。' });
+        /* 只靠 Vin 与占空比就能做的健康度判据（与 Lm、C_res、Fs 无关）：
+           纯电容谐振复位一定有 Vds,pk ≥ 2·Vin（电容在导通期已被充到 Vin，复位期母线还要再灌入 Vin·Q）；
+           而在 Ω = 180°（复位正好在关断期末完成）时达到最小值 Vin + √(Vin² + (π·n·Vo/(2(1−D)))²)。 */
+        meas.peakRatio = vinMeas > 0 ? vdsMeasPk / vinMeas : 0;
+        meas.minRatioOmegaPi = vinMeas > 0 ? meas.vdsFloorTheo / vinMeas : 0;
+        meas.hardFloor = 2 * vinMeas;
+        steps.push({ t: '峰值 / Vin 的健康度判据（只看 Vin 与占空比）',
+          f: '纯电容谐振复位：Vds,pk ≥ 2·Vin（硬下限）；Ω = 180° 时取最小值 Vin + √(Vin² + (π·n·Vo/(2(1−D)))²)',
+          s: 'Vin = ' + vinMeas.toFixed(1) + ' V、D = ' + dMeas.toFixed(3) + ' ⇒ 硬下限 = 2·Vin = ' + (2 * vinMeas).toFixed(1) +
+             ' V，最优值（Ω = 180°）= ' + meas.vdsFloorTheo.toFixed(1) + ' V；实测峰值 = ' + meas.vdsMeasPk.toFixed(1) +
+             ' V（比值 ' + meas.peakRatio.toFixed(2) + '×Vin）⇒ ' +
+             (meas.vdsMeasPk < meas.hardFloor * 0.98
+               ? '**低于硬下限：这个峰值不可能只由"初级并联电容"提供**（要么另有回馈/钳位通路，要么读的是"幅值/高电平"而不是真峰值——请用示波器的"最大值 − 最小值"再看一次）'
+               : (meas.peakRatio < meas.minRatioOmegaPi * 1.02
+                   ? '**正好落在电容谐振复位的最优点（Ω ≈ 180°）附近**：驼峰应正好填满关断期 ✓，此时峰值与开通损耗都最小'
+                   : (meas.peakRatio < meas.minRatioOmegaPi * 1.35
+                       ? '略高于最优点：Ω 略偏离 180° 和/或漏感尖峰较大（仍在正常范围）'
+                       : '明显高于最优点：Ω 明显偏离 180°（C_res 偏小/偏大或 Lm、Fs 不匹配），或漏感尖峰很大'))) +
+             '。注意：这里是"峰值 ÷ Vin"，与 Lm、C_res、Fs 都无关，所以最适合用来判断读数和机理对不对。' });
         /* 用"实测点校准后的模型"外推到 Vin_max：这才是开关管真正要承受的应力 */
         var ringAtMax = ringSolve(Lm, I.vinMax);
         var peakAtMax = Math.max(vdsPkVal, ringAtMax.vds);
@@ -1562,12 +1581,12 @@ var TD = (function () {
           capReset.meas.vdsMeasPk, 'V', capReset.vdsLimit, 'V', capReset.meas.vdsMeasPk <= capReset.vdsLimit, 0.9,
           measOffPoint ? 'peripheral' : 'core');
         /* 实测峰值明显低于"纯电容谐振复位"的理论下限 ⇒ 复位不是靠这个电容完成的（另有回馈/钳位通路） */
-        if (capReset.meas.vdsMeasPk < capReset.meas.vdsFloorTheo * 0.9) {
-          warns.push('实测峰值 ' + capReset.meas.vdsMeasPk.toFixed(1) + ' V 明显低于"纯电容谐振复位"的理论下限 ' +
-            capReset.meas.vdsFloorTheo.toFixed(1) + ' V（Vin = ' + capReset.meas.vinMeas.toFixed(0) + ' V），而与 "Vin + n·Vo" = ' +
-            capReset.meas.vClampRefl.toFixed(1) + ' V 只差 ' + (capReset.meas.vdsMeasPk - capReset.meas.vClampRefl).toFixed(1) +
-            ' V（漏感尖峰量级）⇒ **复位是"钳位/回馈型"的（磁化能量经副边或其他低阻通路送回），这只电容只是缓冲**，不是谐振复位的主角。' +
-            '这类复位在轻载/空载时会失去钳位、峰值可能大幅上升，务必在满载 / 10% 载 / 空载三种情况下各测一次峰值，并用原边电流波形确认每个周期都复位到零。');
+        if (capReset.meas.vdsMeasPk < capReset.meas.hardFloor * 0.98) {
+          warns.push('实测峰值 ' + capReset.meas.vdsMeasPk.toFixed(1) + ' V 低于"纯电容谐振复位"的硬下限 2·Vin = ' +
+            capReset.meas.hardFloor.toFixed(1) + ' V（Vin = ' + capReset.meas.vinMeas.toFixed(0) + ' V，比值 ' +
+            capReset.meas.peakRatio.toFixed(2) + '×Vin）：**单靠"初级并联电容"不可能把峰值压到这么低**。' +
+            '先排除读数口径问题——请用示波器的"最大值 − 最小值"（相对开通电平）取峰值，而不是"幅值/高电平"（那条会把漏感尖峰的顶部排除掉，读数会偏低 20%~30%）；' +
+            '若确认读的就是真峰值，再考虑：复位回路另有通路（副边回馈/钳位）、或 Vin/匝比与填写值不同。');
         }
         if (capReset.vdsPk > capReset.vdsLimit * 1.3 && capReset.meas.vdsMeasPk <= capReset.vdsLimit * 0.9) {
           warns.push('注意：按当前输入（Lm = ' + (Lm * 1e6).toFixed(0) + ' µH、C_res = ' + capReset.crNf.toFixed(2) +
