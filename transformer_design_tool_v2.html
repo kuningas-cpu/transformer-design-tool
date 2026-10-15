@@ -133,9 +133,11 @@
         <div class="field"><label for="nlPar">输出电感并联绕组数</label><input id="nlPar" type="number" value="1" step="1" min="1"/></div>
         <div class="field"><label for="ripplePct">输出纹波允许值 <span class="unit">(% of Vout)</span></label><input id="ripplePct" type="number" value="1" step="0.1" min="0.05"/></div>
         <div class="field"><label for="esrOhm">输出电容 ESR <span class="unit">(Ω)</span></label><input id="esrOhm" type="number" value="0.01" step="0.001" min="0.0001"/></div>
-        <div class="field"><label for="rdsOnMOhm">同步整流 Rds(on) <span class="unit">(mΩ)</span></label><input id="rdsOnMOhm" type="number" value="10" step="1" min="0.1"/></div>
-        <div class="field"><label for="vfBody">SR 体二极管压降 <span class="unit">(V)</span></label><input id="vfBody" type="number" value="0.8" step="0.05" min="0.2"/></div>
-        <div class="field"><label for="tDeadNs">死区时间 t_dead <span class="unit">(ns)</span></label><input id="tDeadNs" type="number" value="200" step="20" min="0"/></div>
+        <div class="field"><label for="rectDevice">次级整流器件</label>
+          <select id="rectDevice"><option value="diode">二极管（整流+续流）</option><option value="sr1">同步整流-仅整流管</option><option value="sr2">同步整流-整流+续流</option></select></div>
+        <div class="field"><label for="rdsOnMOhm">同步整流 Rds(on) <span class="unit">(mΩ，仅 SR 模式用)</span></label><input id="rdsOnMOhm" type="number" value="0" step="1" min="0"/></div>
+        <div class="field"><label for="vfBody">SR 体二极管压降 <span class="unit">(V，仅 SR 模式用)</span></label><input id="vfBody" type="number" value="0.8" step="0.05" min="0"/></div>
+        <div class="field"><label for="tDeadNs">死区时间 t_dead <span class="unit">(ns，仅 SR/LLC 用)</span></label><input id="tDeadNs" type="number" value="0" step="20" min="0"/></div>
       </div>
       <h3>LLC 谐振腔 / LLC tank（仅 LLC 拓扑使用）</h3>
       <div class="three-col">
@@ -598,6 +600,8 @@ var TD = (function () {
     var nlGiven = (isFinite(parseFloat(I.nlGiven)) && parseFloat(I.nlGiven) > 0) ? Math.round(parseFloat(I.nlGiven)) : 0;
     var lmGiven = numOr(I.lmGiven, 0);
     var naux = (isFinite(parseFloat(I.naux)) && parseFloat(I.naux) > 0) ? Math.round(parseFloat(I.naux)) : 0;
+    /* 次级整流器件：diode = 二极管（整流+续流都是二极管）；sr1 = 只把整流管换成同步整流；sr2 = 整流+续流都换 */
+    var rectDevice = (I.rectDevice === 'sr1' || I.rectDevice === 'sr2') ? I.rectDevice : 'diode';
     /* 磁芯库里的实测 AL（由界面在选中磁芯时带进来）：AL 填 0 时优先用它，
        因为"不开气隙"只是工艺说法——未研磨的对拼面仍有几十微米的有效气隙，
        实测 AL 往往只有理想值 µ0·µi·Ae/le 的 1/3~1/2。 */
@@ -1045,18 +1049,41 @@ var TD = (function () {
          (os.esrImpossible ? '—（ESR 未解决前无意义）' : os.CoutUF.toFixed(1) + ' µF') +
          '，电容有效值纹波电流 ' + os.CoutIcRms.toFixed(2) + ' A，耐压建议 ≥ ' + os.CoutVrate.toFixed(0) + ' V' });
     /* 同步整流 vs 二极管 */
-    os.Pdiode = I.vf * (pts.vinMin.IavgSec > 0 ? pts.vinMin.IavgSec : I.iout);
-    os.PsrBody = vfBody * (pts.vinMin.IavgSec > 0 ? pts.vinMin.IavgSec : I.iout) * (2 * tDeadNs * 1e-9 * Fs);
-    os.Psr = rdsOnMOhm * 1e-3 * pts.vinMin.IrmsSec * pts.vinMin.IrmsSec + os.PsrBody;
-    os.Icross = rdsOnMOhm > 0 ? I.vf / (rdsOnMOhm * 1e-3) : Infinity;
-    os.SRbetter = os.Psr < os.Pdiode;
+    /* 整流损耗：一个周期内的平均整流电流恒为 Iout，所以要按"整流管+续流管"两个器件统计
+       （二极管：Vf·Iout；SR：Rds·Iout² 或 只换整流管时 Rds·Irms,rect² + 续流二极管 Vf·(Iout−Iavg,rect)） */
+    var srDeadLoss = (rectDevice === 'diode') ? 0 : vfBody * I.iout * (2 * tDeadNs * 1e-9 * Fs);
+    os.rectDevice = rectDevice;
+    if (T.kind === 'flyback') {
+      /* 反激只有一个整流二极管/开关（导通期平均即 Iout） */
+      os.Pdiode = I.vf * Math.max(pts.vinMin.IavgSec, I.iout * 0.999);
+      os.Psr = (rectDevice === 'diode') ? os.Pdiode : (rdsOnMOhm * 1e-3 * pts.vinMin.IrmsSec * pts.vinMin.IrmsSec + vfBody * I.iout * (2 * tDeadNs * 1e-9 * Fs));
+    } else if (rectDevice === 'diode') {
+      os.Pdiode = I.vf * I.iout;                       /* 整流管 + 续流管，两者之和 */
+      os.Psr = 0;
+    } else if (rectDevice === 'sr1') {
+      os.Pdiode = I.vf * I.iout;
+      os.Psr = rdsOnMOhm * 1e-3 * pts.vinMin.IrmsSec * pts.vinMin.IrmsSec   /* 整流管用 SR */
+        + I.vf * Math.max(I.iout - pts.vinMin.IavgSec, 0)                   /* 续流仍用二极管 */
+        + vfBody * I.iout * (2 * tDeadNs * 1e-9 * Fs);                      /* 死区体二极管 */
+    } else {
+      os.Pdiode = I.vf * I.iout;
+      os.Psr = rdsOnMOhm * 1e-3 * I.iout * I.iout + vfBody * I.iout * (2 * tDeadNs * 1e-9 * Fs);  /* 两管都换 SR */
+    }
+    os.SRapplicable = (rectDevice !== 'diode');
+    os.PdiodeBuck = os.Pdiode;
+    os.Icross = (rdsOnMOhm > 0 && rectDevice !== 'diode') ? I.vf / (rdsOnMOhm * 1e-3) : Infinity;
+    os.SRbetter = os.SRapplicable && (os.Psr < os.Pdiode);
     os.SRonTime = os.buckDerived ? dNeedMin / I.fs * 1000 : (1 - dNeedMin) / I.fs * 1000;   /* µs */
     os.SRdeadOK = os.buckDerived ? (dNeedMin / I.fs - 2 * tDeadNs * 1e-9) > 0 : true;
-    steps.push({ t: '同步整流 vs 二极管', f: 'P_diode = Vf·I_avg ;  P_SR = Rds,on·I_rms² + Vf_body·I_avg·(2·t_dead·Fs)',
-      s: '二极管 ' + os.Pdiode.toFixed(3) + ' W vs 同步整流 ' + os.Psr.toFixed(3) + ' W（其中死区体二极管 ' + os.PsrBody.toFixed(3) +
-         ' W）→ ' + (os.SRbetter ? '推荐同步整流，可省 ' + (os.Pdiode - os.Psr).toFixed(3) + ' W' : '此电流下二极管更划算') +
-         '；两者损耗相等的临界电流 ≈ ' + (isFinite(os.Icross) ? os.Icross.toFixed(2) + ' A' : '—') +
-         '（低于该电流 SR 更省；固定 Vf 模型下超过该电流二极管更省，实际请按器件曲线核对）' });
+    steps.push({ t: '整流损耗：' + (rectDevice === 'diode' ? '二极管（整流+续流）' : (rectDevice === 'sr1' ? '同步整流（仅整流管）+ 续流二极管' : '同步整流（整流+续流都换）')),
+      f: rectDevice === 'diode' ? 'P = Vf·Iout（一个周期内整流电流平均恒为 Iout：整流管 D·Iout + 续流管 (1-D)·Iout）'
+        : 'P_SR = Rds·I²（两管都换用 Iout²；只换整流管用 I_rms,rect² 并加续流二极管损耗） + Vf_body·Iout·2·t_dead·Fs',
+      s: (rectDevice === 'diode'
+          ? '二极管整流损耗 = ' + I.vf + ' V × ' + I.iout + ' A = **' + os.Pdiode.toFixed(3) + ' W**（占输出 ' +
+            (os.Pdiode / Math.max(Po, 1e-9) * 100).toFixed(2) + '%）；此模式不使用 MOS 的 Rds(on)/Vf_body/t_dead'
+          : ('二极管方案 ' + os.Pdiode.toFixed(3) + ' W vs 当前所选 SR 方案 ' + os.Psr.toFixed(3) + ' W（含死区体二极管 ' + srDeadLoss.toFixed(3) +
+             ' W）→ ' + (os.SRbetter ? 'SR 更省 ' + (os.Pdiode - os.Psr).toFixed(3) + ' W' : '此工况二极管更划算') +
+             '；临界电流 ≈ ' + (isFinite(os.Icross) ? os.Icross.toFixed(2) + ' A' : '—'))) });
 
     /* ---------- LLC 谐振腔（一阶谐波近似 FHA） ---------- */
     var tank = null;
@@ -1183,7 +1210,8 @@ var TD = (function () {
       addCheck('LLC 峰值增益裕量 M_peak/M_max', tank.gainMargin, '×', 1.05, '×', tank.gainMargin >= 1.05, 3, 'peripheral');
       addCheck('LLC 所需 Lm 与磁芯 AL·Np² 偏差', tank.LmErrPct, '%', 20, '%', tank.LmErrPct <= 20, 0.75);
       if (!tank.ALgiven) addCheck('LLC 所需气隙 l_g（按谐振腔 Lm）', tank.gapMm, 'mm', 2.0, 'mm', tank.gapMm <= 2.0, 0.75);
-      addCheck('LLC ZVS：I_Lm,pk vs 2·Coss·Vin/t_dead', tank.ImPk, 'A', tank.IZvsNeed, 'A', tank.ImPk >= tank.IZvsNeed, 3, 'peripheral');
+      if (tDeadNs > 0) addCheck('LLC ZVS：I_Lm,pk vs 2·Coss·Vin/t_dead', tank.ImPk, 'A', tank.IZvsNeed, 'A', tank.ImPk >= tank.IZvsNeed, 3, 'peripheral');
+      else warns.push('LLC 的 ZVS 判据需要死区时间：请在"死区时间 t_dead"填入实际值（否则不校核 ZVS）。');
       addCheck('LLC 高线轻载可降增益（M_min ≥ k/(k+1)·1.02）', tank.Mmin, '×', tank.mMinAsymptote * 1.02, '×', tank.lightLoadOK, 0.98);
       if (tank.crRated > 0) addCheck('谐振电容耐压：V_cr,pk ≤ 0.8×耐压', tank.VcrPk, 'V', tank.crRated * 0.8, 'V', tank.VcrPk <= tank.crRated * 0.8, 0.9);
       if (!tank.lightLoadOK) warns.push('高线轻载时所需增益低于 FHA 渐近值 k/(k+1)=' + (tank.mMinAsymptote).toFixed(3) + '：需要 burst/skip 模式，或减小 k（增大 Lm/Lr 比）以降低最小增益。');
@@ -1348,6 +1376,7 @@ var TD = (function () {
     'auditMode','npGiven','nsGiven','dcrLimitP','dcrLimitS',
     'resetMode','cresNf','vdsRated','nlGiven','lmGiven','naux',
     'alLibNh',
+    'rectDevice',
     'lmMeasUh','npMeasN',
     'lkUh','mltTol','marginMm','awW','awH','nlDia','nlStrands','nlPar','crRated',
     'acMode','vacMin','vacMax','fline','cbusUf','cbusEsr','rsAc','vdBridge','holdMs','holdVmin','pfcBus',
@@ -1432,6 +1461,7 @@ var TD = (function () {
       nlGiven: num('nlGiven', 0), lmGiven: num('lmGiven', 0), naux: num('naux', 0),
       lkUh: num('lkUh', 0), mltTol: num('mltTol', 0), marginMm: num('marginMm', 0),
       alLibNh: num('alLibNh', 0),
+      rectDevice: $('rectDevice').value,
       lmMeasUh: num('lmMeasUh', 0), npMeasN: num('npMeasN', 0),
       awW: num('awW', 0), awH: num('awH', 0),
       nlDia: num('nlDia', 0), nlStrands: num('nlStrands', 1), nlPar: num('nlPar', 1),
@@ -1538,9 +1568,14 @@ var TD = (function () {
       rows.push(['输出电容 C_min', fmt(os.CoutUF, 1) + ' µF', '纹波预算 ' + fmt(os.rippleBudget, 3) + ' V（' + fmt(r.inputs.ripplePct, 2) + '% of Vout）']);
       rows.push(['纹波分解', 'ESR 分量 ' + fmt(os.dVesr, 4) + ' V + 容性分量 ' + fmt(os.dVcap, 4) + ' V', os.esrDominant ? 'ESR 主导：需降低 ESR 或多只并联' : '容性为主']);
       rows.push(['电容纹波电流 / 耐压', fmt(os.CoutIcRms, 2) + ' A rms，耐压建议 ≥ ' + fmt(os.CoutVrate, 0) + ' V', 'ESR 上限 ≈ ' + fmt(os.CoutEsrMax, 1) + ' mΩ']);
-      rows.push(['整流损耗：二极管 vs 同步整流', fmt(os.Pdiode, 3) + ' W vs ' + fmt(os.Psr, 3) + ' W（死区体二极管 ' + fmt(os.PsrBody, 3) + ' W）',
-        os.SRbetter ? '推荐同步整流，省 ' + fmt(os.Pdiode - os.Psr, 3) + ' W' : '此电流下二极管更划算']);
-      rows.push(['同步整流临界电流', isFinite(os.Icross) ? fmt(os.Icross, 2) + ' A（超过即 SR 更省）' : '—', 'SR 导通时间 ≈ ' + fmt(os.SRonTime, 2) + ' µs' + (os.SRdeadOK ? '' : '（不足 2×死区，需注意时序）')]);
+      if (os.rectDevice === 'diode') {
+        rows.push(['整流损耗（二极管：整流+续流）', fmt(os.Pdiode, 3) + ' W（占输出 ' + fmt(os.Pdiode / Math.max(r.summary.Po, 1e-9) * 100, 2) + '%）',
+          '二极管整流不需要填 Rds(on)/Vf_body/t_dead；Vf 已包含整流管与续流管（一个周期内平均总电流 = Iout）']);
+      } else {
+        rows.push(['整流损耗：二极管 vs 当前 SR 方案', fmt(os.Pdiode, 3) + ' W vs ' + fmt(os.Psr, 3) + ' W',
+          os.SRbetter ? 'SR 更省 ' + fmt(os.Pdiode - os.Psr, 3) + ' W' : '此工况二极管更划算']);
+        rows.push(['SR 临界电流 / 导通时间', (isFinite(os.Icross) ? fmt(os.Icross, 2) + ' A' : '—') + ' / ' + fmt(os.SRonTime, 2) + ' µs' + (os.SRdeadOK ? '' : '（不足 2×死区，需注意时序）'), '']);
+      }
       html0 = '<table><thead><tr><th style="width:26%">项目</th><th style="width:34%">结果</th><th>说明</th></tr></thead><tbody>';
       rows.forEach(function (x) { html0 += '<tr><td>' + esc(x[0]) + '</td><td>' + esc(x[1]) + '</td><td>' + esc(x[2]) + '</td></tr>'; });
       html0 += '</tbody></table>';

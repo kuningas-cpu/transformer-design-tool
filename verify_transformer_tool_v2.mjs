@@ -355,7 +355,7 @@ const testValues = {
 };
 for (const top of Object.keys(TD.TOPOS)) {
   /* manual wire so the diameter fields matter, and 200 kHz so the frequency exponent matters */
-  const over = Object.assign({ topology: top, wireModeP: 'mm', wireModeS: 'mm', fs: 200 }, overrides[top] || {});
+  const over = Object.assign({ topology: top, wireModeP: 'mm', wireModeS: 'mm', fs: 200, rectDevice: 'sr2', tDeadNs: 200 }, overrides[top] || {});
   const dead = [], expectedDeadWrong = [];
   for (const id of Object.keys(testValues)) {
     const reacts = probe(id, testValues[id], over);
@@ -524,8 +524,8 @@ header('16 fuzz: 7 topologies x 400 random operating points');
       const ioutR = 0.2 + rnd() * 24;
       const vinLo = top === 'Half-Bridge' || top === 'Full-Bridge' || top === 'LLC Resonant' ? 200 + rnd() * 200 : 5 + rnd() * 60;
       const vinHi = vinLo * (1 + rnd() * 1.6);
-      const ov = {
-        topology: top, vinMin: +vinLo.toFixed(2), vinMax: +vinHi.toFixed(2),
+  const ov = {
+        topology: top, rectDevice: 'sr2', vinMin: +vinLo.toFixed(2), vinMax: +vinHi.toFixed(2),
         vout: +voutR.toFixed(2), iout: +ioutR.toFixed(3),
         vf: +(rnd() * 1.2).toFixed(2), eta: +(0.6 + rnd() * 0.39).toFixed(3),
         fs: +(20 + rnd() * 480).toFixed(1), dutyMax: +(0.15 + rnd() * 0.55).toFixed(3),
@@ -645,9 +645,23 @@ header('19 output stage: output inductor, output capacitor, SR vs diode');
   close(os.dVesr, os.dILmax * fw.inputs.esrOhm, 1e-12, 'ESR ripple contribution = ΔI·ESR');
   close(os.CoutUF, os.dILmax / (8 * 1e5 * (budget - os.dVesr)) * 1e6, 1e-9, 'C ≥ ΔI/(8·Fs·ΔV_cap)');
   ok('buck cap uses the triangular-ripple mode', os.capMode === 'buck');
-  close(os.Pdiode, fw.inputs.vf * fw.points.vinMin.IavgSec, 1e-12, 'diode loss = Vf·I_avg(secondary conduction average)');
-  close(os.Psr, fw.inputs.rdsOnMOhm * 1e-3 * fw.points.vinMin.IrmsSec ** 2 + fw.inputs.vfBody * fw.points.vinMin.IavgSec * (2 * fw.inputs.tDeadNs * 1e-9 * 1e5), 1e-12, 'SR loss = Rds·Irms² + body-diode during dead time');
-  close(os.Icross, fw.inputs.vf / (fw.inputs.rdsOnMOhm * 1e-3), 1e-12, 'crossover current = Vf/Rds');
+  /* 二极管整流：整流管 + 续流管，一个周期内平均总电流 = Iout → P = Vf·Iout */
+  const fwDiode = TD.design(baseInputs({ topology: 'Forward', vinMin: 48, vinMax: 72, vout: 5, iout: 10, rectDevice: 'diode' }));
+  close(fwDiode.summary.outStage.Pdiode, fwDiode.inputs.vf * fwDiode.inputs.iout, 1e-12, 'diode loss (rectifier + freewheel) = Vf·Iout');
+  ok('in diode mode the MOSFET parameters are ignored', fwDiode.summary.outStage.SRapplicable === false && fwDiode.summary.outStage.Psr === 0
+    && !fwDiode.steps.some((st) => /P_SR/.test(st.f || '')), JSON.stringify({ Rds: fwDiode.inputs.rdsOnMOhm, Vfb: fwDiode.inputs.vfBody, tdead: fwDiode.inputs.tDeadNs }));
+  ok('in diode mode the diode loss does not react to Rds(on)/Vf_body/t_dead',
+    JSON.stringify(TD.design(baseInputs({ topology: 'Forward', vinMin: 48, vinMax: 72, vout: 5, iout: 10, rectDevice: 'diode', rdsOnMOhm: 99, vfBody: 1.5, tDeadNs: 800 })).summary.outStage)
+    === JSON.stringify(fwDiode.summary.outStage));
+  /* 同步整流两种接法 */
+  const fwSr2 = TD.design(baseInputs({ topology: 'Forward', vinMin: 48, vinMax: 72, vout: 5, iout: 10, rectDevice: 'sr2', rdsOnMOhm: 10, vfBody: 0.8, tDeadNs: 200 }));
+  close(fwSr2.summary.outStage.Psr, 0.01 * 100 + 0.8 * 10 * (2 * 200e-9 * 1e5), 1e-12, 'SR (both switches) = Rds·Iout² + body-diode in dead time');
+  const fwSr1 = TD.design(baseInputs({ topology: 'Forward', vinMin: 48, vinMax: 72, vout: 5, iout: 10, rectDevice: 'sr1', rdsOnMOhm: 10, vfBody: 0.8, tDeadNs: 200 }));
+  close(fwSr1.summary.outStage.Psr, 0.01 * fwSr1.points.vinMin.IrmsSec ** 2 + 0.5 * (10 - fwSr1.points.vinMin.IavgSec) + 0.8 * 10 * (2 * 200e-9 * 1e5), 1e-12,
+    'SR (rectifier only) = Rds·Irms² + freewheel diode Vf·(Iout−Iavg) + body-diode');
+  ok('full SR beats a diode here, and the two SR variants differ', fwSr2.summary.outStage.Psr < fwSr1.summary.outStage.Psr && fwSr1.summary.outStage.Psr < fwDiode.summary.outStage.Pdiode,
+    fwSr2.summary.outStage.Psr.toFixed(2) + ' / ' + fwSr1.summary.outStage.Psr.toFixed(2) + ' / diode ' + fwDiode.summary.outStage.Pdiode.toFixed(2) + ' W');
+  close(fwSr2.summary.outStage.Icross, fwSr2.inputs.vf / (fwSr2.inputs.rdsOnMOhm * 1e-3), 1e-12, 'crossover current = Vf/Rds');
   const fb = TD.design(baseInputs());
   ok('flyback: no output inductor', fb.outputStage.buckDerived === false && fb.outputStage.LoutUH === 0);
   close(fb.outputStage.CoutUF, (2 * fb.summary.dNeedMin) / (1e5 * (fb.outputStage.rippleBudget - fb.outputStage.dVesr)) * 1e6, 1e-9, 'flyback C ≥ Iout·D/(Fs·ΔV_cap)');
@@ -668,7 +682,7 @@ header('19 output stage: output inductor, output capacitor, SR vs diode');
 /* ---------------- 20. LLC resonant tank (FHA) ---------------- */
 header('20 LLC resonant tank (first-harmonic approximation)');
 {
-  const l = TD.design(baseInputs({ topology: 'LLC Resonant', vinMin: 380, vinMax: 420, vinNom: 400, vout: 12, iout: 10, llcFr: 100, llcK: 5 }));
+  const l = TD.design(baseInputs({ topology: 'LLC Resonant', vinMin: 380, vinMax: 420, vinNom: 400, vout: 12, iout: 10, llcFr: 100, llcK: 5, tDeadNs: 200 }));
   const t = l.tank, s = l.summary;
   ok('tank computed', !!t && t.LrUH > 0 && t.CrNf > 0);
   const gain = (fn, Q, k) => 1 / Math.sqrt(Math.pow(1 + (1 / k) * (1 - 1 / (fn * fn)), 2) + Math.pow(Q * (fn - 1 / fn), 2));
