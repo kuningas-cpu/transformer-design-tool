@@ -1,0 +1,7 @@
+# 已废弃的 v1 版本（含 4.44 系数等已确认错误）不进入仓库，仅保留在本地归档
+deprecated_do_not_use/
+
+# 编辑器/系统临时文件
+Thumbs.db
+desktop.ini
+.DS_Store

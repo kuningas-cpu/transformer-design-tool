@@ -1,0 +1,1129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Transformer Design Tool v2 / 变压器快速设计工具 v2（校核版）</title>
+<style>
+  :root{--bg:#f4f7fb;--card:#fff;--border:#dfe7f5;--primary:#2563eb;--primary-soft:#eaf2ff;--text:#1f2937;--muted:#6b7280;--good:#0f766e;--warn:#b45309;--bad:#b91c1c;}
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:"Segoe UI",Tahoma,Arial,sans-serif;background:var(--bg);color:var(--text);}
+  .wrap{max-width:1280px;margin:24px auto;padding:0 16px 48px;}
+  .header{background:linear-gradient(135deg,#1e3a8a,#2563eb);color:#fff;padding:20px 24px;border-radius:14px;box-shadow:0 8px 24px rgba(37,99,235,.15);margin-bottom:20px;}
+  .header h1{margin:0;font-size:25px;font-weight:700;}
+  .header p{margin:8px 0 0;color:rgba(255,255,255,.92);font-size:13.5px;line-height:1.7;}
+  .grid{display:grid;grid-template-columns:1.15fr 1fr;gap:20px;align-items:start;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:0 4px 12px rgba(15,23,42,.04);padding:18px;margin-bottom:20px;}
+  .card h2{margin:0 0 6px;font-size:17px;}
+  .card h2+.sub{margin:0 0 14px;color:var(--muted);font-size:12.5px;line-height:1.7;}
+  h3{font-size:14.5px;margin:18px 0 8px;color:#111827;}
+  .two-col{display:grid;grid-template-columns:repeat(2,minmax(150px,1fr));gap:10px 14px;}
+  .three-col{display:grid;grid-template-columns:repeat(3,minmax(140px,1fr));gap:10px 14px;}
+  .field{display:flex;flex-direction:column;gap:5px;}
+  .field label{font-size:12px;color:var(--muted);font-weight:600;}
+  .field .unit{font-weight:400;}
+  input,select{width:100%;height:34px;padding:0 8px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--text);font-size:13.5px;}
+  input:focus,select:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(37,99,235,.12);}
+  .toolbar{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;}
+  button{border:none;border-radius:8px;padding:9px 14px;background:var(--primary);color:#fff;font-weight:600;cursor:pointer;font-size:13.5px;}
+  button.secondary{background:#e5e7eb;color:var(--text);}
+  button.mini{padding:3px 8px;font-size:11.5px;border-radius:6px;background:#e0e7ff;color:#3730a3;}
+  table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12.5px;}
+  th,td{padding:7px 8px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top;}
+  th{background:#f8fafc;font-weight:700;}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;}
+  .status{font-weight:700;padding:3px 9px;border-radius:999px;display:inline-block;font-size:12px;white-space:nowrap;}
+  .ok{background:#dcfce7;color:var(--good);}
+  .warn{background:#fef3c7;color:var(--warn);}
+  .bad{background:#fee2e2;color:var(--bad);}
+  .kv{display:grid;grid-template-columns:repeat(2,minmax(150px,1fr));gap:8px 14px;}
+  .kv .item{padding:7px 9px;background:#f8fafc;border:1px solid #e6eefb;border-radius:8px;}
+  .kv .item .k{display:block;font-size:11.5px;color:var(--muted);margin-bottom:3px;}
+  .kv .item .v{font-size:14.5px;font-weight:700;}
+  .hint{margin-top:12px;padding:10px 12px;background:#f8fafc;border:1px solid var(--border);border-radius:10px;color:#4b5563;font-size:12.5px;line-height:1.8;}
+  .err{margin-bottom:18px;padding:12px 14px;background:#fee2e2;border:1px solid #fecaca;color:#7f1d1d;border-radius:10px;font-size:13px;line-height:1.7;}
+  .mono{font-family:Consolas,"Courier New",monospace;font-size:12.3px;}
+  .scroll{max-height:460px;overflow:auto;}
+  @media (max-width:980px){.grid{grid-template-columns:1fr;}.two-col,.three-col,.kv{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <h1>变压器快速设计工具 v2 · 校核版</h1>
+    <p>Transformer Quick Design Tool v2 — 伏秒平衡法算匝数与磁通，逐项校核饱和、窗口填充率、电流密度、铜损、温升与气隙。<br>
+       结果可手工复核：设计步骤、输入电压扫描、内部一致性自检都在页面内给出。公式与 <span class="mono">transformer_design_common_topology_zh_en.md</span> 一致。</p>
+  </div>
+  <div id="errBox" class="err" hidden></div>
+  <div class="grid">
+    <div class="card">
+      <h2>设计输入 / Design Inputs</h2>
+      <p class="sub">带 * 的磁芯与材质参数是预设典型值，正式设计前请用数据手册数值覆盖。所有输入都参与计算。</p>
+      <h3>规格 / Specification</h3>
+      <div class="two-col">
+        <div class="field"><label for="topology">拓扑 / Topology</label>
+          <select id="topology">
+            <option value="Flyback">反激 / Flyback</option>
+            <option value="Active Clamp Flyback">有源钳位反激 / ACF</option>
+            <option value="Forward">单端正激 / Forward</option>
+            <option value="Push-Pull">推挽 / Push-Pull</option>
+            <option value="Half-Bridge">半桥 / Half-Bridge</option>
+            <option value="Full-Bridge">全桥 / Full-Bridge</option>
+            <option value="LLC Resonant">LLC 谐振 / LLC</option>
+          </select></div>
+        <div class="field"><label for="fs">开关频率 Fs <span class="unit">(kHz)</span></label><input id="fs" type="number" value="100" step="1" min="1"/></div>
+        <div class="field"><label for="vinMin">Vin_min <span class="unit">(V)</span></label><input id="vinMin" type="number" value="9" step="0.1" min="0.1"/></div>
+        <div class="field"><label for="vinMax">Vin_max <span class="unit">(V)</span></label><input id="vinMax" type="number" value="36" step="0.1" min="0.1"/></div>
+        <div class="field"><label for="vout">Vout <span class="unit">(V)</span></label><input id="vout" type="number" value="12" step="0.1" min="0.1"/></div>
+        <div class="field"><label for="iout">Iout <span class="unit">(A)</span></label><input id="iout" type="number" value="2" step="0.1" min="0.01"/></div>
+        <div class="field"><label for="vf">整流压降 Vf <span class="unit">(V)</span></label><input id="vf" type="number" value="0.5" step="0.05" min="0"/></div>
+        <div class="field"><label for="eta">效率 η</label><input id="eta" type="number" value="0.9" step="0.01" min="0.3" max="1"/></div>
+        <div class="field"><label for="vinNom">Vin_nom（LLC 用，0=自动中点）<span class="unit">(V)</span></label><input id="vinNom" type="number" value="0" step="0.1" min="0"/></div>
+        <div class="field"><label for="secRect">次级整流（桥式/推挽用）/ Secondary rectifier</label>
+          <select id="secRect"><option value="ct">中心抽头 2 绕组 / Center-tapped</option><option value="bridge">全桥 1 绕组 / Full bridge</option></select></div>
+      </div>
+      <h3>拓扑工作点 / Operating point</h3>
+      <div class="two-col">
+        <div class="field"><label for="dutyMax">Vin_min 处占空比 D_max</label><input id="dutyMax" type="number" value="0.45" step="0.01" min="0.05" max="0.8"/></div>
+        <div class="field"><label for="rippleK">原边纹波比 K = ΔI/Ipk <span class="unit">(反激类)</span></label><input id="rippleK" type="number" value="0.4" step="0.05" min="0.05" max="2"/></div>
+        <div class="field"><label for="rippleLout">输出电感纹波 ΔI_L <span class="unit">(A，正激/桥式用)</span></label><input id="rippleLout" type="number" value="0.6" step="0.05" min="0"/></div>
+        <div class="field"><label for="deltaBTarget">目标磁通摆幅 ΔB_pp <span class="unit">(T)</span></label><input id="deltaBTarget" type="number" value="0.2" step="0.01" min="0.02" max="0.6"/></div>
+        <div class="field"><label for="bsatDerate">Bsat 降额系数</label><input id="bsatDerate" type="number" value="0.8" step="0.05" min="0.3" max="1"/></div>
+        <div class="field"><label for="acFactor">高频电阻系数 F_R</label><input id="acFactor" type="number" value="1.2" step="0.05" min="1" max="3"/></div>
+      </div>
+      <h3>磁芯 / Core</h3>
+      <div class="two-col">
+        <div class="field"><label for="corePreset">磁芯预设 *</label><select id="corePreset"></select></div>
+        <div class="field"><label for="aw">窗口面积 Aw <span class="unit">(mm²)</span> *</label><input id="aw" type="number" value="54" step="1" min="1"/></div>
+        <div class="field"><label for="ae">有效截面积 Ae <span class="unit">(mm²)</span> *</label><input id="ae" type="number" value="52.2" step="0.1" min="0.5"/></div>
+        <div class="field"><label for="le">有效磁路长度 le <span class="unit">(mm)</span> *</label><input id="le" type="number" value="57.5" step="0.1" min="1"/></div>
+        <div class="field"><label for="mlt">平均匝长 MLT <span class="unit">(mm)</span> *</label><input id="mlt" type="number" value="50" step="0.5" min="5"/></div>
+        <div class="field"><label for="alNh">AL <span class="unit">(nH/N²)</span>，0 = 无气隙计算</label><input id="alNh" type="number" value="0" step="10" min="0"/></div>
+      </div>
+      <h3>材质 / Material</h3>
+      <div class="two-col">
+        <div class="field"><label for="matPreset">材质预设 *</label><select id="matPreset"></select></div>
+        <div class="field"><label for="bsat100">Bsat @100°C <span class="unit">(T)</span> *</label><input id="bsat100" type="number" value="0.39" step="0.01" min="0.1"/></div>
+        <div class="field"><label for="muI">初始磁导率 µi *</label><input id="muI" type="number" value="2300" step="50" min="10"/></div>
+        <div class="field"><label for="pcvRef">Pcv 锚点 @100kHz/100mT <span class="unit">(kW/m³)</span> *</label><input id="pcvRef" type="number" value="70" step="5" min="1"/></div>
+        <div class="field"><label for="lossA">频率指数 α *</label><input id="lossA" type="number" value="1.45" step="0.05" min="1" max="2.5"/></div>
+        <div class="field"><label for="lossB">磁通指数 β *</label><input id="lossB" type="number" value="2.5" step="0.05" min="1.5" max="3.5"/></div>
+      </div>
+      <h3>绕组 / Windings</h3>
+      <div class="three-col">
+        <div class="field"><label for="jTarget">目标电流密度 J <span class="unit">(A/mm²)</span></label><input id="jTarget" type="number" value="4" step="0.1" min="1" max="12"/></div>
+        <div class="field"><label for="wireModeP">原边线径模式</label><select id="wireModeP"><option value="auto">按 J 自动</option><option value="mm">mm</option><option value="awg">AWG</option></select></div>
+        <div class="field"><label for="wireDiaP">原边单股线径 <span class="unit">(mm / AWG)</span></label><input id="wireDiaP" type="number" value="0.45" step="0.01" min="0.02"/></div>
+        <div class="field"><label for="strandsP">原边股数（手动模式用）</label><select id="strandsP"></select></div>
+        <div class="field"><label for="parP">原边并联绕组数</label><select id="parP"></select></div>
+        <div class="field"><label for="wireModeS">副边线径模式</label><select id="wireModeS"><option value="auto">按 J 自动</option><option value="mm">mm</option><option value="awg">AWG</option></select></div>
+        <div class="field"><label for="wireDiaS">副边单股线径 <span class="unit">(mm / AWG)</span></label><input id="wireDiaS" type="number" value="0.8" step="0.01" min="0.02"/></div>
+        <div class="field"><label for="strandsS">副边股数（手动模式用）</label><select id="strandsS"></select></div>
+        <div class="field"><label for="parS">副边并联绕组数</label><select id="parS"></select></div>
+        <div class="field"><label for="kPack">绕线填充系数 k_pack</label><input id="kPack" type="number" value="1.25" step="0.05" min="1" max="3"/></div>
+        <div class="field"><label for="kuMax">窗口利用率上限 Ku</label><input id="kuMax" type="number" value="0.4" step="0.05" min="0.15" max="0.7"/></div>
+      </div>
+      <h3>校核模式 / Audit mode（评审供应商承认书用）</h3>
+      <div class="three-col">
+        <div class="field"><label for="auditMode">是否使用给定匝数</label>
+          <select id="auditMode"><option value="0">关：工具自行解算匝数</option><option value="1">开：按规格书匝数校核</option></select></div>
+        <div class="field"><label for="npGiven">给定 Np <span class="unit">(匝)</span></label><input id="npGiven" type="number" value="23" step="1" min="0"/></div>
+        <div class="field"><label for="nsGiven">给定 Ns <span class="unit">(匝)</span></label><input id="nsGiven" type="number" value="12" step="1" min="0"/></div>
+        <div class="field"><label for="dcrLimitP">原边 DCR 规格上限 <span class="unit">(mΩ，0=不校核)</span></label><input id="dcrLimitP" type="number" value="0" step="1" min="0"/></div>
+        <div class="field"><label for="dcrLimitS">副边 DCR 规格上限 <span class="unit">(mΩ，0=不校核)</span></label><input id="dcrLimitS" type="number" value="0" step="1" min="0"/></div>
+      </div>
+      <h3>热 / Thermal</h3>
+      <div class="three-col">
+        <div class="field"><label for="rth">热阻 Rth <span class="unit">(K/W)</span></label><input id="rth" type="number" value="28" step="1" min="1"/></div>
+        <div class="field"><label for="dtTarget">目标温升 ΔT <span class="unit">(K)</span></label><input id="dtTarget" type="number" value="40" step="5" min="5"/></div>
+        <div class="field"><label for="tamb">环境温度 <span class="unit">(°C)</span></label><input id="tamb" type="number" value="40" step="5" min="-20"/></div>
+      </div>
+      <div class="toolbar">
+        <button id="resetBtn" class="secondary" type="button">重置 / Reset</button>
+        <button id="exportBtn" type="button">导出 CSV / Export CSV</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>计算结果 / Results</h2>
+      <p class="sub" id="resultSub">—</p>
+      <div class="kv" id="keyParams"></div>
+      <h3>校核清单 / Design checks</h3>
+      <div id="checkTable"></div>
+      <h3>内部一致性自检 / Self-consistency</h3>
+      <div id="selfTest" class="hint"></div>
+      <h3>结论 / Verdict</h3>
+      <div id="verdict"></div>
+    </div>
+  </div>
+  <div class="card">
+    <h2>输入电压扫描 / Input-voltage sweep</h2>
+    <p class="sub">变压器类拓扑（正激/推挽/半桥/全桥）在固定变比下伏秒积与输入电压无关；反激类是电感储能，最恶劣点必须逐点扫：磁通峰值出现在 Vin_min，纹波摆幅出现在 Vin_max。LLC 的原边方波幅值随 Vin 变化，伏秒积也随输入变化。</p>
+    <div id="sweepTable"></div>
+  </div>
+  <div class="card">
+    <h2>设计步骤（可手工复核）/ Design steps</h2>
+    <div id="stepTable" class="scroll"></div>
+  </div>
+  <div class="card">
+    <h2>磁芯对比 / Core comparison</h2>
+    <p class="sub">把同一套输入逐一套到磁芯库每个磁芯上：绿=硬性校核全通过，黄=需复核，红=不通过。点"套用"写入左侧参数。</p>
+    <div id="coreTable" class="scroll"></div>
+  </div>
+  <div class="card">
+    <h2>拓扑公式与约定 / Formulas &amp; conventions</h2>
+    <div id="formulaTable"></div>
+    <div class="hint">
+      <strong>符号与约定</strong><br>
+      D：原边施加电压的占空比。反激=开关导通占空比；正激=单管导通占空比（1:1 复位绕组时 D≤0.5）；推挽/半桥/全桥=每个开关（桥臂）的导通占空比，D&lt;0.5，一周期内正负各一次。<br>
+      Np：推挽指两个半绕组的<strong>总</strong>匝数（每个半绕组 Np/2），其余拓扑就是原边匝数。<br>
+      ΔB_pp：一个开关周期内磁通密度峰峰摆幅；Bpk：磁通密度峰值。单极性拓扑（反激/正激）Bpk=ΔB_pp；双极性拓扑（推挽/半桥/全桥）Bpk=ΔB_pp/2。<br>
+      V·t：伏秒积 = 施加电压×导通时间，ΔB = V·t/(Np·Ae)，这是匝数与磁通的唯一依据（不含 4.44 正弦系数）。<br>
+      磁芯损耗按 ΔB_pp/2 作为等效交流幅值套用正弦拟合曲线；Ae/Aw/le/MLT/µi/Bsat/Pcv/α/β 全部可编辑，预设值为典型值。
+      <br>LLC：D 固定 0.5（半桥驱动），原边方波幅值 = Vin/2，因此 ΔB 随 Vin 变化，需要取 Vin_max 校核；谐振腔（Lr/Cr/Lm/Q）不在本工具范围。
+      <br>推挽：Np 为总匝数，但一次侧电流按每个半绕组单独计算（半绕组电流 = 2·Iout/n），窗口与铜损按"半绕组 ×2"累计。
+    </div>
+  </div>
+</div>
+<script id="tde-engine">
+/* ================= ENGINE-START ================= */
+var TD = (function () {
+  'use strict';
+  var MU0 = 4e-7 * Math.PI;
+  var RHO_CU_20 = 1.724e-8;
+  var ALPHA_CU = 0.00393;
+  var SKIN_K_20 = 66.1;
+  var MATERIALS = {
+    PC40:   { muI: 2300, bsat100: 0.39, pcvRef: 70,  a: 1.45, b: 2.50, kind: 'MnZn' },
+    PC44:   { muI: 2400, bsat100: 0.39, pcvRef: 60,  a: 1.45, b: 2.50, kind: 'MnZn' },
+    PC95:   { muI: 3300, bsat100: 0.40, pcvRef: 50,  a: 1.50, b: 2.45, kind: 'MnZn' },
+    N27:    { muI: 2000, bsat100: 0.38, pcvRef: 110, a: 1.45, b: 2.45, kind: 'MnZn' },
+    N87:    { muI: 2200, bsat100: 0.39, pcvRef: 70,  a: 1.45, b: 2.45, kind: 'MnZn' },
+    N97:    { muI: 2300, bsat100: 0.41, pcvRef: 45,  a: 1.50, b: 2.40, kind: 'MnZn' },
+    '3C90': { muI: 2300, bsat100: 0.32, pcvRef: 80,  a: 1.45, b: 2.40, kind: 'MnZn' },
+    '3C94': { muI: 2300, bsat100: 0.33, pcvRef: 65,  a: 1.45, b: 2.40, kind: 'MnZn' },
+    '3F3':  { muI: 1800, bsat100: 0.29, pcvRef: 40,  a: 1.60, b: 2.25, kind: 'MnZn-HF' },
+    '3F4':  { muI: 1600, bsat100: 0.30, pcvRef: 30,  a: 1.65, b: 2.20, kind: 'MnZn-HF' }
+  };
+  var CORES = [
+    { model: 'EE16/8/5',    family: 'EE',  ae: 20.1, le: 37.6, aw: 26.0, mlt: 34 },
+    { model: 'EE19/8/5',    family: 'EE',  ae: 22.5, le: 39.4, aw: 33.0, mlt: 36 },
+    { model: 'EE25/13/7',   family: 'EE',  ae: 52.2, le: 57.5, aw: 54.0, mlt: 50 },
+    { model: 'EE30/15/7',   family: 'EE',  ae: 60.0, le: 67.0, aw: 73.0, mlt: 57 },
+    { model: 'EE35/18/11',  family: 'EE',  ae: 101,  le: 68.4, aw: 106,  mlt: 66 },
+    { model: 'EFD15/8/5',   family: 'EFD', ae: 15.0, le: 34.0, aw: 19.0, mlt: 33 },
+    { model: 'EFD20/10/7',  family: 'EFD', ae: 31.0, le: 46.5, aw: 39.0, mlt: 41 },
+    { model: 'EFD30/15/9',  family: 'EFD', ae: 69.0, le: 64.8, aw: 82.0, mlt: 52 },
+    { model: 'ETD29/16/10', family: 'ETD', ae: 76.0, le: 70.4, aw: 104,  mlt: 62 },
+    { model: 'ETD34/17/11', family: 'ETD', ae: 97.1, le: 78.6, aw: 138,  mlt: 68 },
+    { model: 'PQ26/20',     family: 'PQ',  ae: 118,  le: 46.9, aw: 76.0, mlt: 50 },
+    { model: 'PQ35/35',     family: 'PQ',  ae: 212,  le: 60.4, aw: 158,  mlt: 62 },
+    { model: 'PQ50/50',     family: 'PQ',  ae: 328,  le: 93.6, aw: 375,  mlt: 97 },
+    { model: 'RM6/I',       family: 'RM',  ae: 36.6, le: 45.6, aw: 32.0, mlt: 40 },
+    { model: 'RM8/I',       family: 'RM',  ae: 64.0, le: 53.0, aw: 52.0, mlt: 48 },
+    { model: 'RM10/I',      family: 'RM',  ae: 98.0, le: 61.5, aw: 70.0, mlt: 55 },
+    { model: 'EP13',        family: 'EP',  ae: 19.6, le: 25.0, aw: 21.0, mlt: 30 },
+    { model: 'EP17',        family: 'EP',  ae: 33.9, le: 31.7, aw: 37.0, mlt: 36 },
+    { model: 'EPC13',       family: 'EPC', ae: 12.1, le: 24.2, aw: 14.0, mlt: 29 },
+    { model: 'EPC19',       family: 'EPC', ae: 21.5, le: 30.0, aw: 24.0, mlt: 36 },
+    { model: 'EPC25',       family: 'EPC', ae: 30.0, le: 35.0, aw: 34.0, mlt: 42 },
+    { model: 'Custom',      family: 'CUSTOM', ae: 50.0, le: 55.0, aw: 50.0, mlt: 50 }
+  ];
+  var TOPOS = {
+    'Flyback':              { kind: 'flyback', gFactor: 1, fluxV: 1,   bipolar: false, dLimit: 0.60, label: '反激 / Flyback' },
+    'Active Clamp Flyback': { kind: 'flyback', gFactor: 1, fluxV: 1,   bipolar: false, dLimit: 0.60, label: '有源钳位反激 / ACF' },
+    'Forward':              { kind: 'forward', gFactor: 1, fluxV: 1,   bipolar: false, dLimit: 0.50, label: '单端正激 / Forward' },
+    'Push-Pull':            { kind: 'bipolar', gFactor: 2, fluxV: 2,   bipolar: true,  dLimit: 0.48, label: '推挽 / Push-Pull' },
+    'Half-Bridge':          { kind: 'bipolar', gFactor: 1, fluxV: 0.5, bipolar: true,  dLimit: 0.48, label: '半桥 / Half-Bridge' },
+    'Full-Bridge':          { kind: 'bipolar', gFactor: 2, fluxV: 1,   bipolar: true,  dLimit: 0.48, label: '全桥 / Full-Bridge' },
+    'LLC Resonant':         { kind: 'llc',     gFactor: 1, fluxV: 0.5, bipolar: true,  dLimit: 0.50, label: 'LLC 谐振 / LLC' }
+  };
+  var AWG_TABLE = [10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44];
+  function awgToMm(awg) { return 0.127 * Math.pow(92, (36 - awg) / 39); }
+  function mmToAwg(mm) { return 36 - 39 * Math.log(mm / 0.127) / Math.log(92); }
+  function wireAreaMm2(diaMm) { return Math.PI / 4 * diaMm * diaMm; }
+  function rhoCu(tempC) { return RHO_CU_20 * (1 + ALPHA_CU * (tempC - 20)); }
+  function skinDepthMm(fsHz, tempC) { return SKIN_K_20 * Math.sqrt(rhoCu(tempC) / RHO_CU_20) / Math.sqrt(fsHz); }
+  function rmsTrapezoid(Ia, Ib, duty) {
+    if (duty <= 0) return 0;
+    var x = Ia * Ia + Ia * Ib + Ib * Ib;
+    return Math.sqrt(Math.max(duty, 0) * Math.max(x, 0) / 3);
+  }
+  function relErr(a, b) { if (Math.abs(b) < 1e-12) return Math.abs(a) < 1e-12 ? 0 : Infinity; return Math.abs(a - b) / Math.abs(b); }
+  function dutyForVin(T, n, Vo, Vin) {
+    if (T.kind === 'flyback') return n * Vo / (Vin + n * Vo);
+    if (T.kind === 'forward') return n * Vo / Vin;
+    if (T.kind === 'llc') return 0.5;
+    return n * Vo / (T.gFactor * Vin);
+  }
+  function voltSeconds(T, Vin, duty, Fs) { return T.fluxV * Vin * duty / Fs; }
+  function voutFromDuty(T, n, Vin, duty, Vf) {
+    var Vo;
+    if (T.kind === 'flyback') Vo = Vin * duty / ((1 - duty) * n);
+    else if (T.kind === 'forward') Vo = Vin * duty / n;
+    else Vo = T.gFactor * Vin * duty / n;
+    return Vo - Vf;
+  }
+  function operatingPoint(T, p) {
+    var D = dutyForVin(T, p.n, p.Vo, p.Vin);
+    var o = { Vin: p.Vin, D: D, n: p.n };
+    o.Vt = voltSeconds(T, p.Vin, D, p.Fs);
+    o.dBpp = o.Vt / (p.Np * p.Ae);
+    o.Bpk = T.bipolar ? o.dBpp / 2 : o.dBpp;
+    o.dIm = p.Lm > 0 ? o.Vt / p.Lm : 0;
+    o.CCM = true;
+    if (T.kind === 'flyback') {
+      var IavgOn = p.Pin / (p.Vin * D);
+      var dI = p.Vin * D / (p.Lp * p.Fs);
+      var Ipk = IavgOn + dI / 2, Iv = IavgOn - dI / 2;
+      if (Iv <= 1e-9) { o.CCM = false; Ipk = 2 * p.Pin / (p.Vin * D); Iv = 0; }
+      o.IpkPri = Ipk; o.Ivalley = Iv; o.dIpri = Ipk - Iv;
+      o.dIripple = dI;                      /* modelled pk-pk ripple from Lp (used by the flux self-test) */
+      o.IrmsPri = rmsTrapezoid(Ipk, Iv, D);
+      o.IsPkSec = p.n * Ipk; o.IsValleySec = p.n * Iv;
+      o.IrmsSec = p.n * rmsTrapezoid(Ipk, Iv, 1 - D);
+      o.Bpk = p.Lp * Ipk / (p.Np * p.Ae);
+      o.dBpp = p.Lp * (Ipk - Iv) / (p.Np * p.Ae);
+      o.IavgSec = (1 - D) * p.n * (Ipk + Iv) / 2;
+      o.PcoreDensity = null;
+    } else if (T.kind === 'forward') {
+      var Ia = Math.max(p.Iout - p.dIL / 2, 0), Ib = p.Iout + p.dIL / 2;
+      o.IsPkSec = Ib; o.IrmsSec = rmsTrapezoid(Ia, Ib, D);
+      o.IpkPri = Ib / p.n + o.dIm / 2;
+      o.Ivalley = Ia / p.n - o.dIm / 2;
+      o.IrmsPri = Math.sqrt(Math.pow(rmsTrapezoid(Ia / p.n, Ib / p.n, D), 2) + Math.pow(o.dIm * Math.sqrt(D / 12), 2));
+      o.dIpri = o.IpkPri - o.Ivalley;
+      o.IavgSec = D * (Ia + Ib) / 2;
+    } else if (T.kind === 'bipolar') {
+      var Ilo = Math.max(p.Iout - p.dIL / 2, 0), Ihi = p.Iout + p.dIL / 2;
+      var pp = (T.fluxV === 2);          /* push-pull: each half winding carries one pulse, 2x current */
+      var k = pp ? 2 : 1;
+      var dutyPri = pp ? D : 2 * D;
+      o.IsPkSec = Ihi;
+      o.IrmsSec = rmsTrapezoid(Ilo, Ihi, p.nSecWind === 2 ? D : 2 * D);
+      o.IpkPri = k * Ihi / p.n + o.dIm / 2;
+      o.Ivalley = k * Ilo / p.n - o.dIm / 2;
+      o.IrmsPri = Math.sqrt(Math.pow(rmsTrapezoid(k * Ilo / p.n, k * Ihi / p.n, dutyPri), 2) + Math.pow(o.dIm * Math.sqrt(dutyPri / 12), 2));
+      o.dIpri = o.IpkPri - o.Ivalley;
+      o.IavgSec = p.Iout;
+    } else {
+      var vinNom = p.VinNom > 0 ? p.VinNom : (p.Vin + p.Vin) / 2;
+      o.IrmsPri = p.Pin / (0.5 * vinNom);
+      o.IpkPri = o.IrmsPri * Math.SQRT2;
+      o.Ivalley = -o.IpkPri;
+      o.dIpri = 2 * o.IpkPri;
+      o.IsPkSec = p.Iout * 1.5708;
+      o.IrmsSec = p.Iout * 1.1107;
+      o.IavgSec = p.Iout;
+    }
+    return o;
+  }
+  function buildSweep(T, s) {
+    var out = [];
+    for (var i = 0; i < s.nin; i++) {
+      var f = s.nin === 1 ? 0 : i / (s.nin - 1);
+      out.push(operatingPoint(T, {
+        Vin: s.vinMin + (s.vinMax - s.vinMin) * f, n: s.n, Vo: s.Vo, VinNom: s.VinNom,
+        Iout: s.Iout, Pin: s.Pin, Fs: s.Fs, Lp: s.Lp, Lm: s.Lm, Np: s.Np, Ns: s.Ns,
+        Ae: s.Ae, dIL: s.dIL, nSecWind: s.nSecWind
+      }));
+    }
+    return out;
+  }
+  function resolveWire(mode, value, strands, par, Irms, jTarget, fsHz, tempC) {
+    var dia, auto = false;
+    if (mode === 'auto') {
+      auto = true;
+      /* pick (diameter, strand count) on a 0.05 mm grid: hit I_rms/J with the least copper overshoot,
+         prefer strands that are thin enough for the skin depth, mild preference for fewer strands */
+      var targetA = Irms / Math.max(jTarget, 0.1);
+      var skin = skinDepthMm(fsHz, Math.max(tempC, 25));
+      var pick = null;
+      for (var g = 1; g <= 40; g++) {
+        var dCand = g / 20;
+        var aCand = wireAreaMm2(dCand);
+        var nCand = Math.ceil(targetA / aCand / par - 1e-9);
+        if (nCand < 1) nCand = 1;
+        var totCand = nCand * aCand * par;
+        var score = (totCand / targetA - 1) + 0.004 * nCand + (dCand <= 1.5 * skin ? 0 : 0.5);
+        if (pick === null || score < pick.score - 1e-12) {
+          pick = { dia: dCand, n: nCand, area: aCand, score: score, total: totCand };
+        }
+      }
+      dia = pick.dia;
+      strands = pick.n;
+      return { dia: dia, area: pick.area, strands: strands, par: par, auto: true,
+        totalArea: pick.total, needArea: targetA, pickAwg: mmToAwg(dia), dNeed: Math.sqrt(4 * (targetA / strands / par) / Math.PI) };
+    }
+    dia = mode === 'awg' ? awgToMm(value) : value;
+    if (!isFinite(dia) || dia <= 0) dia = 0.1;
+    return { dia: dia, area: wireAreaMm2(dia), strands: strands, par: par, auto: auto, totalArea: wireAreaMm2(dia) * strands * par, needArea: Irms / Math.max(jTarget, 0.1), pickAwg: null, dNeed: dia };
+  }
+  function buildWindings(T, c) {
+    var w = [];
+    if (T.kind === 'bipolar' && T.fluxV === 2) {
+      w.push({ name: '原边半绕组 ×2', N: c.Np / 2, count: 2, Irms: c.IrmsPri, area: c.Aprim });
+    } else {
+      w.push({ name: '原边', N: c.Np, count: 1, Irms: c.IrmsPri, area: c.Aprim });
+    }
+    w.push({ name: '副边' + (c.nSecWind > 1 ? ' ×2' : ''), N: c.Ns, count: c.nSecWind, Irms: c.IrmsSec, area: c.Asec });
+    if (c.resetTurns > 0) w.push({ name: '复位绕组', N: c.resetTurns, count: 1, Irms: Math.max(c.dIm / Math.sqrt(12) * Math.sqrt(1 - c.D), 0.05), area: c.Aprim });
+    w.forEach(function (x) { x.mlt = c.mlt; x.acFactor = c.acFactor; });
+    return w;
+  }
+  function computeCopperLoss(windings, rho) {
+    var total = 0, per = [];
+    windings.forEach(function (w) {
+      var R = rho * (w.mlt * 1e-3) * w.N / (w.area * 1e-6);
+      var p = w.Irms * w.Irms * R * w.acFactor * w.count;
+      total += p;
+      per.push({ name: w.name, R: R, I: w.Irms, P: p, N: w.N, count: w.count });
+    });
+    return { Pcu: total, per: per };
+  }
+  function design(I) {
+    var errs = [], warns = [], steps = [], checks = [], self = [], sweep = [];
+    var T = TOPOS[I.topology] || TOPOS['Flyback'];
+    var Po = I.vout * I.iout;
+    var Vo = I.vout + I.vf;
+    var eta = Math.min(Math.max(I.eta, 0.3), 1);
+    var Pin = Po / eta;
+    var Fs = I.fs * 1000;
+    var Ae = I.ae * 1e-6;
+    var le = I.le * 1e-3;
+    var Aw = I.aw;
+    var BsatAllow = I.bsat100 * I.bsatDerate;
+    var dLimit = T.dLimit;
+    var dMax = Math.min(I.dutyMax, dLimit);
+    if (I.fs <= 0) errs.push('开关频率必须大于 0');
+    if (!(I.vinMin > 0) || I.vinMax < I.vinMin) errs.push('输入电压范围无效（0 < Vin_min ≤ Vin_max）');
+    if (!(I.vout > 0) || !(I.iout > 0)) errs.push('输出电压与电流必须大于 0');
+    if (!(I.ae > 0) || !(I.aw > 0) || !(I.le > 0) || !(I.mlt > 0)) errs.push('磁芯参数 Ae/Aw/le/MLT 必须大于 0');
+    if (!(I.bsat100 > 0)) errs.push('Bsat 必须大于 0');
+    if (errs.length) return { ok: false, errs: errs, warns: warns, steps: steps, checks: checks, sweep: sweep, self: self, summary: {}, points: {}, windings: [] };
+    if (I.dutyMax > dLimit + 1e-9) warns.push('占空比输入 ' + I.dutyMax + ' 超过 ' + T.label + ' 的物理上限 ' + dLimit + '，已按 ' + dLimit + ' 计算。');
+    steps.push({ t: '功率', f: 'Po = Vout·Iout ;  Pin = Po/η', s: Po.toFixed(2) + ' W ;  ' + Po.toFixed(2) + '/' + eta + ' = ' + Pin.toFixed(2) + ' W' });
+    steps.push({ t: '整流后目标电压', f: 'Vo = Vout + Vf', s: I.vout + ' + ' + I.vf + ' = ' + Vo.toFixed(2) + ' V' });
+    var nTarget;
+    if (T.kind === 'flyback') {
+      nTarget = I.vinMin * dMax / ((1 - dMax) * Vo);
+      steps.push({ t: '变比 n = Np/Ns', f: 'Vo = Vin_min·D_max/((1-D_max)·n)  →  n = Vin_min·D_max/((1-D_max)·Vo)',
+        s: I.vinMin + '×' + dMax + ' / (' + (1 - dMax).toFixed(3) + '×' + Vo.toFixed(2) + ') = ' + nTarget.toFixed(4) });
+    } else if (T.kind === 'forward') {
+      nTarget = I.vinMin * dMax / Vo;
+      steps.push({ t: '变比 n = Np/Ns', f: 'Vo = Vin_min·D_max/n  →  n = Vin_min·D_max/Vo',
+        s: I.vinMin + '×' + dMax + ' / ' + Vo.toFixed(2) + ' = ' + nTarget.toFixed(4) });
+    } else if (T.kind === 'bipolar') {
+      nTarget = T.gFactor * I.vinMin * dMax / Vo;
+      steps.push({ t: '变比 n = Np/Ns', f: 'Vo = g·Vin_min·D_max/n  (g = ' + T.gFactor + ')  →  n = g·Vin_min·D_max/Vo',
+        s: T.gFactor + '×' + I.vinMin + '×' + dMax + ' / ' + Vo.toFixed(2) + ' = ' + nTarget.toFixed(4) });
+    } else {
+      var vNom = I.vinNom > 0 ? I.vinNom : (I.vinMin + I.vinMax) / 2;
+      nTarget = vNom / (2 * Vo);
+      steps.push({ t: 'LLC 变比 n = Np/Ns', f: '半桥驱动谐振腔：Vo = Vin_nom/(2n)  →  n = Vin_nom/(2·Vo)',
+        s: vNom.toFixed(2) + ' / (2×' + Vo.toFixed(2) + ') = ' + nTarget.toFixed(4) });
+      warns.push('LLC：本工具只算变比/匝数/磁通/窗口/损耗，谐振腔（Lr、Cr、Lm、Q、增益曲线、软开关范围）需要另外设计。');
+    }
+    var Lp = 0, LpTarget = 0, Kal = 0, IpkD = 0, dID = 0, IvD = 0;
+    if (T.kind === 'flyback') {
+      Kal = Math.min(I.rippleK, 2);
+      if (I.rippleK > 2 + 1e-9) warns.push('纹波比 K=' + I.rippleK + ' 无解（三角波电流不允许为负），已按 K=2（BCM 边界）计算。');
+      if (Kal >= 2 - 1e-9) {
+        /* boundary mode: the valley current is zero, delta-I equals the peak */
+        IpkD = 2 * Pin / (I.vinMin * dMax);
+        dID = IpkD;
+        IvD = 0;
+      } else {
+        IpkD = (Pin / I.vinMin / dMax) / (1 - Kal / 2);
+        dID = Kal * IpkD;
+        IvD = IpkD - dID;
+      }
+      LpTarget = I.vinMin * dMax / (dID * Fs);
+      Lp = LpTarget;
+      steps.push({ t: '原边峰值电流（Vin_min）', f: 'I_avg(on) = Pin/(Vin_min·D_max) ;  Ipk = I_avg(on)/(1-K/2)',
+        s: Pin.toFixed(2) + '/' + I.vinMin + '/' + dMax + ' = ' + (Pin / I.vinMin / dMax).toFixed(3) + ' A ;  /(1-' + (Kal / 2).toFixed(2) + ') → ' + IpkD.toFixed(3) + ' A' });
+      steps.push({ t: '纹波与谷值电流', f: 'ΔI = K·Ipk ;  I_valley = Ipk - ΔI',
+        s: 'ΔI = ' + dID.toFixed(3) + ' A ;  I_valley = ' + IvD.toFixed(3) + ' A  (' + (Kal < 1.999 ? 'CCM' : 'BCM/DCM 边界') + ')' });
+      steps.push({ t: '原边电感 Lp', f: 'Lp = Vin_min·D_max/(ΔI·Fs)',
+        s: I.vinMin + '×' + dMax + ' / (' + dID.toFixed(3) + '×' + I.fs + 'k) = ' + (LpTarget * 1e6).toFixed(2) + ' µH（纹波目标值）' });
+    }
+    var dvMin = dutyForVin(T, nTarget, Vo, I.vinMin);
+    var dvMax = dutyForVin(T, nTarget, Vo, I.vinMax);
+    var vtMin = voltSeconds(T, I.vinMin, dvMin, Fs);
+    var vtMax = voltSeconds(T, I.vinMax, dvMax, Fs);
+    var vtWorst = Math.max(vtMin, vtMax);
+    var npMinFlux = Math.max(1, Math.ceil(vtWorst / (Ae * I.deltaBTarget) - 1e-9));
+    steps.push({ t: '伏秒积（标准式 ΔB = V·t/(Np·Ae)）', f: 'V·t = k_v·Vin·D/Fs',
+      s: 'Vin_min: ' + (vtMin * 1e6).toFixed(2) + ' V·µs ;  Vin_max: ' + (vtMax * 1e6).toFixed(2) + ' V·µs' + (relErr(vtMin, vtMax) < 1e-9 ? '（变比固定→与输入电压无关）' : '') });
+    steps.push({ t: '按目标磁通摆幅定 Np 下限', f: 'Np ≥ V·t_worst/(Ae·ΔB_target)',
+      s: (vtWorst * 1e6).toFixed(2) + ' / (' + I.ae + ' × ' + I.deltaBTarget + ') → ≥ ' + npMinFlux + ' 匝' });
+    var npMinSat = 0;
+    if (T.kind === 'flyback') {
+      npMinSat = Math.ceil(Lp * IpkD / (Ae * BsatAllow) - 1e-9);
+      steps.push({ t: '按不饱和定 Np 下限', f: 'Bpk = Lp·Ipk/(Np·Ae) ≤ Bsat·k_der  →  Np ≥ Lp·Ipk/(Ae·Bsat·k_der)',
+        s: '(' + (Lp * 1e6).toFixed(2) + 'µH × ' + IpkD.toFixed(3) + 'A) / (' + I.ae + 'mm² × ' + BsatAllow.toFixed(3) + 'T) → ≥ ' + npMinSat + ' 匝' });
+    }
+    /* 校核模式：匝数由用户（供应商规格书）给定，工具只做校核，不自行解算 */
+    var NpGiven = (I.npGiven > 0 && I.nsGiven > 0);
+    var Np, npALscan = 0;
+    if (NpGiven) {
+      Np = Math.max(1, Math.round(I.npGiven));
+      steps.push({ t: '匝数（校核模式：采用给定匝数）', f: 'Np/Ns 由规格书给定，不再解算',
+        s: 'Np = ' + Np + ' 匝；工具解算的最小匝数：磁通 ≥ ' + npMinFlux + ' 匝' + (T.kind === 'flyback' ? '，不饱和 ≥ ' + npMinSat + ' 匝' : '') });
+      if (T.kind === 'flyback') {
+        if (I.alNh > 0) {
+          Lp = I.alNh * 1e-9 * Np * Np;
+          steps.push({ t: '实际电感', f: 'Lp = AL·Np²（由实测 AL 与给定匝数得到）',
+            s: 'AL = ' + I.alNh + ' nH/N² × ' + Np + '² = ' + (Lp * 1e6).toFixed(2) + ' µH（按纹波目标应取 ' + (LpTarget * 1e6).toFixed(2) + ' µH）' });
+        } else {
+          Lp = LpTarget;
+        }
+      }
+    } else if (T.kind === 'flyback' && I.alNh > 0) {
+      /* Given AL: Lp = AL*Np^2, so Bpk = AL*Np*Iavg/Ae + Vin*D/(2*Np*Ae*Fs) is not monotonic in Np.
+         Scan for the smallest Np that keeps Bpk below the derated Bsat and the swing below target. */
+      var ALg = I.alNh * 1e-9;
+      var bestN = 1, bestBpk = Infinity, scanRow = null;
+      for (var scan = 1; scan <= 4000; scan++) {
+        var dSmin = dutyForVin(T, nTarget, Vo, I.vinMin);
+        var dSmax = dutyForVin(T, nTarget, Vo, I.vinMax);
+        var vtA = Math.max(voltSeconds(T, I.vinMin, dSmin, Fs), voltSeconds(T, I.vinMax, dSmax, Fs));
+        var LpA = ALg * scan * scan;
+        var IavgA = Pin / (I.vinMin * dSmin);
+        var IpkA = IavgA + (I.vinMin * dSmin / (LpA * Fs)) / 2;
+        var BpkA = LpA * IpkA / (scan * Ae);
+        var dBA = vtA / (scan * Ae);
+        if (BpkA < bestBpk) { bestBpk = BpkA; bestN = scan; }
+        if (BpkA <= BsatAllow && dBA <= I.deltaBTarget) { npALscan = scan; scanRow = { Np: scan, Lp: LpA, Ipk: IpkA, Bpk: BpkA, dB: dBA }; break; }
+      }
+      Np = npALscan > 0 ? npALscan : bestN;
+      steps.push({ t: '按给定 AL 确定匝数', f: 'Lp = AL·Np² ;  Bpk(Np) = AL·Np·I_avg/Ae + Vin·D/(2·Np·Ae·Fs)（对 Np 非单调）',
+        s: npALscan > 0
+          ? ('AL = ' + I.alNh + ' nH/N² → 满足 Bpk ≤ ' + BsatAllow.toFixed(3) + ' T 且 ΔB_pp ≤ ' + I.deltaBTarget + ' T 的最小匝数 Np = ' + npALscan + '（Lp = ' + (scanRow.Lp * 1e6).toFixed(2) + ' µH, Bpk = ' + scanRow.Bpk.toFixed(3) + ' T）')
+          : ('AL = ' + I.alNh + ' nH/N² 时无法同时满足 Bpk ≤ ' + BsatAllow.toFixed(3) + ' T 与 ΔB_pp ≤ ' + I.deltaBTarget + ' T；最小 Bpk = ' + bestBpk.toFixed(3) + ' T @ Np = ' + bestN + '，需要更小的 AL（更大气隙）或更大的 Ae') });
+      if (!npALscan) warns.push('给定 AL 无法满足磁通限值：AL 偏大（气隙偏小）或磁芯偏小，见校核清单。');
+      Lp = ALg * Np * Np;
+      steps.push({ t: '实际电感', f: 'Lp = AL·Np²（取代按纹波目标反算的 Lp）',
+        s: 'Lp 目标 ' + (LpTarget * 1e6).toFixed(2) + ' µH → 实际 ' + (Lp * 1e6).toFixed(2) + ' µH（' + (Lp >= LpTarget ? '纹波更小' : '纹波更大') + '）' });
+    } else {
+      Np = Math.max(npMinFlux, npMinSat, 1);
+    }
+    var pick = (function () {
+      if (NpGiven) {
+        var NsG = Math.max(1, Math.round(I.nsGiven));
+        var nG = Np / NsG;
+        return { Ns: NsG, n: nG, dMin: dutyForVin(T, nG, Vo, I.vinMin), dMax: dutyForVin(T, nG, Vo, I.vinMax), score: 0 };
+      }
+      var best = null, center = Math.max(1, Math.round(Np / nTarget));
+      for (var k = center - 3; k <= center + 3; k++) {
+        if (k < 1) continue;
+        var nA = Np / k;
+        var dAtMin = dutyForVin(T, nA, Vo, I.vinMin);
+        var dAtMax = dutyForVin(T, nA, Vo, I.vinMax);
+        var score;
+        if (T.kind === 'llc') {
+          score = Math.abs(vNom / (2 * nA) - Vo) / Vo;    /* LLC duty is fixed: rank by resonant-point output error */
+        } else {
+          score = Math.abs(dAtMin - dMax);
+          if (dAtMin > dLimit + 1e-12) score += 10;
+          if (dAtMax < 0.02) score += 1;
+        }
+        if (best === null || score < best.score - 1e-12) best = { Ns: k, n: nA, dMin: dAtMin, dMax: dAtMax, score: score };
+      }
+      if (best === null) {                       /* defensive: never leave the turn count undefined */
+        var nFb = Np;
+        best = { Ns: 1, n: nFb, dMin: dutyForVin(T, nFb, Vo, I.vinMin), dMax: dutyForVin(T, nFb, Vo, I.vinMax), score: 0 };
+      }
+      return best;
+    })();
+    var Ns = pick.Ns, nAch = pick.n;
+    steps.push({ t: NpGiven ? '匝比（校核模式）' : '整数匝数',
+      f: NpGiven ? 'n = Np/Ns（给定值）' : 'Np = max(磁通下限, 饱和下限)；Ns 取使 Vin_min 处占空比最接近 D_max 且不超限的整数',
+      s: 'Np = ' + Np + ' 匝, Ns = ' + Ns + ' 匝, 实际 n = ' + nAch.toFixed(4) + '（' + (NpGiven ? '规格值' : '目标 ' + nTarget.toFixed(4)) + '）' });
+    var dNeedMin = dutyForVin(T, nAch, Vo, I.vinMin);
+    var dNeedMax = dutyForVin(T, nAch, Vo, I.vinMax);
+    var voutAtDmax = voutFromDuty(T, nAch, I.vinMin, dMax, I.vf);
+    var nSecWind = (T.kind === 'bipolar' && I.secRect === 'ct') ? 2 : 1;
+    var ALauto = I.alNh > 0 ? I.alNh * 1e-9 : MU0 * I.muI * Ae / le;
+    var Lm = ALauto * Np * Np;
+    if (T.kind !== 'flyback') Lp = Lm;   /* for transformer topologies the primary inductance *is* Lm */
+    var common = { n: nAch, Vo: Vo, VinNom: I.vinNom > 0 ? I.vinNom : (I.vinMin + I.vinMax) / 2, Iout: I.iout, Pin: Pin, Fs: Fs, Lp: Lp, Lm: Lm, Np: Np, Ns: Ns, Ae: Ae, dIL: I.rippleLout, nSecWind: nSecWind };
+    function pt(Vin) { var q = {}; for (var key in common) q[key] = common[key]; q.Vin = Vin; return operatingPoint(T, q); }
+    var pts = { vinMin: pt(I.vinMin), vinMax: pt(I.vinMax) };
+    sweep = buildSweep(T, { nin: 9, vinMin: I.vinMin, vinMax: I.vinMax, n: common.n, Vo: Vo, VinNom: common.VinNom, Iout: I.iout, Pin: Pin, Fs: Fs, Lp: Lp, Lm: Lm, Np: Np, Ns: Ns, Ae: Ae, dIL: I.rippleLout, nSecWind: nSecWind });
+    var maxBpk = Math.max(pts.vinMin.Bpk, pts.vinMax.Bpk);
+    var maxDB = Math.max(pts.vinMin.dBpp, pts.vinMax.dBpp);
+    var maxIpkPri = Math.max(pts.vinMin.IpkPri, pts.vinMax.IpkPri);
+    var maxIrmsPri = Math.max(pts.vinMin.IrmsPri, pts.vinMax.IrmsPri);
+    var maxIrmsSec = Math.max(pts.vinMin.IrmsSec, pts.vinMax.IrmsSec);
+    var maxIsPk = Math.max(pts.vinMin.IsPkSec, pts.vinMax.IsPkSec);
+    var wireP = resolveWire(I.wireModeP, I.wireDiaP, I.strandsP, I.parP, maxIrmsPri, I.jTarget, Fs, I.tamb + 40);
+    var wireS = resolveWire(I.wireModeS, I.wireDiaS, I.strandsS, I.parS, maxIrmsSec, I.jTarget, Fs, I.tamb + 40);
+    var Aprim = wireP.area * wireP.strands * wireP.par;
+    var Asec = wireS.area * wireS.strands * wireS.par;
+    var Jpri = maxIrmsPri / Math.max(Aprim, 1e-9);
+    var Jsec = maxIrmsSec / Math.max(Asec, 1e-9);
+    if (wireP.auto) steps.push({ t: '原边自动线径（按 J 选线径+股数）', f: 'A_need = I_rms/J ; 在 0.05 mm 线径栅格上取铜面积超出最少、股线细于 1.5δ 的组合',
+      s: '需要 ' + wireP.needArea.toFixed(3) + ' mm² → 取 ' + wireP.dia.toFixed(2) + ' mm ×' + wireP.strands + ' 股 ×' + wireP.par +
+         ' 并联 = ' + wireP.totalArea.toFixed(3) + ' mm²（≈ AWG ' + wireP.pickAwg.toFixed(1) + '），实际 J_p = ' + Jpri.toFixed(2) + ' A/mm²' });
+    if (wireS.auto) steps.push({ t: '副边自动线径（按 J 选线径+股数）', f: 'A_need = I_rms/J ; 在 0.05 mm 线径栅格上取铜面积超出最少、股线细于 1.5δ 的组合',
+      s: '需要 ' + wireS.needArea.toFixed(3) + ' mm² → 取 ' + wireS.dia.toFixed(2) + ' mm ×' + wireS.strands + ' 股 ×' + wireS.par +
+         ' 并联 = ' + wireS.totalArea.toFixed(3) + ' mm²（≈ AWG ' + wireS.pickAwg.toFixed(1) + '），实际 J_s = ' + Jsec.toFixed(2) + ' A/mm²' });
+    var resetTurns = 0;
+    /* flux must fully reset inside the off-time: Vin·D·T/Np = Vin·t_reset/Nr with t_reset ≤ (1-D)T
+       ->  Nr/Np ≥ D/(1-D)   (equivalent to the textbook D_max = Nr/(Nr+Np); a 1:1 winding gives D ≤ 0.5) */
+    if (T.kind === 'forward') resetTurns = Math.max(1, Math.ceil(Np * dMax / (1 - dMax) - 1e-9));
+    var copperPrimary = Np * Aprim;
+    var copperReset = resetTurns * Aprim;
+    var copperSecondary = Ns * Asec * nSecWind;
+    var copperTotal = copperPrimary + copperSecondary + copperReset;
+    var fillPct = copperTotal * I.kPack / Aw * 100;
+    var AwReq = copperTotal * I.kPack / I.kuMax;
+    if (T.kind === 'forward') steps.push({ t: '磁复位绕组', f: 'Vin·D·T/Np = Vin·t_reset/Nr，t_reset ≤ (1-D)T  →  Nr/Np ≥ D/(1-D)（等价 D_max = Nr/(Nr+Np)）',
+      s: 'Nr = ' + resetTurns + ' 匝，Nr/Np = ' + (resetTurns / Np).toFixed(3) + ' ≥ ' + (dMax / (1 - dMax)).toFixed(3) +
+         '；复位占用周期 ' + (dMax * Np / resetTurns * 100).toFixed(0) + '% ≤ ' + ((1 - dMax) * 100).toFixed(0) + '%' });
+    steps.push({ t: '窗口填充校核（一次+二次共享窗口）', f: 'fill = (Np·A_cuP + Ns·A_cuS·n_sec + N_reset·A_cuP)·k_pack/Aw',
+      s: '铜面积 ' + copperTotal.toFixed(2) + ' mm² × ' + I.kPack + ' / Aw ' + Aw + ' mm² = ' + fillPct.toFixed(1) + '%' + (resetTurns ? '（含复位绕组 ' + resetTurns + ' 匝）' : '') + ' ; 满足 Ku=' + (I.kuMax * 100).toFixed(0) + '% 需 Aw ≥ ' + AwReq.toFixed(1) + ' mm²' });
+    var windings = buildWindings(T, { Np: Np, Ns: Ns, nSecWind: nSecWind, Aprim: Aprim, Asec: Asec, IrmsPri: maxIrmsPri, IrmsSec: maxIrmsSec, resetTurns: resetTurns, dIm: Math.max(pts.vinMin.dIm, pts.vinMax.dIm), D: dMax, mlt: I.mlt, acFactor: I.acFactor });
+    var ALreq = 0, gapMm = 0;
+    if (T.kind === 'flyback') {
+      ALreq = Lp / (Np * Np);
+      gapMm = (MU0 * Ae / ALreq - le / Math.max(I.muI, 1)) * 1000;
+      steps.push({ t: '所需 AL 与气隙', f: 'AL_req = Lp/Np² ;  l_g = μ0·Ae/AL_req - le/µi',
+        s: 'AL_req = ' + (ALreq * 1e9).toFixed(1) + ' nH/N² ;  l_g ≈ ' + gapMm.toFixed(3) + ' mm ' + (gapMm < 0 ? '（材料本身 AL 已够小，无需气隙）' : '') });
+    } else {
+      steps.push({ t: '磁化电感与励磁纹波', f: 'Lm = AL·Np² ;  ΔI_m = V·t/Lm',
+        s: 'AL = ' + (ALauto * 1e9).toFixed(0) + ' nH/N²' + (I.alNh > 0 ? '（用户输入）' : '（按无气隙 µi·Ae/le）') + ' ;  Lm = ' + (Lm * 1e6).toFixed(1) + ' µH ;  ΔI_m(最恶劣) = ' + (Math.max(pts.vinMin.dIm, pts.vinMax.dIm) * 1000).toFixed(1) + ' mA' });
+    }
+    var Bac = maxDB / 2;
+    var Pcv = I.pcvRef * Math.pow(I.fs / 100, I.lossA) * Math.pow((Bac * 1000) / 100, I.lossB);
+    var Ve = I.ae * I.le;
+    var Pcore = Pcv * Ve * 1e-6;
+    var loss = { Pcore: Pcore, Pcu: 0, Ptotal: 0, dT: 0, tempC: I.tamb, per: [] };
+    for (var it = 0; it < 30; it++) {
+      var rs = computeCopperLoss(windings, rhoCu(loss.tempC));
+      loss.Pcu = rs.Pcu; loss.per = rs.per;
+      loss.Ptotal = rs.Pcu + Pcore;
+      var newT = I.tamb + loss.Ptotal * I.rth;
+      var conv = Math.abs(newT - loss.tempC) < 0.01;
+      loss.tempC = newT;
+      if (conv) break;
+    }
+    loss.dT = loss.Ptotal * I.rth;
+    loss.tempC = I.tamb + loss.dT;
+    for (var it2 = 0; it2 < 8; it2++) {
+      var rs2 = computeCopperLoss(windings, rhoCu(loss.tempC));
+      loss.Pcu = rs2.Pcu; loss.per = rs2.per;
+      loss.Ptotal = rs2.Pcu + Pcore;
+      loss.dT = loss.Ptotal * I.rth;
+      loss.tempC = I.tamb + loss.dT;
+    }
+    var RthMax = loss.Ptotal > 0 ? I.dtTarget / loss.Ptotal : Infinity;
+    /* DCR：规格书写 25°C，实际工作温度下更高，两种都给出 */
+    function pickRdc(per) {
+      var p = 0, s = 0;
+      per.forEach(function (x) {
+        if (/原边/.test(x.name)) p = Math.max(p, x.R);
+        if (/副边/.test(x.name)) s = Math.max(s, x.R);
+      });
+      return { p: p, s: s };
+    }
+    var rdc25 = pickRdc(computeCopperLoss(windings, rhoCu(25)).per);
+    var RdcPri25 = rdc25.p, RdcSec25 = rdc25.s;
+    var RdcPri = 0, RdcSec = 0;
+    loss.per.forEach(function (x) {
+      if (/原边/.test(x.name)) RdcPri = Math.max(RdcPri, x.R);
+      if (/副边/.test(x.name)) RdcSec = Math.max(RdcSec, x.R);
+    });
+    steps.push({ t: '磁芯损耗', f: 'B_ac = ΔB_pp/2 ;  Pcv = Pcv_ref·(Fs/100kHz)^α·(B_ac/100mT)^β ;  P_core = Pcv·Ve',
+      s: 'B_ac = ' + (Bac * 1000).toFixed(1) + ' mT → Pcv = ' + Pcv.toFixed(1) + ' kW/m³ ;  Ve = ' + Ve.toFixed(0) + ' mm³ → P_core = ' + Pcore.toFixed(3) + ' W' });
+    steps.push({ t: '铜损', f: 'R_dc = ρ(T)·MLT·N/(A_strand·股数·并联) ;  P_cu = Σ I_rms²·R_dc·F_R',
+      s: loss.per.map(function (x) { return x.name + ': R=' + x.R.toFixed(3) + 'Ω, I_rms=' + x.I.toFixed(2) + 'A, P=' + x.P.toFixed(3) + 'W'; }).join(' ;  ') + '  → P_cu = ' + loss.Pcu.toFixed(3) + ' W' });
+    steps.push({ t: '温升', f: 'ΔT = (P_core + P_cu)·Rth',
+      s: '(' + Pcore.toFixed(3) + ' + ' + loss.Pcu.toFixed(3) + ') × ' + I.rth + ' = ' + loss.dT.toFixed(1) + ' K（绕组温度≈' + loss.tempC.toFixed(0) + '°C）；要满足 ' + I.dtTarget + ' K 需 Rth ≤ ' + (isFinite(RthMax) ? RthMax.toFixed(1) : '-') + ' K/W' });
+    var skin = skinDepthMm(Fs, loss.tempC);
+    function addCheck(name, value, unit, limit, limitUnit, pass, warnRatio) {
+      checks.push({ name: name, value: value, unit: unit, limit: limit, limitUnit: limitUnit, pass: !!pass, warn: !!pass && Math.abs(value) > Math.abs(limit) * (warnRatio === undefined ? 0.9 : warnRatio) });
+    }
+    addCheck('磁通峰值 Bpk ≤ Bsat·降额', maxBpk, 'T', BsatAllow, 'T', maxBpk <= BsatAllow, 0.9);
+    addCheck('Vin_min 所需占空比 D', dNeedMin, '', dLimit, '', dNeedMin <= dLimit + 1e-9, 0.92);
+    addCheck('窗口填充率', fillPct, '%', I.kuMax * 100, '%', fillPct <= I.kuMax * 100 + 1e-9, 0.9);
+    /* J is an experience-based proxy, not a physical limit: the binding constraint is the temperature rise,
+       so exceeding the target J only raises a flag (小磁芯散热面积相对更大，J 可以更高). */
+    addCheck('原边电流密度 J_p（参考值，以温升为准）', Jpri, 'A/mm²', I.jTarget * 1.25, 'A/mm²', true, 0.8);
+    addCheck('副边电流密度 J_s（参考值，以温升为准）', Jsec, 'A/mm²', I.jTarget * 1.25, 'A/mm²', true, 0.8);
+    addCheck('温升 ΔT', loss.dT, 'K', I.dtTarget, 'K', loss.dT <= I.dtTarget, 0.85);
+    addCheck('股线直径 vs 趋肤深度', Math.max(wireP.dia, wireS.dia), 'mm', 3 * skin, 'mm', Math.max(wireP.dia, wireS.dia) <= 3 * skin, 0.5);
+    if (NpGiven) {
+      addCheck('给定 Np ≥ 磁通要求的最小匝数', Np, '匝', npMinFlux, '匝', Np >= npMinFlux - 1e-9, 1.05);
+      if (T.kind === 'flyback') addCheck('给定 Np ≥ 不饱和要求的最小匝数', Np, '匝', npMinSat, '匝', Np >= npMinSat - 1e-9, 1.05);
+    }
+    if (I.dcrLimitP > 0) addCheck('原边 DCR @25°C（对规格值）', RdcPri25 * 1000, 'mΩ', I.dcrLimitP, 'mΩ', RdcPri25 * 1000 <= I.dcrLimitP, 0.9);
+    if (I.dcrLimitS > 0) addCheck('副边 DCR @25°C（对规格值）', RdcSec25 * 1000, 'mΩ', I.dcrLimitS, 'mΩ', RdcSec25 * 1000 <= I.dcrLimitS, 0.9);
+    if (T.kind === 'flyback') addCheck('所需气隙 l_g', gapMm, 'mm', 2.0, 'mm', gapMm <= 2.0, 0.75);
+    if (T.kind === 'forward') addCheck('复位绕组匝比 Nr/Np（需 ≥ D/(1-D)）', resetTurns / Np, '', dMax / (1 - dMax), '', resetTurns / Np >= dMax / (1 - dMax) - 1e-9, 0.98);
+    if (T.kind === 'bipolar') addCheck('Vin_max 处占空比下限', dNeedMax, '', 0.02, '', dNeedMax >= 0.02, 2);
+    if (T.kind === 'llc') addCheck('谐振点输出电压偏差（整数匝数，可由谐振腔增益补偿）', Math.abs(vNom / (2 * nAch) - Vo) / Vo * 100, '%', 10, '%', Math.abs(vNom / (2 * nAch) - Vo) / Vo * 100 <= 10, 0.3);
+    if (T.kind === 'flyback') {
+      var valley = Math.min(pts.vinMin.Ivalley, pts.vinMax.Ivalley);
+      var mode = valley > 1e-6 ? 'CCM' : 'BCM 边界（谷值=0，按近似计）';
+      checks.push({ name: '工作模式（最恶劣点）', value: mode, unit: '', limit: '目标 CCM', limitUnit: '', pass: true, warn: !(T.kind === 'flyback' && valley > 1e-6) });
+      if (valley <= 1e-6) warns.push('最恶劣工况下原边电流谷值降到 0（BCM/DCM 边界）：工具按边界近似计算，若要保证 CCM 需加大 Lp（提高 AL/增加匝数）或减小 D。');
+    }
+    if (Math.abs(voutAtDmax - I.vout) / I.vout > 0.03) {
+      warns.push('按 D_max=' + dMax + ' 与整数匝数得到 ' + voutAtDmax.toFixed(2) + ' V（目标 ' + I.vout + ' V）；实际由控制器把 D 调到 ' + dNeedMin.toFixed(3) + ' 得到目标电压，见校核表。');
+    }
+    if (Math.max(wireP.dia, wireS.dia) > 1.5 * skin) warns.push('股线直径 ' + Math.max(wireP.dia, wireS.dia).toFixed(2) + ' mm 大于 1.5 倍趋肤深度 ' + skin.toFixed(3) + ' mm，交流损耗会明显上升：增加股数或改绞线/利兹线。');
+    if (I.secRect === 'bridge' && (T.kind === 'bipolar')) warns.push('全桥整流时副边只有 1 个绕组参与填充校核，但两个二极管同时导通，整流损耗需单独核算。');
+    if (I.alNh > 0 && T.kind === 'flyback') warns.push('反激已用输入 AL 计算励磁；气隙结果按所需 AL 给出，实际以骨架/气隙垫片实测 AL 为准。');
+    var hardFail = 0, softWarn = 0;
+    checks.forEach(function (c) { if (c.pass === false) hardFail++; else if (c.warn) softWarn++; });
+    if (T.kind === 'flyback') {
+      self.push({ name: '输入功率波形平衡 Vin·D·(Ipk+I_valley)/2 vs Pin',
+        err: relErr(I.vinMin * pts.vinMin.D * (pts.vinMin.IpkPri + pts.vinMin.Ivalley) / 2, Pin) });
+      if (pts.vinMin.CCM) {
+        var Pfrom = 0.5 * Lp * (pts.vinMin.IpkPri * pts.vinMin.IpkPri - pts.vinMin.Ivalley * pts.vinMin.Ivalley) * Fs;
+        self.push({ name: '能量守恒 ½Lp(Ip²-Iv²)·Fs vs Pin', err: relErr(Pfrom, Pin) });
+      }
+      self.push({ name: '磁通摆幅两条路径 Lp·ΔI_model vs V·t', err: relErr(Lp * pts.vinMin.dIripple / (Np * Ae), pts.vinMin.Vt / (Np * Ae)) });
+      self.push({ name: 'AL 往返 AL_req·Np² vs Lp', err: relErr(ALreq * Np * Np, Lp) });
+    }
+    var NpAmpTurns = (T.kind === 'bipolar' && T.fluxV === 2) ? Np / 2 : Np;   /* push-pull: each half winding */
+    if (T.kind === 'flyback') {
+      self.push({ name: '安匝平衡 Np·Ipk_pri vs Ns·Is_pk', err: relErr(pts.vinMin.IsPkSec * Ns, pts.vinMin.IpkPri * Np) });
+    } else if (T.kind !== 'llc') {
+      /* LLC: the integer-turns deviation from the resonant point is a design outcome, not an inconsistency */
+      self.push({ name: '励磁分量 ΔI_m = V·t/Lm（Vin_min）', err: relErr(pts.vinMin.Vt / Lm, pts.vinMin.dIm) });
+      self.push({ name: '安匝平衡（负载分量）Np·(Ipk-ΔI_m/2) vs Ns·Is_pk',
+        err: relErr(pts.vinMin.IsPkSec * Ns, (pts.vinMin.IpkPri - pts.vinMin.dIm / 2) * NpAmpTurns) });
+    }
+    if (T.kind !== 'llc') self.push({ name: '输出-占空比往返', err: relErr(voutFromDuty(T, nAch, I.vinMin, dNeedMin, I.vf) + I.vf, Vo) });
+    self.push({ name: '填充率往返', err: relErr(fillPct / 100 * Aw / I.kPack, copperTotal) });
+    self.push({ name: 'Lm = AL·Np² 往返', err: relErr(ALauto * Np * Np, Lm) });
+    self.forEach(function (s) { s.pass = s.err < 1e-6; });
+    var summary = {
+      topology: I.topology, topologyLabel: T.label, Po: Po, Pin: Pin, Vo: Vo,
+      nTarget: nTarget, n: nAch, Np: Np, Ns: Ns, LpUH: Lp * 1e6, LsUH: Lp * 1e6 / (nAch * nAch), LmUH: Lm * 1e6,
+      ALreqNh: ALreq * 1e9, gapMm: gapMm, ALusedNh: ALauto * 1e9,
+      IpkPri: maxIpkPri, IsPkSec: maxIsPk, IrmsPri: maxIrmsPri, IrmsSec: maxIrmsSec,
+      IpkPriMin: pts.vinMin.IpkPri, IpkPriMax: pts.vinMax.IpkPri,
+      dBpp: maxDB, Bpk: maxBpk, BsatAllow: BsatAllow, Bsat: I.bsat100, derate: I.bsatDerate,
+      dNeedMin: dNeedMin, dNeedMax: dNeedMax, dDesign: dMax, voutAtDmax: voutAtDmax,
+      Jpri: Jpri, Jsec: Jsec, wirePd: wireP.dia, wireSd: wireS.dia, wirePauto: wireP.auto, wireSauto: wireS.auto,
+      wirePstrands: wireP.strands, wireSstrands: wireS.strands, wirePpar: wireP.par, wireSpar: wireS.par,
+      Aprim: Aprim, Asec: Asec, Pcore: Pcore, Pcu: loss.Pcu, Ptotal: loss.Ptotal,
+      dT: loss.dT, RthMax: RthMax, tempC: loss.tempC, fillPct: fillPct, AwReq: AwReq, copperTotal: copperTotal,
+      RdcPriOhm: RdcPri, RdcSecOhm: RdcSec, RdcPri25Ohm: RdcPri25, RdcSec25Ohm: RdcSec25,
+      npGiven: NpGiven, npMinFlux: npMinFlux, npMinSat: npMinSat,
+      nSecWind: nSecWind, resetTurns: resetTurns, skinMm: skin, Bac: Bac, Pcv: Pcv, Ve: Ve, acFactor: I.acFactor,
+      hardFail: hardFail, softWarn: softWarn, lossPer: loss.per,
+      verdict: hardFail ? '不通过 / FAIL' : (softWarn ? '需复核 / REVIEW' : '可用 / OK'),
+      verdictClass: hardFail ? 'bad' : (softWarn ? 'warn' : 'ok')
+    };
+    return { ok: true, errs: errs, warns: warns, steps: steps, checks: checks, sweep: sweep, self: self, summary: summary, points: pts, windings: windings, inputs: I, T: T };
+  }
+  function coreComparison(I) {
+    var rows = [];
+    CORES.forEach(function (c) {
+      if (c.family === 'CUSTOM') return;    /* the "custom" entry is the user's own numbers, already shown above */
+      var II = {}, k;
+      for (k in I) II[k] = I[k];
+      II.ae = c.ae; II.le = c.le; II.aw = c.aw; II.mlt = c.mlt;
+      var r = design(II);
+      if (!r.ok) { rows.push({ model: c.model, family: c.family, error: r.errs.join('; ') }); return; }
+      var s = r.summary;
+      rows.push({ model: c.model, family: c.family, Np: s.Np, Ns: s.Ns, n: s.n, Bpk: s.Bpk, BsatAllow: s.BsatAllow,
+        fill: s.fillPct, dT: s.dT, Pcore: s.Pcore, Pcu: s.Pcu, gap: s.gapMm, ALreq: s.ALreqNh,
+        wireP: s.wirePd, wireS: s.wireSd, verdict: s.verdict, verdictClass: s.verdictClass, hardFail: s.hardFail, softWarn: s.softWarn });
+    });
+    rows.sort(function (a, b) {
+      var ra = a.hardFail === undefined ? 99 : a.hardFail, rb = b.hardFail === undefined ? 99 : b.hardFail;
+      if (ra !== rb) return ra - rb;
+      var wa = a.softWarn === undefined ? 99 : a.softWarn, wb = b.softWarn === undefined ? 99 : b.softWarn;
+      if (wa !== wb) return wa - wb;
+      return (a.dT || 0) - (b.dT || 0);
+    });
+    return rows;
+  }
+  return { design: design, coreComparison: coreComparison, CORES: CORES, MATERIALS: MATERIALS, TOPOS: TOPOS,
+    awgToMm: awgToMm, mmToAwg: mmToAwg, skinDepthMm: skinDepthMm, rhoCu: rhoCu, MU0: MU0, RHO_CU_20: RHO_CU_20 };
+})();
+/* ================= ENGINE-END ================= */
+</script>
+<script id="tde-ui">
+/* ================= UI ================= */
+(function () {
+  'use strict';
+  var IDS = ['topology','fs','vinMin','vinMax','vout','iout','vf','eta','vinNom','secRect','dutyMax','rippleK','rippleLout',
+    'auditMode','npGiven','nsGiven','dcrLimitP','dcrLimitS',
+    'deltaBTarget','bsatDerate','acFactor','corePreset','aw','ae','le','mlt','alNh','matPreset','bsat100','muI','pcvRef',
+    'lossA','lossB','jTarget','wireModeP','wireDiaP','strandsP','parP','wireModeS','wireDiaS','strandsS','parS','kPack',
+    'kuMax','rth','dtTarget','tamb','resetBtn','exportBtn','errBox','resultSub','keyParams','checkTable','selfTest','verdict',
+    'sweepTable','stepTable','coreTable','formulaTable'];
+  var STRANDS = [1,2,3,4,5,7,10,14,20,25,30];
+  var PAR = [1,2,3,4,5];
+  var DEFAULTS = {};
+  var lastResult = null;
+
+  function $(id) { return document.getElementById(id); }
+  function fmt(x, d) {
+    if (x === Infinity) return '∞';
+    if (x === -Infinity) return '-∞';
+    if (!isFinite(x)) return '-';
+    var s = Number(x).toFixed(d === undefined ? 2 : d);
+    return s;
+  }
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function num(id, dflt) { var v = parseFloat($(id).value); return isFinite(v) ? v : dflt; }
+  function clampInt(v, lo, hi) { v = Math.round(v); if (!isFinite(v)) v = lo; return Math.min(Math.max(v, lo), hi); }
+
+  function fillSelect(id, values, labels) {
+    var s = $(id);
+    s.innerHTML = '';
+    values.forEach(function (v, i) {
+      var o = document.createElement('option');
+      o.value = v; o.textContent = labels ? labels[i] : v;
+      s.appendChild(o);
+    });
+  }
+  function buildStaticSelects() {
+    fillSelect('strandsP', STRANDS, STRANDS.map(function (v) { return v + ' 股'; }));
+    fillSelect('strandsS', STRANDS, STRANDS.map(function (v) { return v + ' 股'; }));
+    fillSelect('parP', PAR, PAR.map(function (v) { return v + ' 组并联'; }));
+    fillSelect('parS', PAR, PAR.map(function (v) { return v + ' 组并联'; }));
+    var cp = $('corePreset'), mp = $('matPreset'), i;
+    cp.innerHTML = '';
+    for (i = 0; i < TD.CORES.length; i++) {
+      var o = document.createElement('option');
+      o.value = TD.CORES[i].model;
+      o.textContent = TD.CORES[i].model + (TD.CORES[i].family === 'CUSTOM' ? '（自定义）' : '  · ' + TD.CORES[i].family);
+      cp.appendChild(o);
+    }
+    mp.innerHTML = '';
+    for (var m in TD.MATERIALS) {
+      if (!Object.prototype.hasOwnProperty.call(TD.MATERIALS, m)) continue;
+      var om = document.createElement('option');
+      om.value = m; om.textContent = m + ' · ' + TD.MATERIALS[m].kind;
+      mp.appendChild(om);
+    }
+  }
+  function applyCorePreset(model) {
+    var c = null, i;
+    for (i = 0; i < TD.CORES.length; i++) if (TD.CORES[i].model === model) c = TD.CORES[i];
+    if (!c) return;
+    $('ae').value = c.ae; $('le').value = c.le; $('aw').value = c.aw; $('mlt').value = c.mlt;
+  }
+  function applyMaterialPreset(name) {
+    var m = TD.MATERIALS[name];
+    if (!m) return;
+    $('bsat100').value = m.bsat100; $('muI').value = m.muI; $('pcvRef').value = m.pcvRef;
+    $('lossA').value = m.a; $('lossB').value = m.b;
+  }
+  function readInputs() {
+    var strandsPo = parseInt($('strandsP').value, 10) || 1;
+    var strandsSo = parseInt($('strandsS').value, 10) || 1;
+    var parPo = parseInt($('parP').value, 10) || 1;
+    var parSo = parseInt($('parS').value, 10) || 1;
+    return {
+      topology: $('topology').value,
+      fs: num('fs', 100),
+      vinMin: num('vinMin', 9), vinMax: num('vinMax', 36),
+      vout: num('vout', 12), iout: num('iout', 2), vf: num('vf', 0.5), eta: num('eta', 0.9),
+      vinNom: num('vinNom', 0), secRect: $('secRect').value,
+      auditOn: $('auditMode').value === '1',
+      npGiven: $('auditMode').value === '1' ? num('npGiven', 0) : 0,
+      nsGiven: $('auditMode').value === '1' ? num('nsGiven', 0) : 0,
+      dcrLimitP: num('dcrLimitP', 0), dcrLimitS: num('dcrLimitS', 0),
+      dutyMax: num('dutyMax', 0.45), rippleK: num('rippleK', 0.4), rippleLout: num('rippleLout', 0.6),
+      deltaBTarget: num('deltaBTarget', 0.2), bsatDerate: num('bsatDerate', 0.8), acFactor: num('acFactor', 1.2),
+      ae: num('ae', 52.2), le: num('le', 57.5), aw: num('aw', 54), mlt: num('mlt', 50), alNh: num('alNh', 0),
+      bsat100: num('bsat100', 0.39), muI: num('muI', 2300), pcvRef: num('pcvRef', 70),
+      lossA: num('lossA', 1.45), lossB: num('lossB', 2.5),
+      jTarget: num('jTarget', 4),
+      wireModeP: $('wireModeP').value, wireDiaP: num('wireDiaP', 0.45), strandsP: strandsPo, parP: parPo,
+      wireModeS: $('wireModeS').value, wireDiaS: num('wireDiaS', 0.8), strandsS: strandsSo, parS: parSo,
+      kPack: num('kPack', 1.4), kuMax: num('kuMax', 0.4),
+      rth: num('rth', 28), dtTarget: num('dtTarget', 40), tamb: num('tamb', 40)
+    };
+  }
+  function kvItem(k, v) { return '<div class="item"><span class="k">' + esc(k) + '</span><span class="v">' + esc(v) + '</span></div>'; }
+  function renderKeyParams(r) {
+    var s = r.summary;
+    var items = [
+      ['输出功率 Po / 输入功率 Pin', fmt(s.Po, 2) + ' W / ' + fmt(s.Pin, 2) + ' W'],
+      ['变比 n = Np/Ns（目标 → 实际）', fmt(s.nTarget, 4) + ' → ' + fmt(s.n, 4)],
+      ['匝数 Np / Ns（整数）', s.Np + ' 匝 / ' + s.Ns + ' 匝'],
+      ['Vin_min 所需占空比 D', fmt(s.dNeedMin, 4) + '（设计点 D_max=' + fmt(s.dDesign, 3) + '）'],
+      ['Vin_max 所需占空比 D', fmt(s.dNeedMax, 4)],
+      ['原边峰值电流 Ipk（最恶劣）', fmt(s.IpkPri, 2) + ' A'],
+      ['原边有效值电流 I_rms', fmt(s.IrmsPri, 2) + ' A'],
+      ['副边峰值电流 Is_pk', fmt(s.IsPkSec, 2) + ' A'],
+      ['副边有效值电流 I_rms', fmt(s.IrmsSec, 2) + ' A'],
+      ['磁通摆幅 ΔB_pp / 峰值 Bpk', fmt(s.dBpp, 3) + ' T / ' + fmt(s.Bpk, 3) + ' T'],
+      ['允许磁通 Bsat·降额', fmt(s.BsatAllow, 3) + ' T'],
+      ['原边电感 Lp / Lm', fmt(s.LpUH, 2) + ' µH' + (r.T.kind === 'flyback' ? '' : ' / ' + fmt(s.LmUH, 1) + ' µH')],
+      ['次级电感 Ls = Lp/n²', fmt(s.LsUH, 2) + ' µH'],
+      ['所需 AL / 气隙', r.T.kind === 'flyback' ? (fmt(s.ALreqNh, 0) + ' nH/N² / ' + fmt(s.gapMm, 3) + ' mm') : (fmt(s.ALusedNh, 0) + ' nH/N²（无气隙）')],
+      ['原边线径×股数×并联 / J_p', fmt(s.wirePd, 3) + ' mm ×' + s.wirePstrands + '×' + s.wirePpar + ' / ' + fmt(s.Jpri, 2) + ' A/mm²' + (s.wirePauto ? '（自动）' : '')],
+      ['副边线径×股数×并联 / J_s', fmt(s.wireSd, 3) + ' mm ×' + s.wireSstrands + '×' + s.wireSpar + ' / ' + fmt(s.Jsec, 2) + ' A/mm²' + (s.wireSauto ? '（自动）' : '')],
+      ['直流电阻 DCR 原边/副边 @25°C（热态）', fmt(s.RdcPri25Ohm * 1000, 1) + '/' + fmt(s.RdcSec25Ohm * 1000, 1) + ' mΩ（' + fmt(s.RdcPriOhm * 1000, 1) + '/' + fmt(s.RdcSecOhm * 1000, 1) + ' mΩ）'],
+      ['窗口填充率（上限 ' + (r.inputs.kuMax * 100).toFixed(0) + '%）', fmt(s.fillPct, 1) + '%  · 需 Aw ≥ ' + fmt(s.AwReq, 1) + ' mm²'],
+      ['磁芯损耗 P_core（Pcv=' + fmt(s.Pcv, 1) + ' kW/m³）', fmt(s.Pcore, 3) + ' W'],
+      ['铜损 P_cu（含 F_R=' + fmt(s.acFactor, 2) + '）', fmt(s.Pcu, 3) + ' W'],
+      ['总损耗 / 温升 ΔT', fmt(s.Ptotal, 3) + ' W / ' + fmt(s.dT, 1) + ' K'],
+      ['满足目标温升所需 Rth', (isFinite(s.RthMax) ? fmt(s.RthMax, 1) + ' K/W' : '—')],
+      ['趋肤深度 δ（绕组温度下）', fmt(s.skinMm, 3) + ' mm']
+    ];
+    var html = '';
+    items.forEach(function (x) { html += kvItem(x[0], x[1]); });
+    $('keyParams').innerHTML = html;
+    $('resultSub').textContent = s.topologyLabel + '；已按整数匝数 ' + s.Np + '/' + s.Ns + ' 反算工作点，最恶劣值取 Vin_min 与 Vin_max 的较大者。';
+  }
+  function renderChecks(r) {
+    var html = '<table><thead><tr><th>校核项</th><th class="num">计算值</th><th class="num">限值</th><th>判定</th></tr></thead><tbody>';
+    r.checks.forEach(function (c) {
+      var cls = c.pass === false ? 'bad' : (c.warn ? 'warn' : 'ok');
+      var txt = c.pass === false ? '不通过' : (c.warn ? '接近上限' : '通过');
+      var v = (typeof c.value === 'number') ? fmt(c.value, Math.abs(c.value) < 1 ? 4 : 2) : c.value;
+      var l = (typeof c.limit === 'number') ? fmt(c.limit, Math.abs(c.limit) < 1 ? 4 : 2) : c.limit;
+      html += '<tr><td>' + esc(c.name) + '</td><td class="num">' + esc(v) + ' ' + esc(c.unit) + '</td><td class="num">' + esc(l) + ' ' + esc(c.limitUnit) + '</td><td><span class="status ' + cls + '">' + esc(txt) + '</span></td></tr>';
+    });
+    html += '</tbody></table>';
+    $('checkTable').innerHTML = html;
+    var shtml = '<strong>数值自检（相对误差，均应 ≈ 0）</strong><br>';
+    r.self.forEach(function (s) {
+      shtml += (s.pass ? '✓ ' : '✗ ') + esc(s.name) + ' : ' + (s.err === Infinity ? '∞' : s.err.toExponential(2)) + '<br>';
+    });
+    $('selfTest').innerHTML = shtml;
+    var v = r.summary;
+    $('verdict').innerHTML = '<span class="status ' + v.verdictClass + '">' + esc(v.verdict) + '</span>' +
+      '<div style="margin-top:8px;font-size:12.5px;line-height:1.8;color:#4b5563;">硬性校核不通过 ' + v.hardFail + ' 项，接近上限 ' + v.softWarn + ' 项。</div>' +
+      (r.warns.length ? '<div class="hint"><strong>提示</strong><br>' + r.warns.map(esc).join('<br>') + '</div>' : '');
+  }
+  function renderSweep(r) {
+    var html = '<table><thead><tr><th class="num">Vin (V)</th><th class="num">D</th><th class="num">ΔB_pp (T)</th><th class="num">Bpk (T)</th><th class="num">Ipk_pri (A)</th><th class="num">I_rms_pri (A)</th><th class="num">I_rms_sec (A)</th><th>模式</th></tr></thead><tbody>';
+    r.sweep.forEach(function (p) {
+      var mode = r.T.kind === 'flyback' ? (p.CCM ? 'CCM' : 'DCM') : '—';
+      html += '<tr><td class="num">' + fmt(p.Vin, 2) + '</td><td class="num">' + fmt(p.D, 4) + '</td><td class="num">' + fmt(p.dBpp, 4) +
+        '</td><td class="num">' + fmt(p.Bpk, 4) + '</td><td class="num">' + fmt(p.IpkPri, 2) + '</td><td class="num">' + fmt(p.IrmsPri, 2) +
+        '</td><td class="num">' + fmt(p.IrmsSec, 2) + '</td><td>' + mode + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    $('sweepTable').innerHTML = html;
+  }
+  function renderSteps(r) {
+    var html = '<table><thead><tr><th style="width:22%">步骤</th><th style="width:38%">公式</th><th>代入数值</th></tr></thead><tbody>';
+    r.steps.forEach(function (s) {
+      html += '<tr><td>' + esc(s.t) + '</td><td class="mono">' + esc(s.f) + '</td><td class="mono">' + esc(s.s) + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    $('stepTable').innerHTML = html;
+  }
+  function renderCores(r) {
+    var rows = TD.coreComparison(r.inputs);
+    var html = '<table><thead><tr><th>磁芯</th><th>族</th><th class="num">Np/Ns</th><th class="num">Bpk (T)</th><th class="num">填充 %</th><th class="num">P_core (W)</th><th class="num">P_cu (W)</th><th class="num">ΔT (K)</th><th class="num">气隙 (mm)</th><th>结论</th><th></th></tr></thead><tbody>';
+    rows.forEach(function (c) {
+      if (c.error) { html += '<tr><td>' + esc(c.model) + '</td><td>' + esc(c.family) + '</td><td colspan="9">' + esc(c.error) + '</td></tr>'; return; }
+      html += '<tr><td>' + esc(c.model) + '</td><td>' + esc(c.family) + '</td><td class="num">' + c.Np + '/' + c.Ns + '</td><td class="num">' + fmt(c.Bpk, 3) +
+        '</td><td class="num">' + fmt(c.fill, 1) + '</td><td class="num">' + fmt(c.Pcore, 3) + '</td><td class="num">' + fmt(c.Pcu, 3) +
+        '</td><td class="num">' + fmt(c.dT, 1) + '</td><td class="num">' + (r.T.kind === 'flyback' ? fmt(c.gap, 3) : '—') +
+        '</td><td><span class="status ' + c.verdictClass + '">' + esc(c.verdict) + '</span></td>' +
+        '<td><button class="mini" data-core="' + esc(c.model) + '" type="button">套用</button></td></tr>';
+    });
+    html += '</tbody></table>';
+    $('coreTable').innerHTML = html;
+    Array.prototype.forEach.call($('coreTable').querySelectorAll('button[data-core]'), function (b) {
+      b.addEventListener('click', function () {
+        $('corePreset').value = b.getAttribute('data-core');
+        applyCorePreset(b.getAttribute('data-core'));
+        render();
+      });
+    });
+  }
+  function renderFormulas() {
+    var rows = [
+      ['Flyback / 反激', 'Vo = Vin·D/((1-D)·n)', 'ΔB = Lp·ΔI/(Np·Ae) = Vin·D/(Np·Ae·Fs)', '单极性，Bpk=ΔB；D 为开关导通占空比；Lp 由 ΔI/Ipk 决定'],
+      ['Active Clamp Flyback', 'Vo ≈ Vin·D/((1-D)·n)', '同反激（钳位电容提供复位）', '单极性，Bpk=ΔB；漏感能量由钳位回路吸收'],
+      ['Forward / 正激', 'Vo = Vin·D/n', 'ΔB = Vin·D/(Np·Ae·Fs)', '单极性，Bpk=ΔB；变比固定时伏秒积与 Vin 无关；1:1 复位绕组要求 D≤0.5'],
+      ['Push-Pull / 推挽', 'Vo = 2·Vin·D/n', 'ΔB_pp = 2·Vin·D/(Np·Ae·Fs)', '双极性，Bpk=ΔB_pp/2；Np 为两半绕组总匝数，每个半绕组 Vin 耐受、电流为 2·Iout/n'],
+      ['Half-Bridge / 半桥', 'Vo = Vin·D/n', 'ΔB_pp = (Vin/2)·D/(Np·Ae·Fs)', '双极性，Bpk=ΔB_pp/2；原边承受 Vin/2，一个周期正负各一次'],
+      ['Full-Bridge / 全桥', 'Vo = 2·Vin·D/n', 'ΔB_pp = Vin·D/(Np·Ae·Fs)', '双极性，Bpk=ΔB_pp/2；原边承受全 Vin，两个半周期各一次'],
+      ['LLC Resonant', 'Vo = Vin_nom/(2n)（谐振点）', 'ΔB_pp = (Vin/2)·0.5/(Np·Ae·Fs)', '双极性；谐振腔增益/软开关范围不在本工具范围']
+    ];
+    var html = '<table><thead><tr><th style="width:16%">拓扑</th><th style="width:20%">输出电压方程</th><th style="width:32%">磁通（伏秒积）</th><th>约定</th></tr></thead><tbody>';
+    rows.forEach(function (r) { html += '<tr><td>' + esc(r[0]) + '</td><td class="mono">' + esc(r[1]) + '</td><td class="mono">' + esc(r[2]) + '</td><td>' + esc(r[3]) + '</td></tr>'; });
+    html += '</tbody></table>';
+    $('formulaTable').innerHTML = html;
+  }
+  function showError(msg) {
+    var b = $('errBox');
+    b.hidden = false;
+    b.innerHTML = '<strong>计算出错：</strong>' + esc(msg) +
+      '<br>请检查输入是否合法（Ae/Aw/le/MLT>0、Vin_min≤Vin_max、Fs>0）。';
+  }
+  function clearError() { $('errBox').hidden = true; $('errBox').innerHTML = ''; }
+  function render() {
+    try {
+      var inputs = readInputs();
+      var r = TD.design(inputs);
+      lastResult = r;
+      if (!r.ok) {
+        clearError();
+        $('keyParams').innerHTML = '';
+        $('checkTable').innerHTML = '';
+        $('selfTest').innerHTML = '';
+        $('sweepTable').innerHTML = '';
+        $('stepTable').innerHTML = '';
+        $('coreTable').innerHTML = '';
+        $('verdict').innerHTML = '<span class="status bad">输入无效 / INVALID INPUT</span><div class="hint">' + r.errs.map(esc).join('<br>') + '</div>';
+        $('resultSub').textContent = '输入参数不完整或非法。';
+        renderFormulas();
+        return;
+      }
+      clearError();
+      renderKeyParams(r);
+      renderChecks(r);
+      renderSweep(r);
+      renderSteps(r);
+      renderCores(r);
+      renderFormulas();
+    } catch (e) {
+      showError(e && e.message ? e.message : String(e));
+    }
+  }
+  function exportCSV() {
+    var r = lastResult;
+    if (!r || !r.ok) { showError('没有可导出的结果，请先修正输入。'); return; }
+    var s = r.summary, rows = [];
+    rows.push(['Parameter / 参数', 'Value', 'Unit']);
+    rows.push(['Topology', s.topology, '']);
+    rows.push(['Po', s.Po.toFixed(3), 'W']);
+    rows.push(['Pin', s.Pin.toFixed(3), 'W']);
+    rows.push(['Vin_min', r.inputs.vinMin, 'V']);
+    rows.push(['Vin_max', r.inputs.vinMax, 'V']);
+    rows.push(['Vout', r.inputs.vout, 'V']);
+    rows.push(['Iout', r.inputs.iout, 'A']);
+    rows.push(['Vf', r.inputs.vf, 'V']);
+    rows.push(['Fs', r.inputs.fs, 'kHz']);
+    rows.push(['eta', r.inputs.eta, '']);
+    rows.push(['D_max_design', r.inputs.dutyMax, '']);
+    rows.push(['D_required_at_Vin_min', s.dNeedMin.toFixed(5), '']);
+    rows.push(['D_required_at_Vin_max', s.dNeedMax.toFixed(5), '']);
+    rows.push(['Turns_ratio_target', s.nTarget.toFixed(5), '']);
+    rows.push(['Turns_ratio_actual', s.n.toFixed(5), '']);
+    rows.push(['Np', s.Np, 'turns']);
+    rows.push(['Ns', s.Ns, 'turns']);
+    rows.push(['Ipk_primary_worst', s.IpkPri.toFixed(4), 'A']);
+    rows.push(['Irms_primary', s.IrmsPri.toFixed(4), 'A']);
+    rows.push(['Ipk_secondary', s.IsPkSec.toFixed(4), 'A']);
+    rows.push(['Irms_secondary', s.IrmsSec.toFixed(4), 'A']);
+    rows.push(['dB_pp', s.dBpp.toFixed(5), 'T']);
+    rows.push(['Bpk', s.Bpk.toFixed(5), 'T']);
+    rows.push(['Bsat_allow', s.BsatAllow.toFixed(5), 'T']);
+    rows.push(['Lp', s.LpUH.toFixed(3), 'uH']);
+    rows.push(['Ls', s.LsUH.toFixed(3), 'uH']);
+    if (r.T.kind !== 'flyback') rows.push(['Lm', s.LmUH.toFixed(3), 'uH']);
+    if (r.T.kind === 'flyback') {
+      rows.push(['AL_required', s.ALreqNh.toFixed(2), 'nH/N^2']);
+      rows.push(['Air_gap_estimate', s.gapMm.toFixed(4), 'mm']);
+    }
+    rows.push(['Ae', r.inputs.ae, 'mm2']);
+    rows.push(['Aw', r.inputs.aw, 'mm2']);
+    rows.push(['le', r.inputs.le, 'mm']);
+    rows.push(['MLT', r.inputs.mlt, 'mm']);
+    rows.push(['Aw_required', s.AwReq.toFixed(2), 'mm2']);
+    rows.push(['Fill_factor', s.fillPct.toFixed(2), '%']);
+    rows.push(['Wire_primary_dia', s.wirePd.toFixed(4), 'mm']);
+    rows.push(['Wire_primary_strands', s.wirePstrands, '']);
+    rows.push(['Wire_primary_parallel', s.wirePpar, '']);
+    rows.push(['Wire_secondary_dia', s.wireSd.toFixed(4), 'mm']);
+    rows.push(['Wire_secondary_strands', s.wireSstrands, '']);
+    rows.push(['Wire_secondary_parallel', s.wireSpar, '']);
+    rows.push(['J_primary', s.Jpri.toFixed(3), 'A/mm2']);
+    rows.push(['J_secondary', s.Jsec.toFixed(3), 'A/mm2']);
+    rows.push(['DCR_primary_25C', (s.RdcPri25Ohm * 1000).toFixed(3), 'mOhm']);
+    rows.push(['DCR_secondary_25C', (s.RdcSec25Ohm * 1000).toFixed(3), 'mOhm']);
+    rows.push(['DCR_primary_hot', (s.RdcPriOhm * 1000).toFixed(3), 'mOhm']);
+    rows.push(['DCR_secondary_hot', (s.RdcSecOhm * 1000).toFixed(3), 'mOhm']);
+    if (s.npGiven) {
+      rows.push(['Np_min_flux_limit', s.npMinFlux, 'turns']);
+      rows.push(['Np_min_saturation_limit', s.npMinSat, 'turns']);
+    }
+    rows.push(['P_core', s.Pcore.toFixed(4), 'W']);
+    rows.push(['P_cu', s.Pcu.toFixed(4), 'W']);
+    rows.push(['P_total', s.Ptotal.toFixed(4), 'W']);
+    rows.push(['Delta_T', s.dT.toFixed(2), 'K']);
+    rows.push(['Rth_max_allowed', isFinite(s.RthMax) ? s.RthMax.toFixed(2) : '', 'K/W']);
+    rows.push(['Skin_depth', s.skinMm.toFixed(4), 'mm']);
+    rows.push(['Verdict', s.verdict, '']);
+    rows.push([]);
+    rows.push(['Check', 'Value', 'Limit', 'Result']);
+    r.checks.forEach(function (c) { rows.push([c.name, c.value, c.limit, c.pass === false ? 'FAIL' : (c.warn ? 'REVIEW' : 'OK')]); });
+    rows.push([]);
+    rows.push(['Vin', 'D', 'dB_pp', 'Bpk', 'Ipk_pri', 'Irms_pri', 'Irms_sec', 'Mode']);
+    r.sweep.forEach(function (p) {
+      rows.push([p.Vin.toFixed(3), p.D.toFixed(5), p.dBpp.toFixed(5), p.Bpk.toFixed(5), p.IpkPri.toFixed(4), p.IrmsPri.toFixed(4), p.IrmsSec.toFixed(4), (r.T.kind === 'flyback' ? (p.CCM ? 'CCM' : 'DCM') : '')]);
+    });
+    var csv = '\ufeff' + rows.map(function (row) { return row.map(function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(','); }).join('\r\n');
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'transformer_design_v2.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+  function resetForm() {
+    IDS.forEach(function (id) {
+      var node = $(id);
+      if (!node || !(id in DEFAULTS)) return;
+      node.value = DEFAULTS[id];
+    });
+    render();
+  }
+  function init() {
+    buildStaticSelects();
+    $('strandsP').value = '10';
+    $('strandsS').value = '10';
+    IDS.forEach(function (id) { if ($(id) && DEFAULTS[id] === undefined) DEFAULTS[id] = $(id).value; });
+    Array.prototype.forEach.call(document.querySelectorAll('input,select'), function (n) {
+      if (n.id && DEFAULTS[n.id] === undefined) DEFAULTS[n.id] = n.value;
+    });
+    $('corePreset').value = 'EE25/13/7';
+    applyCorePreset('EE25/13/7');
+    $('matPreset').value = 'PC40';
+    applyMaterialPreset('PC40');
+    DEFAULTS.ae = $('ae').value; DEFAULTS.le = $('le').value; DEFAULTS.aw = $('aw').value; DEFAULTS.mlt = $('mlt').value;
+    DEFAULTS.bsat100 = $('bsat100').value; DEFAULTS.muI = $('muI').value; DEFAULTS.pcvRef = $('pcvRef').value;
+    DEFAULTS.lossA = $('lossA').value; DEFAULTS.lossB = $('lossB').value;
+    DEFAULTS.corePreset = 'EE25/13/7'; DEFAULTS.matPreset = 'PC40';
+    IDS.forEach(function (id) {
+      var node = $(id);
+      if (!node || id === 'resetBtn' || id === 'exportBtn') return;
+      node.addEventListener('input', render);
+      node.addEventListener('change', function (e) {
+        if (e.target && e.target.id === 'corePreset') applyCorePreset($('corePreset').value);
+        if (e.target && e.target.id === 'matPreset') applyMaterialPreset($('matPreset').value);
+        render();
+      });
+    });
+    $('resetBtn').addEventListener('click', resetForm);
+    $('exportBtn').addEventListener('click', exportCSV);
+    render();
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', render);
+    window.addEventListener('load', render);
+    window.__TD_READY__ = true;
+    window.__TD_RENDER__ = render;
+    window.__TD_EXPORT__ = exportCSV;
+    window.__TD_LAST__ = function () { return lastResult; };
+  }
+  try {
+    init();
+  } catch (e) {
+    showError((e && e.message ? e.message : String(e)) + '（初始化阶段）');
+  }
+})();
+</script>
+</body>
+</html>
