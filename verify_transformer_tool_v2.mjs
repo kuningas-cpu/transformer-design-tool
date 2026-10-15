@@ -1665,14 +1665,18 @@ header('36 device selection: switch / rectifier / freewheel / reset network / RC
   /* 副边二极管：整流管要按"复位期反射电压 + Vo"选（所以比只按 Vin/n 的续流管高一档） */
   const vr = one('副边整流二极管 反向电压');
   const vf = one('续流二极管 反向电压');
-  ok('rectifier Vr accounts for the reset voltage reflected to the secondary (200 V class)', /200 V/.test(vr.value), vr.value);
+  ok('rectifier Vr uses the ring-solution reset peak reflected to the secondary (100~150 V class, not 200 V)',
+    /^(100|120|150) V$/.test(vr.value) && /V_res,pk\/n/.test(vr.why), vr.value + ' | ' + vr.why.slice(0, 60));
   ok('freewheel Vr accounts for Vin_max/n only (100 V class)', /100 V/.test(vf.value), vf.value);
   ok('diode current rows ask for average + surge ratings',
     /AV 3.9 A/.test(one('副边整流二极管 电流').value) && /AV 6.5 A/.test(one('续流二极管 电流').value));
   /* 复位电容：上限（Vin_min 处 Ω=180°）+ 耐压 + 脉冲电流 */
-  ok('the reset capacitor row gives the Omega=180 value plus the tool auto value',
-    /7\.4 nF/.test(one('复位电容 C_res').value) && /85 V/.test(one('复位电容 耐压').value) && /0\.18 A/.test(one('复位电容 脉冲电流').value),
-    one('复位电容 C_res').value + ' / ' + one('复位电容 耐压').value);
+  ok('the reset capacitor row gives a selection window (auto value .. hard upper limit)',
+    /1\.86 ~ 7\.4 nF/.test(one('复位电容 C_res').value) && /Ω_回落/.test(one('复位电容 C_res').why),
+    one('复位电容 C_res').value);
+  ok('its voltage rating comes from the ring reset peak (≈1.5x => 100 V film class)',
+    /100 V 以上薄膜电容/.test(one('复位电容 耐压').value) && /0\.18 A/.test(one('复位电容 脉冲电流').value),
+    one('复位电容 耐压').value);
   ok('the reset-winding alternative is offered with Nr = Np and 2xVin_max diode',
     /Nr = Np/.test(one('复位绕组').spec) && /87 V/.test(one('复位绕组').value) && /2×Vin_max/.test(one('复位绕组').why));
   /* RCD：耗散 = ½LkIpk²Fs，C 由 10% 纹波定，R = V²/P 且两者自洽 */

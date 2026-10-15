@@ -1859,7 +1859,8 @@ var TD = (function () {
     row('开关管 Qg（驱动/开关损耗）', 'Qg 与驱动电流相容', 'Fs×Qg ≤ 驱动能力/3',
       '当前 Fs = ' + I.fs + ' kHz：Qg = 70 nC 时平均栅极电流 ≈ ' + (I.fs * 1000 * 70e-9 * 1e6).toFixed(0) + ' µA 级，注意驱动峰值电流按 Qg/t_r 取');
     /* ---------- 副边整流管 ---------- */
-      var vResPkMax = cr ? Math.max(cr.vResetPk, cr.meas ? cr.meas.vResPk : 0) : 0.6 * I.vinMax;
+    /* 复位峰值统一用"环形解"口径（和开关管耐压同源），不要再混用更保守的"简单解"，否则副边耐压会被抬高一大档 */
+    var vResPkMax = cr ? Math.max(cr.vdsPkRing - I.vinMax, cr.meas ? cr.meas.vResPk : 0) : 0.6 * I.vinMax;
     if (T.kind === 'forward' || T.kind === 'bipolar') {
       var secTap = (T.kind === 'bipolar' && I.secRect === 'ct');
       var vSecOff = vResPkMax / Math.max(n, 1e-9) + s.Vo;        /* 整流管关断时承受的副边电压（复位期反射 + 输出） */
@@ -1889,8 +1890,8 @@ var TD = (function () {
         '窗口下限 ' + cr.crMaxNf.toFixed(2) + ' nF = 复位在 Vin_min 处用 1/2 个关断期完成（留 2 倍时间余量）；上限 ' + cr.crHardMaxNf.toFixed(1) +
         ' nF = 复位刚好在 Vin_min 的关断期末完成；**判据是"驼峰回落在开通瞬间正好到 0"（复位匹配度 Ω/Ω_回落 ≈ 1.00）**，'
         + 'C 越大峰值越低但开通损耗与偏磁风险上升；实际值应落在该窗口内（你的板实测峰值 57 V 与 2~3 nF 吻合，1 nF 会被算成 500 V 级，可直接排除）');
-      row('复位电容 耐压', '≥ 1.5×复位峰值', Math.ceil(1.5 * Math.max(cr.vResetPk, 10)) + ' V',
-        '复位峰值 ' + cr.vResetPk.toFixed(0) + ' V（应力在电容与开关上同量级）');
+      row('复位电容 耐压', '≥ 1.5×复位峰值', Math.ceil(1.5 * Math.max(cr.vdsPkRing - I.vinMax, 10) / 10) * 10 + ' V（选 100 V 以上薄膜电容）',
+        '环形解给的复位峰值 ' + (cr.vdsPkRing - I.vinMax).toFixed(0) + ' V（与开关管峰值同源口径；"简单解"的 ' + cr.vResetPk.toFixed(0) + ' V 只在复位电流完全不衰减时才出现）');
       row('复位电容 脉冲电流', '允许峰值 ≥ I_pk,loop', cr.ringIPk.toFixed(2) + ' A 峰值',
         '复位回路电流幅值（环形解），选薄膜/高频低 ESR 电容，引脚短');
       if (I.resetMode === 'winding' || T.kind === 'forward') {
@@ -1903,9 +1904,11 @@ var TD = (function () {
       var lkUhIn = parseFloat(I.lkUh); if (!isFinite(lkUhIn) || lkUhIn <= 0) lkUhIn = 0.2;
       var lk = lkUhIn * 1e-6;
       var ipkClamp = s.IpkPri;
-      var vClamp = T.kind === 'flyback' ? (I.vinMax + 1.4 * n * s.Vo) : (1.35 * Math.max(vdsWorst, I.vinMax * 1.4));
-      row('RCD 钳位电压 V_clamp', (T.kind === 'flyback' ? 'Vin_max + 1.3~1.5×n·Vo' : '1.3~1.5×Vin_max'), Math.ceil(vClamp / 10) * 10 + ' V',
-        T.kind === 'flyback' ? '留出漏感尖峰余量又不牺牲太多效率' : '正激类把它取在 Vin_max 上方 30~50%，只夹住尖峰');
+      /* 正激类的 RCD 只用来夹漏感尖峰（磁复位仍由电容/复位绕组负责）：所以 V_clamp 取 Vin_max 上方 30~50% 即可，
+         不要拿"复位峰值"当基准，否则会选出一个又大又费电的钳位 */
+      var vClamp = T.kind === 'flyback' ? (I.vinMax + 1.4 * n * s.Vo) : (1.4 * I.vinMax);
+      row('RCD 钳位电压 V_clamp', (T.kind === 'flyback' ? 'Vin_max + 1.3~1.5×n·Vo' : '1.3~1.5×Vin_max（只夹尖峰）'), Math.ceil(vClamp / 10) * 10 + ' V',
+        T.kind === 'flyback' ? '留出漏感尖峰余量又不牺牲太多效率' : '正激的磁复位由电容/复位绕组完成，RCD 只吸收漏感尖峰，所以取在 Vin_max 上方 30~50% 即可');
       var eLk = 0.5 * lk * ipkClamp * ipkClamp;
       var pClamp = eLk * I.fs * 1000;
       row('RCD 耗散（代价）', 'P ≈ ½·Lk·Ipk²·Fs', pClamp.toFixed(2) + ' W（占输出 ' + (pClamp / Math.max(Po, 1e-9) * 100).toFixed(1) + '%）',
@@ -1922,6 +1925,34 @@ var TD = (function () {
       row('RCD 二极管', '快恢复/超快恢复', 'Vr ≥ ' + Math.ceil(1.2 * vClamp) + ' V，Ifsm ≥ ' + Math.ceil(1.5 * ipkClamp) + ' A，trr ≤ 100 ns',
         '钳位二极管要快，否则漏感能量还没转走开关就已经被尖峰打到');
     }
+    /* ---------- 损耗与发热预算（"为什么烫"的账本） ---------- */
+    var pSwCond = s.IrmsPri * s.IrmsPri * (rdsTarget * qHot);
+    var vOffSw = cr ? cr.vdsPkRing : 1.4 * I.vinMax;
+    var tCross = 100e-9;                                  /* 开+关 交叉时间量级（按实测 24/48 ns 取 100 ns） */
+    var pSwSwitching = 0.5 * vOffSw * s.IpkPri * tCross * I.fs * 1000;
+    var pCore = s.Pcore, pCu = s.Pcu;
+    var pRect = os ? (os.rectDevice === 'diode' ? os.Pdiode : os.Psr) : 0;
+    var pResetDump = cr ? cr.ringDumpW : 0;
+    var pTotal = pSwCond + pSwSwitching + pCore + pCu + pRect + pResetDump;
+    row('开关管损耗预算（导通 + 开关）', 'P = Irms²·Rds(热) + ½·Voff·Ipk·t_cross·Fs',
+      '导通 ' + pSwCond.toFixed(2) + ' W + 开关 ' + pSwSwitching.toFixed(2) + ' W（按 t_cross = 100 ns 估）',
+      '导通项按 Rds(25°C) = ' + (rdsTarget * 1000).toFixed(0) + ' mΩ 的目标估（热态 ×1.5）；**开关项误差最大**：它正比于 V-I 交叠时间 t_cross（'
+      + '实测的 24/48 ns 是 drain 电压沿，交叠时间通常更长），所以这一项要拿实测效率回推校准。'
+      + 'TO-220 无散热片 Rth(j-a) ≈ 50~60 K/W：' + (pSwCond + pSwSwitching).toFixed(1) + ' W → 结温升 ≈ ' + ((pSwCond + pSwSwitching) * 55).toFixed(0) + ' K');
+    row('副边整流/续流损耗', '二极管 Vf·Iout 或 SR 的 Rds·I²', pRect.toFixed(2) + ' W',
+      os && os.rectDevice === 'diode' ? 'Vf·Iout（整流 + 续流平均电流之和 = Iout）；换低 Vf 肖特基或同步整流可显著降低' : '当前按同步整流方案估算');
+    row('变压器铁损 + 铜损', 'P_core + P_cu', pCore.toFixed(2) + ' + ' + pCu.toFixed(2) + ' = ' + (pCore + pCu).toFixed(2) + ' W',
+      '铜损与线径/股数/MLT 有关；温升 ΔT ≈ ' + s.dT.toFixed(0) + ' K（按 Rth = ' + I.rth + ' K/W）');
+    if (pResetDump > 0.02) {
+      row('复位回路开通损耗（波形不匹配时）', '½C·|v_end² − Vin²|·Fs', pResetDump.toFixed(2) + ' W',
+        'Ω ÷ Ω_回落 = ' + (cr ? cr.ringMatch.toFixed(2) : '—') + '（理想 1.00）：越偏离，这部分浪费越大');
+    }
+    var pMeasuredLoss = Po * (1 / Math.max(I.eta, 1e-3) - 1);
+    row('合计（当前工况）', '各器件损耗相加 vs 实测口径', '**' + pTotal.toFixed(2) + ' W**（占输出 ' + (pTotal / Math.max(Po, 1e-9) * 100).toFixed(1) + '%）',
+      '对应效率 ≈ ' + (Po / (Po + pTotal) * 100).toFixed(1) + '%（未含输出电感、控制与驱动损耗）；要降热就从最大的那一项下手');
+    row('与实测效率对照', '按 η 输入得到的总损耗', '损耗账本 − 实测 = ' + (pTotal - pMeasuredLoss).toFixed(2) + ' W（实测口径 ' + pMeasuredLoss.toFixed(2) + ' W）',
+      '把"效率 η"填成你实测的效率，工具就能反过来校验这张账本：若账本比实测大很多，最先被高估的一定是"开关项"（t_cross 未知）；' +
+      '把实测效率告诉我，我可以据此反推你的实际开关损耗与交叉时间');
     /* ---------- 输出级（非 Buck 型副边也给出电容） ---------- */
     if (os) {
       if (os.buckDerived) {
