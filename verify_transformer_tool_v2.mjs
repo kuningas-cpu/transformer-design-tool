@@ -1477,6 +1477,55 @@ header('33 board as built (C_res = 1 nF, IRF540N 100 V, Vin_max = 36 V)');
     Math.abs(c400.dVLk - c1.dVLk) < 1e-6, c400.dVLk.toFixed(1));
 }
 
+/* ---------------- 34. measured Vds,pk vs the analytic upper bound (reconciliation) ---------------- */
+header('34 measured Vds,pk (60 V) reconciled against the analytic reset model');
+{
+  const board = { topology: 'Forward', vinMin: 18, vinMax: 36, vout: 19, iout: 3.947, fs: 200, vf: 0.5,
+    resetMode: 'cap', cresNf: 1, vdsRated: 100, lkUh: 0.2, alLibNh: 1146, ae: 52, le: 32, aw: 38, mlt: 38,
+    auditOn: true, npGiven: 12, nsGiven: 23,
+    wireModeP: 'mm', wireDiaP: 0.4, strandsP: 2, parP: 2, wireModeS: 'mm', wireDiaS: 0.2, strandsS: 2, parS: 3 };
+  const rel34 = (x, y) => Math.abs(x - y) / (Math.abs(y) > 1e-12 ? Math.abs(y) : 1);
+  const withMeas = TD.design(baseInputs(Object.assign({}, board, { vdsMeasPk: 60 })));
+  const cw = withMeas.summary.capReset, mw = cw.meas;
+  ok('the measurement is turned into an effective reset peak', Math.abs(mw.vResPk - 24) < 1e-9, String(mw.vResPk));
+  ok('the equivalent reset capacitance is C x (model/measured)^2 = 27.2 nF',
+    rel34(mw.cEffNf, 27.2) < 0.01, mw.cEffNf.toFixed(2));
+  ok('the equivalent magnetising inductance = 4.49 mH', rel34(mw.lmEffUh, 4493) < 0.02, mw.lmEffUh.toFixed(0));
+  ok('the equivalent switching frequency = 1044 kHz', rel34(mw.fsEffKHz, 1044) < 0.02, mw.fsEffKHz.toFixed(0));
+  ok('only ~3.7% of the modelled magnetising energy shows up on the capacitor', rel34(mw.eRatioOfMag, 3.7) < 0.05, mw.eRatioOfMag.toFixed(2));
+  ok('the reflected-output clamp level is reported (Vin_max + n*Vo = 46.2 V)', rel34(mw.vClampRefl, 46.2) < 0.01, mw.vClampRefl.toFixed(1));
+
+  const chkMeas = withMeas.checks.find((c) => /电压应力/.test(c.name) && /实测/.test(c.name));
+  const chkAna = withMeas.checks.find((c) => /电压应力/.test(c.name) && !/实测/.test(c.name));
+  ok('a measured check row is added and passes (60 V <= 85 V)', !!chkMeas && chkMeas.pass === true && chkMeas.scope === 'core',
+    JSON.stringify(chkMeas));
+  ok('the analytic row stays visible but is demoted out of the verdict', !!chkAna && chkAna.pass === false && chkAna.scope === 'peripheral',
+    JSON.stringify({ pass: chkAna.pass, scope: chkAna.scope }));
+  ok('the model-based C_res lower bound is demoted as well',
+    withMeas.checks.filter((c) => /耐压要求下限/.test(c.name)).every((c) => c.scope === 'peripheral'));
+  ok('no core check is driven by the over-conservative Vds model',
+    withMeas.checks.filter((c) => c.scope !== 'peripheral' && c.pass === false && /电压应力|耐压要求下限/.test(c.name)).length === 0);
+
+  const st = withMeas.steps.find((s) => /实测 Vds,pk 与解析上界对账/.test(s.t));
+  ok('the reconciliation has its own design step', !!st && /等效复位电容/.test(st.f) && /能量比/.test(st.f));
+  ok('that step spells out the ratio, the equivalents and the clamp hypothesis',
+    /5\.22 倍/.test(st.s) && /27\.2 nF/.test(st.s) && /4493 µH/.test(st.s) && /1044 kHz/.test(st.s) && /3\.7%/.test(st.s) && /46\.2 V/.test(st.s),
+    st.s.slice(0, 200));
+  ok('a warning explains both candidate causes', withMeas.warns.some((w) => /远低于解析上界/.test(w) && /等效 Fs/.test(w) && /副边回馈输出/.test(w)));
+  ok('the "100 V class infeasible" warning admits the measurement contradicts the model',
+    withMeas.warns.some((w) => /模型判定）耐压档不可行/.test(w) && /实测 Vds,pk = 60 V/.test(w) && /不代表你板子会超压/.test(w)));
+
+  /* 不给实测值时行为回到原样 */
+  const noMeas = TD.design(baseInputs(Object.assign({}, board, {})));
+  ok('without a measurement there is no measured row and the analytic row is a core check',
+    !noMeas.checks.some((c) => /电压应力/.test(c.name) && /实测/.test(c.name)) &&
+    noMeas.checks.find((c) => /电压应力/.test(c.name)).scope === 'core' &&
+    noMeas.summary.capReset.meas === null);
+  ok('the panel has an input for the measured peak (forward + cap reset only)',
+    /id="vdsMeasPk"/.test(html) && /data-show="topo:Forward&resetMode:cap"[^>]*><label for="vdsMeasPk"/.test(html));
+  ok('the board preset carries the measurement (60 V)', /vdsMeasPk: 60/.test(html));
+}
+
 if (process.argv.includes('--diag')) {
   const show = (label, r) => {
     const s = r.summary, o = s.outStage;

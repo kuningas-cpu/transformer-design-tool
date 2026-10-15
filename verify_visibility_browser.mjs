@@ -139,7 +139,7 @@ const SCENARIOS = [
     hidden: ['rippleK', 'resetMode', 'vinNom'].concat(AC_ONLY)
   },
   {
-    s: 'dc,Forward,diode,cap,vdsRated=100,cresNf=1,lkUh=0.8,vinMin=18,vinMax=36,vout=19,iout=3.947',
+    s: 'dc,Forward,diode,cap,vdsRated=100,cresNf=1,vdsMeasPk=60,lkUh=0.8,vinMin=18,vinMax=36,vout=19,iout=3.947',
     title: '正激 + 电容复位 + 100 V 管（IRF540N）：复位电容窗口为空', topoLabel: '单端正激 / Forward',
     shown: ['vinMin', 'vinMax', 'resetMode', 'cresNf', 'vdsRated', 'lkUh'].concat(BUCK_ONLY),
     hidden: ['rippleK', 'secRect'].concat(AC_ONLY, ['pfcBus'], LLC_ONLY, ['rdsOnMOhm', 'vfBody', 'tDeadNs']),
@@ -223,6 +223,11 @@ SCENARIOS.forEach((sc) => {
       /窗口为空：100 V 档/.test(stepRegion) && !!mClass && Number(mClass[1]) > 100, stepRegion.slice(-320));
     check('校核清单出现"复位电容 ≥ 耐压要求下限"这一行且判不通过',
       /耐压要求下限/.test(chkRegion) && /bad/.test(chkRegion.split('耐压要求下限')[1] || ''), chkRegion.slice(-260));
+    check('填了实测 Vds,pk 后出现"（实测）"校核行且判通过',
+      /Vds,pk（实测）/.test(chkRegion) && /ok/.test(chkRegion.split('Vds,pk（实测）')[1] || ''), chkRegion.slice(-220));
+    check('设计步骤里出现"实测 Vds,pk 与解析上界对账"并给出等效值',
+      /实测 Vds,pk 与解析上界对账/.test(stepRegion) && /等效复位电容/.test(stepRegion) && /等效 Fs/.test(stepRegion),
+      (stepRegion.match(/等效复位电容[^；]*/) || ['(missing)'])[0]);
     const osRegion = (() => { const i = dom.indexOf('id="outStage"'); const j = dom.indexOf('<div class="card"', i + 1); return (i > 0 && j > i) ? dom.slice(i, j) : ''; })();
     check('输出级卡片同步给出窗口结论', /复位电容可行窗口/.test(osRegion) && /窗口为空/.test(osRegion), osRegion.slice(-260));
   }

@@ -176,6 +176,7 @@
           <select id="resetMode"><option value="cap">电容谐振复位（初级并联电容）</option><option value="winding">复位绕组（1:1 时 D≤0.5）</option></select></div>
         <div class="field" data-show="topo:Forward&resetMode:cap"><label for="cresNf">复位电容 C_res <span class="unit">(nF，0=自动取上限)</span></label><input id="cresNf" type="number" value="0" step="0.5" min="0"/></div>
         <div class="field" data-show="topo:Forward&resetMode:cap"><label for="vdsRated">开关管耐压 Vds_rated <span class="unit">(V，0=不校核；限值取 0.85×耐压)</span></label><input id="vdsRated" type="number" value="0" step="10" min="0"/></div>
+        <div class="field" data-show="topo:Forward&resetMode:cap"><label for="vdsMeasPk">实测 Vds,pk <span class="unit">(V，0=不用；示波器上 Vin_max 处的峰值)</span></label><input id="vdsMeasPk" type="number" value="0" step="5" min="0"/></div>
         <div class="field" data-show="topo:Forward&resetMode:cap"><label for="lkUh">实测/估算漏感 Lk <span class="unit">(µH，0=未计入)</span></label><input id="lkUh" type="number" value="0" step="0.1" min="0"/></div>
         <div class="field" data-show="topo:Forward,Push-Pull,Half-Bridge,Full-Bridge"><label for="nlGiven">输出电感给定匝数 <span class="unit">(0=自动)</span></label><input id="nlGiven" type="number" value="0" step="1" min="0"/></div>
         <div class="field" data-show="topo:Forward,Push-Pull,Half-Bridge,Full-Bridge"><label for="lmGiven">输出电感实测电感 <span class="unit">(µH，0=自动)</span></label><input id="lmGiven" type="number" value="0" step="1" min="0"/></div>
@@ -631,6 +632,7 @@ var TD = (function () {
     var resetMode = (I.resetMode === 'cap') ? 'cap' : 'winding';
     var cresNf = (isFinite(parseFloat(I.cresNf)) && parseFloat(I.cresNf) >= 0) ? parseFloat(I.cresNf) : 0;
     var vdsRated = numOr(I.vdsRated, 0);
+    var vdsMeasPk = numOr(I.vdsMeasPk, 0);      /* 实测 Vds,pk（示波器，Vin_max 处），0 = 不用 */
     var nlGiven = (isFinite(parseFloat(I.nlGiven)) && parseFloat(I.nlGiven) > 0) ? Math.round(parseFloat(I.nlGiven)) : 0;
     var lmGiven = numOr(I.lmGiven, 0);
     var naux = (isFinite(parseFloat(I.naux)) && parseFloat(I.naux) > 0) ? Math.round(parseFloat(I.naux)) : 0;
@@ -918,6 +920,21 @@ var TD = (function () {
         var roomC = vc * 0.85 - I.vinMax;
         if (roomC > 1e-9 && Math.pow(vdsAB / roomC, 2) * 1e9 <= crHardMaxNf + 1e-9) vdsClassNeed = vc;
       });
+      /* ---------- 实测对账：把示波器上的 Vds,pk 读回来，反推"等效复位电容 / 等效 Lm / 等效 Fs" ----------
+         模型给的是"磁化能量全部进 C_res"的解析值；如果实测远低于它，说明要么参数不同（Lm/Fs），
+         要么还有别的复位/钳位路径（例如磁化能量经副边回馈到输出，drain 被钳在 Vin_max + n·Vo 附近）。 */
+      var meas = null;
+      if (vdsMeasPk > I.vinMax + 1e-9 && vResetPk > 0) {
+        var vResM = vdsMeasPk - I.vinMax;                    /* 实测复位峰值（Vin_max 处测得） */
+        var kRatio = vResetPk / vResM;                       /* 模型/实测 峰值比 */
+        var vClampRefl = I.vinMax + nAch * Vo;               /* "磁化能量经副边回馈"时的钳位电压 */
+        meas = { vdsMeasPk: vdsMeasPk, vResPk: vResM, k: kRatio,
+          cEffNf: crNf * kRatio * kRatio,                    /* 等效复位电容（若峰值只由励磁项决定） */
+          lmEffUh: Lm * 1e6 * kRatio * kRatio,               /* 等效 Lm（Fs、C 不变） */
+          fsEffKHz: nAch * Vo / (vResM * Math.sqrt(Lm * crNf * 1e-9)) / 1000,  /* 等效 Fs（Lm、C 不变） */
+          eRatioOfMag: wMag > 0 ? (0.5 * crNf * 1e-9 * vResM * vResM) / wMag * 100 : 0,
+          vClampRefl: vClampRefl, dVtoClamp: vdsMeasPk - vClampRefl };
+      }
       capReset = { crMaxNf: crMaxNf, crNf: crNf, crAuto: !(cresNf > 0), vResetPk: vResetPk,
         dVLk: dVLk, lkUH: lkUh, wLeak: wLeak, wMag: wMag, wRatio: wMag > 0 ? wLeak / wMag : 0,
         vResetClosed: Math.PI * nAch * Vo / (1 - dReset),
@@ -925,16 +942,18 @@ var TD = (function () {
         iLkPri: iLkTurn, lkUsed: lkH > 0,
         crMinNf: crMinNf, crHardMaxNf: crHardMaxNf, crWindowEmpty: crWindowEmpty, lkMaxUh: lkMaxUh, vdsRoom: vdsRoom,
         vdsClassNeed: vdsClassNeed,
+        meas: meas,
         LmUH: Lm * 1e6, dMaxUsed: dReset, dInput: I.dutyMax };
       /* 警告：窗口为空 / 电容超出窗口 —— 这两条决定"这个耐压档能不能用" */
       if (vdsRated > 0 && crWindowEmpty) {
-        warns.push('**耐压档不可行**：开关管 ' + vdsRated + ' V × 0.85 = ' + (vdsRated * 0.85).toFixed(1) + ' V，扣掉 Vin_max ' + I.vinMax +
+        warns.push('**（模型判定）耐压档不可行**：开关管 ' + vdsRated + ' V × 0.85 = ' + (vdsRated * 0.85).toFixed(1) + ' V，扣掉 Vin_max ' + I.vinMax +
           ' V 只剩 ' + vdsRoom.toFixed(1) + ' V 给"复位峰值 + 漏感尖峰"，而复位又必须在下个周期前完成（C_res ≤ ' + crHardMaxNf.toFixed(1) +
           ' nF）→ 即使取到该上限，V_res,pk 也要 ' + (vdsA / Math.sqrt(crHardMaxNf * 1e-9)).toFixed(1) + ' V。' +
           (crMinNf === Infinity ? '（Vin_max 本身已超过 0.85×耐压）' : '（需要 C_res ≥ ' + crMinNf.toFixed(1) + ' nF，与上限矛盾）') +
           (lkMaxUh !== null && isFinite(lkMaxUh) ? ' 同样的 C_res 下漏感需 ≤ ' + lkMaxUh.toFixed(3) + ' µH；' : ' ') +
           (capReset.vdsClassNeed ? '\n本工况在这组 Vin_max 与漏感下，最小可行的标准耐压档 = **' + capReset.vdsClassNeed + ' V**。' : '\n本工况即使 1000 V 档也不可行（Vin_max 太高或漏感太大）。') +
-          '请提高耐压档（或降低 Vin_max、加大 C_res 到上限、减漏感）。');
+          '请提高耐压档（或降低 Vin_max、加大 C_res 到上限、减漏感）。' +
+          (meas ? '\n但**实测 Vds,pk = ' + meas.vdsMeasPk.toFixed(0) + ' V** 与这个模型判定矛盾（见"实测 Vds,pk 与解析上界对账"那一步）：本板很可能另有复位/钳位通路（磁化能量并不走这个电容），所以这条判定不代表你板子会超压。' : ''));
       } else if (vdsRated > 0 && cresNf > 0 && crNf < crMinNf) {
         warns.push('复位电容 ' + crNf.toFixed(2) + ' nF 低于该耐压档要求的下限 ' + crMinNf.toFixed(1) +
           ' nF（Vds,pk 会超过 0.85×耐压）→ 把 C_res 加大到 ' + crMinNf.toFixed(1) + ' nF 以上（复位上限 ' + crHardMaxNf.toFixed(1) + ' nF）。');
@@ -962,6 +981,21 @@ var TD = (function () {
            (lkH > 0
              ? '；ΔV_Lk 是把漏感能量全部算进 C_res 的上界（实际有阻尼与绕组损耗，会比它低，但还叠加振铃）。漏感主导时可加大 C_res：C 翻 4 倍 → 两项各减半'
              : '；漏感填 0 → ΔV_Lk 未计入，Vds,pk 被低估，真实值还要加 I_pk,pri·√(Lk/C_res)') });
+      /* 实测对账单独一行：把示波器读数与解析上界摊开对比，并给出"能量去哪了"的两种解释 */
+      if (meas) {
+        var biggerClamp = meas.dVtoClamp > -Math.abs(meas.vResPk) * 0.5;   /* 实测落在钳位电压之上（含尖峰） */
+        steps.push({ t: '实测 Vds,pk 与解析上界对账',
+          f: '实测复位峰值 = Vds,pk(实测) − Vin_max；等效复位电容 = C·(V_res,pk(解析)/V_res(实测))²；'
+            + '等效 Lm = Lm·比值²（V_res ∝ 1/√Lm）；能量比 = ½C·V_实测² / ½Lm·I_m,pk²',
+          s: '实测 Vds,pk = ' + meas.vdsMeasPk.toFixed(1) + ' V（Vin_max ' + I.vinMax + ' V）→ 复位峰值 ' + meas.vResPk.toFixed(1) +
+             ' V，而解析上界给 ' + vResetPk.toFixed(1) + ' V（差 ' + meas.k.toFixed(2) + ' 倍）。' +
+             '若峰值只由励磁项决定：等效复位电容 ≈ ' + meas.cEffNf.toFixed(1) + ' nF（现值 ' + crNf.toFixed(2) + ' nF）、等效 Lm ≈ ' +
+             meas.lmEffUh.toFixed(0) + ' µH（现值 ' + (Lm * 1e6).toFixed(0) + ' µH）、或等效 Fs ≈ ' + meas.fsEffKHz.toFixed(0) + ' kHz（现值 ' + I.fs + ' kHz）；' +
+             '进入复位电容的能量只有解析励磁能量的 ' + meas.eRatioOfMag.toFixed(1) + '%。' +
+             '另一种更可能的解释：磁化能量经副边回馈到输出（关断期副边整流管反向导通），此时 drain 被钳在 Vin_max + n·Vo ≈ ' + meas.vClampRefl.toFixed(1) +
+             ' V' + (biggerClamp ? '，加上漏感尖峰后与实测 ' + meas.vdsMeasPk.toFixed(1) + ' V 吻合' : '（与实测差 ' + meas.dVtoClamp.toFixed(1) + ' V）') +
+             '——那样 1 nF 只起吸收/缓冲作用，复位靠副边通路。请确认副边整流结构（全桥/中心抽头）与 Fs，并用差分探头复核（漏感尖峰只有几十 ns 宽，普通探头容易漏掉）。' });
+      }
       /* 复位电容的可行窗口单独交代：这是"能不能用这个耐压档"的判据 */
       steps.push({ t: '复位电容 C_res 的可行窗口（耐压 vs 复位时间）',
         f: 'Vds,pk(C) = Vin_max + (A + B)/√C（A = I_m,pk·√Lm，B = I_pk,pri·√Lk，两项都 ∝ 1/√C）→ 满足 0.85·Vds_rated 的 C 下限；'
@@ -1359,10 +1393,29 @@ var TD = (function () {
     if (T.kind === 'forward' && resetMode === 'winding') addCheck('复位绕组匝比 Nr/Np（需 ≥ D/(1-D)）', resetTurns / Np, '', dMax / (1 - dMax), '', resetTurns / Np >= dMax / (1 - dMax) - 1e-9, 0.98);
     if (capReset) {
       addCheck('复位电容 ≤ 上限（谐振复位）', capReset.crNf, 'nF', capReset.crMaxNf, 'nF', capReset.crNf <= capReset.crMaxNf + 1e-9, 0.9);
-      if (capReset.vdsRated > 0) addCheck('开关管电压应力 Vds,pk ≤ 0.85×耐压', capReset.vdsPk, 'V', capReset.vdsLimit, 'V', capReset.vdsPk <= capReset.vdsLimit, 0.9);
+    if (capReset && capReset.vdsRated > 0) {
+      var vdsHasMeas = !!(capReset.meas && capReset.meas.vdsMeasPk > 0);
+      /* 有实测值时：判决以实测为准（实测是事实，解析值只是"磁化能量全部进电容"的上界），
+         解析那行仍列出，但降级为外围项，不参与判决与磁芯排名 */
+      addCheck('开关管电压应力 Vds,pk（' + (vdsHasMeas ? '模型上界' : '解析') + '）≤ 0.85×耐压',
+        capReset.vdsPk, 'V', capReset.vdsLimit, 'V', capReset.vdsPk <= capReset.vdsLimit, 0.9, vdsHasMeas ? 'peripheral' : 'core');
+      if (vdsHasMeas) {
+        addCheck('开关管电压应力 Vds,pk（实测）≤ 0.85×耐压', capReset.meas.vdsMeasPk, 'V', capReset.vdsLimit, 'V',
+          capReset.meas.vdsMeasPk <= capReset.vdsLimit, 0.9);
+        if (capReset.vdsPk > capReset.vdsLimit * 1.3 && capReset.meas.vdsMeasPk <= capReset.vdsLimit * 0.9) {
+          warns.push('实测 Vds,pk = ' + capReset.meas.vdsMeasPk + ' V 远低于解析上界 ' + capReset.vdsPk.toFixed(1) +
+            ' V（' + capReset.meas.k.toFixed(1) + ' 倍差）：解析值假设"磁化能量 ½·Lm·I_m,pk² 全部灌进 C_res"，实测只对应其中的 ' +
+            capReset.meas.eRatioOfMag.toFixed(1) + '%。两种解释：① 等效参数不同（等效 Lm ≈ ' + capReset.meas.lmEffUh.toFixed(0) +
+            ' µH，或等效 Fs ≈ ' + capReset.meas.fsEffKHz.toFixed(0) + ' kHz）；② 另有复位/钳位通路（磁化能量经副边回馈输出时，drain 会被钳在 Vin_max + n·Vo ≈ ' +
+            capReset.meas.vClampRefl.toFixed(1) + ' V 附近）。请确认 Fs、副边整流结构与这 1 nF 的接法，并用差分探头复核尖峰（几十 ns 宽，普通探头会漏）。');
+        }
+      }
+    }
     if (capReset) addCheck('复位电容 C_res ≤ 关断期内复位上限', capReset.crNf, 'nF', capReset.crHardMaxNf, 'nF', capReset.crNf <= capReset.crHardMaxNf + 1e-9, 0.9);
     if (capReset && capReset.vdsRated > 0 && isFinite(capReset.crMinNf) && capReset.crMinNf > 0)
-      addCheck('复位电容 C_res ≥ 耐压要求下限（Vin_max 处）', capReset.crNf, 'nF', capReset.crMinNf, 'nF', capReset.crNf >= capReset.crMinNf - 1e-9, 99);
+      /* 这条下限完全依赖上面那个"解析上界"；有实测值时降级为外围项，不参与判决 */
+      addCheck('复位电容 C_res ≥ 耐压要求下限（Vin_max 处）', capReset.crNf, 'nF', capReset.crMinNf, 'nF',
+        capReset.crNf >= capReset.crMinNf - 1e-9, 99, (capReset.meas && capReset.meas.vdsMeasPk > 0) ? 'peripheral' : 'core');
     }
     if (T.kind === 'bipolar') addCheck('Vin_max 处占空比下限', dNeedMax, '', 0.02, '', dNeedMax >= 0.02, 2);
     if (T.kind === 'llc') addCheck('谐振点输出电压偏差（整数匝数，可由谐振腔增益补偿）', Math.abs(vNom / (2 * nAch) - Vo) / Vo * 100, '%', 10, '%', Math.abs(vNom / (2 * nAch) - Vo) / Vo * 100 <= 10, 0.3);
@@ -1583,7 +1636,7 @@ var TD = (function () {
   'use strict';
   var IDS = ['topology','fs','vinMin','vinMax','vout','iout','vf','eta','vinNom','secRect','dutyMax','rippleK','rippleLout',
     'auditMode','npGiven','nsGiven','dcrLimitP','dcrLimitS',
-    'resetMode','cresNf','vdsRated','nlGiven','lmGiven','naux',
+    'resetMode','cresNf','vdsRated','vdsMeasPk','nlGiven','lmGiven','naux',
     'alLibNh',
     'rectDevice',
     'lmMeasUh','npMeasN',
@@ -1666,7 +1719,7 @@ var TD = (function () {
       nsGiven: $('auditMode').value === '1' ? num('nsGiven', 0) : 0,
       dcrLimitP: num('dcrLimitP', 0), dcrLimitS: num('dcrLimitS', 0),
       resetMode: $('resetMode').value,
-      cresNf: num('cresNf', 0), vdsRated: num('vdsRated', 0),
+      cresNf: num('cresNf', 0), vdsRated: num('vdsRated', 0), vdsMeasPk: num('vdsMeasPk', 0),
       nlGiven: num('nlGiven', 0), lmGiven: num('lmGiven', 0), naux: num('naux', 0),
       lkUh: num('lkUh', 0), mltTol: num('mltTol', 0), marginMm: num('marginMm', 0),
       alLibNh: num('alLibNh', 0),
@@ -1808,6 +1861,13 @@ var TD = (function () {
                 '（同样 C 下漏感需 ≤ ' + (s.capReset.lkMaxUh !== null ? fmt(s.capReset.lkMaxUh, 3) : '—') + ' µH）'
               : ' → 当前 C_res = ' + fmt(s.capReset.crNf, 1) + ' nF 落在窗口' + (s.capReset.crNf >= s.capReset.crMinNf && s.capReset.crNf <= s.capReset.crHardMaxNf ? '内' : '外') + '')
           : '（填了开关管耐压后，这里会给出 C_res 的可行窗口）') +
+        (s.capReset.meas
+          ? '<br><b>实测对账</b>：实测 Vds,pk = ' + fmt(s.capReset.meas.vdsMeasPk, 1) + ' V → 复位峰值 ' + fmt(s.capReset.meas.vResPk, 1) +
+            ' V，解析上界 ' + fmt(s.capReset.vResetPk, 1) + ' V（差 ' + fmt(s.capReset.meas.k, 2) + ' 倍）；等效复位电容 ≈ ' +
+            fmt(s.capReset.meas.cEffNf, 1) + ' nF ／ 等效 Lm ≈ ' + fmt(s.capReset.meas.lmEffUh, 0) + ' µH ／ 等效 Fs ≈ ' +
+            fmt(s.capReset.meas.fsEffKHz, 0) + ' kHz。若磁化能量是经副边回馈到输出（钳位型复位），drain 会钳在 Vin_max + n·Vo ≈ ' +
+            fmt(s.capReset.meas.vClampRefl, 1) + ' V 附近——请对照你的波形与副边整流结构判断。'
+          : '') +
         '</div>';
     }
     if (s.acFront) {
@@ -2041,7 +2101,7 @@ var TD = (function () {
         ae: 52, le: 32, aw: 38, mlt: 38, mltTol: 20, marginMm: 1.5, corePreset: 'EPC19', matPreset: 'PC44',
         wireModeP: 'mm', wireDiaP: 0.4, strandsP: 2, parP: 2, wireModeS: 'mm', wireDiaS: 0.2, strandsS: 2, parS: 3,
         /* vdsRated = 100 (IRF540N)、cresNf = 1 nF 是板上实际值；lkUh 仍是待实测的占位值 */
-        nlGiven: 38, lmGiven: 145, naux: 25, nlDia: 0.25, nlStrands: 1, nlPar: 4, vdsRated: 100, cresNf: 1, lkUh: 0.8,
+        nlGiven: 38, lmGiven: 145, naux: 25, nlDia: 0.25, nlStrands: 1, nlPar: 4, vdsRated: 100, vdsMeasPk: 60, cresNf: 1, lkUh: 0.8,
         dcrLimitP: 32, ripplePct: 1, esrOhm: 0.01, rdsOnMOhm: 10, rth: 28, dtTarget: 40, tamb: 40,
         kPack: 1.2, kuMax: 0.35, jTarget: 4, acFactor: 1.3, bsat100: 0.39, muI: 2400, pcvRef: 60, lossA: 1.45, lossB: 2.5 };
       Object.keys(v).forEach(function (k) {
