@@ -114,7 +114,8 @@ const SCENARIOS = [
     s: 'dc,Forward,diode,cap', title: 'DC + 正激（电容复位）：复位电容/输出电感/辅助绕组出现', topoLabel: '单端正激 / Forward',
     shown: FWD_RESET.concat(BUCK_ONLY),
     hidden: ['rippleK', 'secRect'].concat(AC_ONLY, ['pfcBus'], LLC_ONLY, ['rdsOnMOhm', 'vfBody', 'tDeadNs']),
-    rectSelect: { has: ['整流管 + 续流管', '续流二极管'], notHas: ['无续流管'], sr2Hidden: false, hintHas: ['Buck 型副边'] }
+    rectSelect: { has: ['整流管 + 续流管', '续流二极管'], notHas: ['无续流管'], sr2Hidden: false, hintHas: ['Buck 型副边'] },
+    vdsRow: true
   },
   {
     s: 'dc,Forward,diode,winding', title: '正激 + 复位绕组：C_res/耐压/漏感自动收起', topoLabel: '单端正激 / Forward',
@@ -184,6 +185,16 @@ SCENARIOS.forEach((sc) => {
     const hintOk = sc.rectSelect.hintHas.every((t) => hint.indexOf(t) >= 0);
     check('整流器件提示文字匹配当前拓扑', hintOk && hint.length > 20, hint.slice(0, 120));
   }
+  /* 开关管电压应力：只有"正激 + 电容谐振复位"才有这一步；0.85 降额的说明在静态速查表里。
+     注意 dump 里带着脚本源码（同样的字符串也在源码里），所以只能看 #stepTable 这段渲染结果 */
+  const iStep = dom.indexOf('id="stepTable"');
+  const iNextCard = dom.indexOf('<div class="card"', iStep + 1);
+  const stepRegion = (iStep > 0 && iNextCard > iStep) ? dom.slice(iStep, iNextCard) : '';
+  const hasVdsStep = /Vds,pk = Vin_max \+ V_res,pk \+ ΔV_Lk ;/.test(stepRegion);
+  check('Vds,pk 计算步骤' + (sc.vdsRow ? '存在（正激+电容复位）' : '不存在（该拓扑没有复位电容）'),
+    hasVdsStep === !!sc.vdsRow, 'found=' + hasVdsStep);
+  check('速查表解释了 0.85 降额（任何拓扑都能查到）',
+    dom.indexOf('开关管耐压降额 0.85') >= 0 && dom.indexOf('BVdss') >= 0);
   console.log('    hidden = ' + [...hid].join(' '));
 });
 

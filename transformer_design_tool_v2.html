@@ -175,7 +175,7 @@
         <div class="field" data-show="topo:Forward"><label for="resetMode">正激磁复位方式</label>
           <select id="resetMode"><option value="cap">电容谐振复位（初级并联电容）</option><option value="winding">复位绕组（1:1 时 D≤0.5）</option></select></div>
         <div class="field" data-show="topo:Forward&resetMode:cap"><label for="cresNf">复位电容 C_res <span class="unit">(nF，0=自动取上限)</span></label><input id="cresNf" type="number" value="0" step="0.5" min="0"/></div>
-        <div class="field" data-show="topo:Forward&resetMode:cap"><label for="vdsRated">开关管耐压 <span class="unit">(V，0=不校核)</span></label><input id="vdsRated" type="number" value="0" step="10" min="0"/></div>
+        <div class="field" data-show="topo:Forward&resetMode:cap"><label for="vdsRated">开关管耐压 Vds_rated <span class="unit">(V，0=不校核；限值取 0.85×耐压)</span></label><input id="vdsRated" type="number" value="0" step="10" min="0"/></div>
         <div class="field" data-show="topo:Forward&resetMode:cap"><label for="lkUh">实测/估算漏感 Lk <span class="unit">(µH，0=未计入)</span></label><input id="lkUh" type="number" value="0" step="0.1" min="0"/></div>
         <div class="field" data-show="topo:Forward,Push-Pull,Half-Bridge,Full-Bridge"><label for="nlGiven">输出电感给定匝数 <span class="unit">(0=自动)</span></label><input id="nlGiven" type="number" value="0" step="1" min="0"/></div>
         <div class="field" data-show="topo:Forward,Push-Pull,Half-Bridge,Full-Bridge"><label for="lmGiven">输出电感实测电感 <span class="unit">(µH，0=自动)</span></label><input id="lmGiven" type="number" value="0" step="1" min="0"/></div>
@@ -280,6 +280,12 @@
           <td>铁氧体的 Bsat 随温度下降（PC40：25°C 约 0.51 T → 100°C 约 0.39 T），再留出峰值电流公差、最高输入电压、启动/过载瞬时过冲的余量后，用"Bsat@100°C × 该系数"作为允许峰值。</td>
           <td>允许峰值 `BsatAllow`；磁通峰值 `Bpk ≤ BsatAllow` 是**硬性校核**；也间接决定最小匝数。</td>
           <td>0.7~0.85，默认 0.8。<br>★ 1 号变压器 Bpk 0.082 T vs 0.312 T（3.8 倍裕量），这项无所谓；<br>★ **2 号输出电感才是关键**（Bpk 0.307 vs 0.312，正好压线）→ 要么留 0.75，要么让供应商补测带载电感来定。</td></tr>
+        <tr><td><b>开关管耐压降额 0.85</b></td>
+          <td>校核用的是"峰值电压 ≤ 0.85×耐压"，其中 <span class="mono">Vds,pk = Vin_max + V_res,pk + ΔV_Lk</span>：关断瞬间开关管先承受输入母线电压 <span class="mono">Vin_max</span>，再加上复位电容被励磁电流充到的峰值 <span class="mono">V_res,pk = I_m,pk·√(Lm/C_res) = n·Vo/(Fs·√(Lm·C_res))</span>，再加漏感能量灌进复位电容的额外抬升 <span class="mono">ΔV_Lk = I_pk,pri·√(Lk/C_res)</span>。<br>
+            <b>0.85 不是器件参数，是"留 15% 余量"的经验约定</b>：① 耐压 BVdss 标称在 25°C，高温下雪崩击穿电压会下降；② 最高输入电压本身有公差（常按 +5~10% 算）；③ 上式 ΔV_Lk 是把漏感能量全部算进 C_res 的<b>上界</b>——实际有阻尼与绕组损耗会低一些，但还会有振铃/尖峰；④ 电感、驱动与器件有批量一致性偏差。业界常用 80%~90%，高温/高压场合取 0.8。</td>
+          <td>校核清单里"开关管电压应力 Vds,pk ≤ 0.85×耐压"这一行；也用来定"该选多大耐压的 MOS"：把 Vds,pk ÷ 0.85 向上取标准档（250 / 400 / 500 V…）。</td>
+          <td>工具固定用 0.85（另在 0.9×限值 处给"接近上限"提示），要更保守就自己按 0.8 再核一遍。<br>
+            ★ 你这块（正激 + 电容复位、Vin_max = 36 V、AL = 1146 nH/N²、12 匝 → Lm = 165 µH）：自动取到的 C_res 上限 2.9 nF 时 V_res,pk ≈ 73.5 V；<b>主导项是漏感</b>——Lk = 0.8 µH → ΔV_Lk ≈ 135 V → Vds,pk ≈ 245 V（超过 250 V 档的 212.5 V 限值）；若 Lk 只有 0.2 µH → ΔV ≈ 68 V → Vds,pk ≈ 177 V 通过。→ 请把<b>实测漏感 Lk</b> 与<b>板上实际的 C_res</b> 填进来，这两个数决定这条结论。</td></tr>
         <tr><td><b>高频电阻系数 F_R</b></td>
           <td>趋肤效应 + 邻近效应让交流电阻高于直流电阻。100 kHz 下铜的趋肤深度 δ≈0.21 mm（25°C）/0.24 mm（100°C），单股线径超过约 1~1.5δ 时电流挤向表面，Rac/Rdc 上升。</td>
           <td>铜损 `P_cu = Σ I_rms²·R_dc·F_R` → 温升。只影响损耗/温升，不影响匝数与磁通。</td>
@@ -863,10 +869,12 @@ var TD = (function () {
       var wLeak = lkH > 0 ? 0.5 * lkH * iLkTurn * iLkTurn : 0;
       var iMagPk = dReset * I.vinMin / (Lm * Fs);            /* 励磁电流峰值（关断瞬间） */
       var wMag = 0.5 * Lm * iMagPk * iMagPk;
+      var vdsPkVal = I.vinMax + vResetPk + dVLk;
       capReset = { crMaxNf: crMaxNf, crNf: crNf, crAuto: !(cresNf > 0), vResetPk: vResetPk,
         dVLk: dVLk, lkUH: lkUh, wLeak: wLeak, wMag: wMag, wRatio: wMag > 0 ? wLeak / wMag : 0,
         vResetClosed: Math.PI * nAch * Vo / (1 - dReset),
-        vdsPk: I.vinMax + vResetPk + dVLk, vdsRated: vdsRated,
+        vdsPk: vdsPkVal, vdsRated: vdsRated, vdsLimit: vdsRated * 0.85,
+        iLkPri: iLkTurn, lkUsed: lkH > 0,
         LmUH: Lm * 1e6, dMaxUsed: dReset, dInput: I.dutyMax };
       steps.push({ t: '电容谐振复位（初级并联电容）',
         f: 'C ≤ (1-D)²/(π²·Lm·Fs²)（D 用实际工作占空比）；C 取上限时 V_res,pk = π·n·Vo/(1-D)；漏感项 ΔV = Ipk·√(Lk/C)；Vds,pk = Vin_max + V_res,pk + ΔV',
@@ -874,7 +882,19 @@ var TD = (function () {
            ' nF（取 ' + crNf.toFixed(2) + ' nF' + (cresNf > 0 ? '，用户输入' : '，自动取上限') + '）；励磁项 V_res,pk = ' +
            vResetPk.toFixed(1) + ' V（闭式校核 π·n·Vo/(1-D) = ' + (Math.PI * nAch * Vo / (1 - dReset)).toFixed(1) + ' V）' +
            (lkH > 0 ? '；漏感 ' + lkUh + ' µH → ΔV = ' + dVLk.toFixed(1) + ' V（漏感能量/励磁能量 = ' + (wLeak / Math.max(wMag, 1e-12)).toFixed(2) + '×）' : '；未填漏感 → ΔV 未计入') +
-           ' → Vds,pk ≈ ' + (I.vinMax + vResetPk + dVLk).toFixed(1) + ' V' });
+           ' → Vds,pk ≈ ' + vdsPkVal.toFixed(1) + ' V' });
+      /* 开关管电压应力单独列一行：这一项在校核清单里出现，公式必须能在这里对得上 */
+      steps.push({ t: '开关管电压应力 Vds,pk（电容谐振复位）',
+        f: 'Vds,pk = Vin_max + V_res,pk + ΔV_Lk ;  V_res,pk = I_m,pk·√(Lm/C_res) = n·Vo/(Fs·√(Lm·C_res)) ;  ΔV_Lk = I_pk,pri·√(Lk/C_res)（漏感能量 ½·Lk·I² 全部灌进 C_res）;  校核限值 = 0.85 × Vds_rated',
+        s: 'Vds,pk = ' + I.vinMax + ' + ' + vResetPk.toFixed(1) + ' + ' + dVLk.toFixed(1) + ' = ' + vdsPkVal.toFixed(1) + ' V' +
+           (vdsRated > 0
+             ? '；耐压 ' + vdsRated + ' V × 0.85 = ' + (vdsRated * 0.85).toFixed(1) + ' V → ' +
+               (vdsPkVal <= vdsRated * 0.85 ? '通过（余量 ' + (vdsRated * 0.85 - vdsPkVal).toFixed(1) + ' V）'
+                 : '不通过：需换更高耐压档、加大 C_res（V_res,pk 与 ΔV_Lk 都 ∝ 1/√C_res）或降低 Vin_max')
+             : '；未填"开关管耐压"→ 不做这条校核') +
+           (lkH > 0
+             ? '；ΔV_Lk 是把漏感能量全部算进 C_res 的上界（实际有阻尼与绕组损耗，会比它低，但还叠加振铃）。漏感主导时可加大 C_res：C 翻 4 倍 → 两项各减半'
+             : '；漏感填 0 → ΔV_Lk 未计入，Vds,pk 被低估，真实值还要加 I_pk,pri·√(Lk/C_res)') });
     }
     var common = { n: nAch, Vo: Vo, VinNom: I.vinNom > 0 ? I.vinNom : (I.vinMin + I.vinMax) / 2, Iout: I.iout, Pin: Pin, Fs: Fs, Lp: Lp, Lm: Lm, Np: Np, Ns: Ns, Ae: Ae, dIL: I.rippleLout, nSecWind: nSecWind };
     function pt(Vin) { var q = {}; for (var key in common) q[key] = common[key]; q.Vin = Vin; return operatingPoint(T, q); }
@@ -1255,7 +1275,7 @@ var TD = (function () {
     if (T.kind === 'forward' && resetMode === 'winding') addCheck('复位绕组匝比 Nr/Np（需 ≥ D/(1-D)）', resetTurns / Np, '', dMax / (1 - dMax), '', resetTurns / Np >= dMax / (1 - dMax) - 1e-9, 0.98);
     if (capReset) {
       addCheck('复位电容 ≤ 上限（谐振复位）', capReset.crNf, 'nF', capReset.crMaxNf, 'nF', capReset.crNf <= capReset.crMaxNf + 1e-9, 0.9);
-      if (capReset.vdsRated > 0) addCheck('开关管电压应力 Vds,pk ≤ 0.85×耐压', capReset.vdsPk, 'V', capReset.vdsRated * 0.85, 'V', capReset.vdsPk <= capReset.vdsRated * 0.85, 0.9);
+      if (capReset.vdsRated > 0) addCheck('开关管电压应力 Vds,pk ≤ 0.85×耐压', capReset.vdsPk, 'V', capReset.vdsLimit, 'V', capReset.vdsPk <= capReset.vdsLimit, 0.9);
     }
     if (T.kind === 'bipolar') addCheck('Vin_max 处占空比下限', dNeedMax, '', 0.02, '', dNeedMax >= 0.02, 2);
     if (T.kind === 'llc') addCheck('谐振点输出电压偏差（整数匝数，可由谐振腔增益补偿）', Math.abs(vNom / (2 * nAch) - Vo) / Vo * 100, '%', 10, '%', Math.abs(vNom / (2 * nAch) - Vo) / Vo * 100 <= 10, 0.3);
@@ -1688,7 +1708,9 @@ var TD = (function () {
     if (s.capReset) {
       $('outStage').innerHTML += '<div class="hint"><strong>正激磁复位（电容谐振复位）</strong><br>' +
         '复位电容上限 C ≤ ' + fmt(s.capReset.crMaxNf, 2) + ' nF（按 Vin_min 处 D=' + fmt(s.capReset.dMaxUsed, 3) + '、Lm=' + fmt(s.capReset.LmUH, 1) + ' µH 计算）；本次取 ' + fmt(s.capReset.crNf, 2) + ' nF' + (s.capReset.crAuto ? '（自动取上限）' : '（用户输入）') + '。<br>' +
-        '复位峰值电压 ' + fmt(s.capReset.vResetPk, 1) + ' V → 开关管 Vds,pk ≈ ' + fmt(s.capReset.vdsPk, 1) + ' V' + (s.capReset.vdsRated > 0 ? '（耐压 ' + fmt(s.capReset.vdsRated, 0) + ' V，校核见清单）' : '（未填耐压，不做校核）') + '。<br>' +
+        '复位峰值电压 V_res,pk = ' + fmt(s.capReset.vResetPk, 1) + ' V' + (s.capReset.lkUsed ? ' + 漏感项 ΔV_Lk = ' + fmt(s.capReset.dVLk, 1) + ' V' : '（漏感未计入）') +
+        ' → 开关管 Vds,pk = Vin_max + V_res,pk + ΔV_Lk ≈ ' + fmt(s.capReset.vdsPk, 1) + ' V' +
+        (s.capReset.vdsRated > 0 ? '（耐压 ' + fmt(s.capReset.vdsRated, 0) + ' V × 0.85 = 限值 ' + fmt(s.capReset.vdsLimit, 1) + ' V，校核见清单；0.85 是留 15% 余量的降额约定，见页尾速查表）' : '（未填耐压，不做校核）') + '。<br>' +
         '电容越小开关应力越高、关断期复位越快；电容超过上限则复位在下一个周期前完不成。</div>';
     }
     if (s.acFront) {

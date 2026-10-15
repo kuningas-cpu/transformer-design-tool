@@ -9,8 +9,8 @@
 | 文件 | 说明 |
 |---|---|
 | `transformer_design_tool_v2.html` | 工具本体：输入 + 结果 + 校核清单 + 判决 + 电压扫描 + 设计步骤 + 磁芯对比 + 公式表，支持 CSV 导出 |
-| `verify_transformer_tool_v2.mjs` | 验证脚本：**531 项检查**（结构/首次渲染/物理不变量/手算对照/模糊测试/校核模式/输出级/LLC 谐振腔/电容复位/动态显示/面板顺序/续流管口径/按拓扑生成文字/两家供应商交叉验证） |
-| `verify_visibility_browser.mjs` | 真浏览器回归：用无头 Edge/Chrome 打开工具，按 7 组「输入类型 × 拓扑 × 整流器件」场景核对**实际被隐藏的输入项、面板顺序、整流器件选项措辞、公式表是否只列当前拓扑**（63 项检查；本机没有 Chromium 内核浏览器时自动跳过） |
+| `verify_transformer_tool_v2.mjs` | 验证脚本：**547 项检查**（结构/首次渲染/物理不变量/手算对照/模糊测试/校核模式/输出级/LLC 谐振腔/电容复位/动态显示/面板顺序/续流管口径/按拓扑生成文字/开关管应力公式/两家供应商交叉验证） |
+| `verify_visibility_browser.mjs` | 真浏览器回归：用无头 Edge/Chrome 打开工具，按 7 组「输入类型 × 拓扑 × 整流器件」场景核对**实际被隐藏的输入项、面板顺序、整流器件选项措辞、公式表是否只列当前拓扑、Vds,pk 步骤行是否只在正激+电容复位时出现**（77 项检查；本机没有 Chromium 内核浏览器时自动跳过） |
 | `transformer_design_tool_v2_notes.md` | 设计说明：公式与约定、与 v1 的差异清单、适用边界、验证清单、EPC19 核算记录 |
 | `supplier_spec_EPC19_review.md` | 重庆天胜 EPC19（TST1724）承认书参数提取与核算记录 |
 | `supplier_spec_03-56319_review.md` | **第二家供应商（中山鼎铖 DCE）同一板两块变规格对比 + 交叉验证 + UC3843 辅助供电核算** |
@@ -47,7 +47,7 @@
 ## 复现验证
 
 ```
-node verify_transformer_tool_v2.mjs              # 531 项检查，全通过表示归档件完整可运行
+node verify_transformer_tool_v2.mjs              # 547 项检查，全通过表示归档件完整可运行
 node verify_transformer_tool_v2.mjs --diag       # 额外打印默认工况逐项结果与 EPC19 核算明细
 node verify_visibility_browser.mjs               # 真浏览器（无头 Edge/Chrome）核对输入项的动态显示/隐藏
 python make_excel_from_v2_engine.py              # 由同一套公式生成 transformer_design_tool_v2.xlsx
@@ -201,15 +201,37 @@ Excel 反激分支仍 19/19；并用无头浏览器截图人工核对了面板�
 
 ## 归档完整性
 
-归档整理于 2026-10-15，并在归档目录内重新运行验证脚本确认可用：**531 项检查全部通过**
-（真浏览器回归 `verify_visibility_browser.mjs` 另 63 项通过；Excel 反激分支 19/19 逐格一致）。
+### 第六轮：把"开关管电压应力 ≤ 0.85×耐压"的出处写进工具（2026-10-15）
+
+**问题**：校核清单里出现"开关管电压应力 Vds,pk ≤ 0.85×耐压"，但公式只藏在"电容谐振复位"那一步的说明里，0.85 这个系数在工具里也没有任何解释。
+
+**补上**：
+
+| 位置 | 内容 |
+|---|---|
+| 设计步骤（新独立一行） | 步骤名即"开关管电压应力 Vds,pk（电容谐振复位）"；公式行给出 `Vds,pk = Vin_max + V_res,pk + ΔV_Lk`、`V_res,pk = I_m,pk·√(Lm/C_res) = n·Vo/(Fs·√(Lm·C_res))`、`ΔV_Lk = I_pk,pri·√(Lk/C_res)`（漏感能量 ½·Lk·I² 全部灌进 C_res）、`校核限值 = 0.85 × Vds_rated`；代入数值行给出三项相加、限值、通过/不通过（含余量），不通过时直接给出三条改法 |
+| 输出级卡片提示 | "正激磁复位（电容谐振复位）"段落里改为完整写法：`V_res,pk` + 漏感项 `ΔV_Lk` → `Vds,pk`，并写出 `耐压 × 0.85 = 限值` 与"电容越小应力越高" |
+| 页尾速查表（新增一行） | **开关管耐压降额 0.85**：解释 0.85 不是器件参数而是降额约定（BVdss 高温下降、Vin_max 公差、ΔV_Lk 只是上界还有振铃、批量偏差），业界常用 80%~90%；并给出你板子的实算（见下） |
+| 输入框标签 | "开关管耐压 Vds_rated（V，0=不校核；限值取 0.85×耐压）" |
+
+**你板子的实算（工具 preset 值）**：正激 + 电容复位，Vin_max = 36 V、AL = 1146 nH/N²、12 匝 → Lm = 165 µH、C_res 自动取上限 2.9 nF
+→ `V_res,pk ≈ 73.5 V`；**主导项是漏感**：Lk = 0.8 µH → `ΔV_Lk ≈ 135 V` → `Vds,pk ≈ 245 V`（超 250 V 档的 212.5 V 限值）；
+若 Lk 只有 0.2 µH → `ΔV ≈ 68 V` → `Vds,pk ≈ 177 V` 通过。**所以请把实测 Lk 与板上实际的 C_res 填进来**，这两个数决定结论。
+
+**验证**：新增第 30 组 16 项（三项相加恒等式、限值与 0.85 一致、步骤行公式与代入值、Lk=0/耐压=0/复位绕组三种边界、速查表与标签文案、输出级提示），
+真浏览器回归每场景加"Vds,pk 步骤行只在正激+电容复位出现 + 速查表可查 0.85"；总数 531 → **547 项，0 失败**，真浏览器 77 项全过，Excel 反激分支仍 19/19。
+
+## 归档完整性
+
+归档整理于 2026-10-15，并在归档目录内重新运行验证脚本确认可用：**547 项检查全部通过**
+（真浏览器回归 `verify_visibility_browser.mjs` 另 77 项通过；Excel 反激分支 19/19 逐格一致）。
 校验和（SHA-256，用于日后确认归档件未被改动）：
 
 | 文件 | SHA-256 |
 |---|---|
-| `transformer_design_tool_v2.html` | `646D2828574B0BAE0C35E2D6A19F52BF3242AEA35E8BE646C6CB61FC6ED735EA` |
-| `verify_transformer_tool_v2.mjs` | `4A634BCE119B9342B3D7FF87D430B9F4DADDC50E734B147FE7A51B02EEEA7A36` |
-| `verify_visibility_browser.mjs` | `B7A0191D7824C809D0AE27B9599380EB5BB58757271F6D5CF0E7D37C2B10346D` |
+| `transformer_design_tool_v2.html` | `C4FE0F1F7D631B17BF21E4D85397F2B25C7E1BC0D917C6F0BEEDD2C461E1A633` |
+| `verify_transformer_tool_v2.mjs` | `B7AE0D8FC89B02630447BC8861BCFDAF9E602F416A0B099F7A904E225449EB86` |
+| `verify_visibility_browser.mjs` | `446E6DF9360B9571B5780E8494936A548C72ED0C5993FF21786FD2D657EDA831` |
 | `supplier_spec_EPC19_review.md` | `3B12F62F67648E77FD4A4CE7DD7401B7E8FF547A844426CE10DAE0B7B84414E6` |
 
 `verify_transformer_tool_v2.mjs` 以脚本自身位置解析工具文件路径，因此归档目录整体移动或改名后仍可直接运行。

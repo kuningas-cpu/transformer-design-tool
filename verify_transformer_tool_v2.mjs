@@ -1249,6 +1249,68 @@ header('29 per-topology wording (nothing from other topologies leaks into the pa
   ok('back to the default state', /反激 \/ Flyback/.test(firstTable(dom.formulaTable.innerHTML)));
 }
 
+/* ---------------- 30. switch voltage stress: where does "Vds,pk <= 0.85 x rating" come from ---------------- */
+header('30 switch voltage stress Vds,pk: formula, limit and where the page shows it');
+{
+  const fwdBase = { topology: 'Forward', vinMin: 18, vinMax: 36, vout: 19, iout: 3.947, fs: 200, vf: 0.5,
+    resetMode: 'cap', vdsRated: 250, lkUh: 0.8, alLibNh: 1146, ae: 52, le: 32, aw: 38, mlt: 38, auditOn: true, npGiven: 12, nsGiven: 23 };
+  const r = TD.design(baseInputs(fwdBase));
+  const cr = r.summary.capReset;
+  ok('the design reports a capacitor-reset block', !!cr && cr.vdsPk > 0);
+  ok('Vds,pk = Vin_max + V_res,pk + dV_Lk exactly',
+    Math.abs(cr.vdsPk - (r.inputs.vinMax + cr.vResetPk + cr.dVLk)) < 1e-9, JSON.stringify([cr.vdsPk, r.inputs.vinMax, cr.vResetPk, cr.dVLk]));
+  ok('the limit is 0.85 x the rated voltage', Math.abs(cr.vdsLimit - cr.vdsRated * 0.85) < 1e-9, cr.vdsLimit + ' vs ' + cr.vdsRated * 0.85);
+
+  const step = r.steps.find((x) => /电压应力/.test(x.t)) || { t: '', f: '', s: '' };
+  ok('there is a dedicated step row named after Vds,pk', /开关管电压应力 Vds,pk/.test(step.t), step.t);
+  ok('that row spells out the whole formula chain',
+    /Vds,pk = Vin_max \+ V_res,pk/.test(step.f) && /V_res,pk = I_m,pk·√\(Lm\/C_res\)/.test(step.f) &&
+    /ΔV_Lk = I_pk,pri·√\(Lk\/C_res\)/.test(step.f) && /0\.85 × Vds_rated/.test(step.f), step.f);
+  ok('the substituted numbers match the summary',
+    step.s.indexOf(cr.vResetPk.toFixed(1)) >= 0 && step.s.indexOf(cr.dVLk.toFixed(1)) >= 0 && step.s.indexOf(cr.vdsPk.toFixed(1)) >= 0, step.s);
+  ok('the row says where 0.85 comes from (reference table) and what to do when it fails',
+    /不通过/.test(step.s) && /加大 C_res/.test(step.s) && /上界/.test(step.s), step.s.slice(0, 220));
+
+  const chk = r.checks.find((c) => /电压应力/.test(c.name));
+  ok('the check row carries the same value and limit as the step',
+    !!chk && Math.abs(chk.value - cr.vdsPk) < 1e-9 && Math.abs(chk.limit - 0.85 * cr.vdsRated) < 1e-9 && chk.pass === (cr.vdsPk <= chk.limit),
+    JSON.stringify(chk));
+  ok('0.85 is a derating convention, not a device data point (no other factor is applied to Vds,pk)',
+    Math.abs(chk.value - (r.inputs.vinMax + cr.vResetPk + cr.dVLk)) < 1e-9);
+
+  /* 漏感与耐压的联动 */
+  const noLk = TD.design(baseInputs(Object.assign({}, fwdBase, { lkUh: 0 })));
+  const noLkStep = noLk.steps.find((x) => /电压应力/.test(x.t));
+  ok('with Lk = 0 the row warns that Vds,pk is under-estimated',
+    Math.abs(noLk.summary.capReset.dVLk) < 1e-12 && /漏感填 0/.test(noLkStep.s) && noLk.summary.capReset.vdsPk < cr.vdsPk, noLkStep.s);
+  const hv = TD.design(baseInputs(Object.assign({}, fwdBase, { vdsRated: 600 })));
+  ok('raising the rating to 600 V flips the same case to pass',
+    hv.checks.find((c) => /电压应力/.test(c.name)).pass === true && /通过（余量/.test(hv.steps.find((x) => /电压应力/.test(x.t)).s));
+  const off = TD.design(baseInputs(Object.assign({}, fwdBase, { vdsRated: 0 })));
+  ok('with 0 in the rating box no Vds check is produced', !off.checks.some((c) => /电压应力/.test(c.name)));
+  const noCap = TD.design(baseInputs(Object.assign({}, fwdBase, { resetMode: 'winding' })));
+  ok('the Vds check only exists for capacitor reset (a reset winding has a different stress path)',
+    !noCap.checks.some((c) => /电压应力/.test(c.name)) && noCap.summary.capReset === null);
+
+  /* 页面：速查表里解释 0.85，输入框标签也点明限值口径 */
+  ok('the reference table explains the 0.85 derating', /开关管耐压降额 0.85/.test(html) && /BVdss/.test(html));
+  ok('the rating input label states the 0.85 limit', /开关管耐压 Vds_rated/.test(html) && /限值取 0.85×耐压/.test(html));
+
+  /* 结果区那行也要能对上（含漏感项与限值） */
+  const before30 = {};
+  Object.keys(dom).forEach((k) => { before30[k] = dom[k].value; });
+  const setV4 = (id, v) => { dom[id].value = v; };
+  setV4('topology', 'Forward'); setV4('resetMode', 'cap'); setV4('vdsRated', 250); setV4('lkUh', 0.8);
+  setV4('vinMin', 18); setV4('vinMax', 36); setV4('vout', 19); setV4('iout', 3.947);
+  windowStub.__TD_RENDER__();
+  const kp = dom.outStage.innerHTML || '';
+  ok('the output-stage card shows V_res,pk + dV_Lk -> Vds,pk and the 0.85 limit',
+    /V_res,pk/.test(kp) && /Vds,pk/.test(kp) && /ΔV_Lk/.test(kp) && /0\.85/.test(kp) && /限值/.test(kp),
+    String(kp).replace(/<[^>]+>/g, ' ').slice(0, 300));
+  Object.keys(before30).forEach((k) => { dom[k].value = before30[k]; });
+  windowStub.__TD_RENDER__();
+}
+
 if (process.argv.includes('--diag')) {
   const show = (label, r) => {
     const s = r.summary, o = s.outStage;
