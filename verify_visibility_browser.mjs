@@ -139,7 +139,7 @@ const SCENARIOS = [
     hidden: ['rippleK', 'resetMode', 'vinNom'].concat(AC_ONLY)
   },
   {
-    s: 'dc,Forward,diode,cap,vdsRated=100,cresNf=1,vdsMeasPk=60,lkUh=0.8,vinMin=18,vinMax=36,vout=19,iout=3.947',
+    s: 'dc,Forward,diode,cap,vdsRated=100,cresNf=1,vdsMeasPk=60,vdsMeasVin=24,lkUh=0.8,vinMin=18,vinMax=36,vout=19,iout=3.947',
     title: '正激 + 电容复位 + 100 V 管（IRF540N）：复位电容窗口为空', topoLabel: '单端正激 / Forward',
     shown: ['vinMin', 'vinMax', 'resetMode', 'cresNf', 'vdsRated', 'lkUh'].concat(BUCK_ONLY),
     hidden: ['rippleK', 'secRect'].concat(AC_ONLY, ['pfcBus'], LLC_ONLY, ['rdsOnMOhm', 'vfBody', 'tDeadNs']),
@@ -223,16 +223,14 @@ SCENARIOS.forEach((sc) => {
       /窗口为空：100 V 档/.test(stepRegion) && !!mClass && Number(mClass[1]) > 100, stepRegion.slice(-320));
     check('校核清单出现"复位电容 ≥ 耐压要求下限"这一行且判不通过',
       /耐压要求下限/.test(chkRegion) && /bad/.test(chkRegion.split('耐压要求下限')[1] || ''), chkRegion.slice(-260));
-    check('填了实测 Vds,pk 后出现"（实测）"校核行且判通过',
-      /Vds,pk（实测）/.test(chkRegion) && /ok/.test(chkRegion.split('Vds,pk（实测）')[1] || ''), chkRegion.slice(-220));
-    check('设计步骤里出现"实测 Vds,pk 与解析上界对账"并给出等效值',
-      /实测 Vds,pk 与解析上界对账/.test(stepRegion) && /等效复位电容/.test(stepRegion) && /等效 Fs/.test(stepRegion),
-      (stepRegion.match(/等效复位电容[^；]*/) || ['(missing)'])[0]);
-    check('低于理论下限时，步骤里会反问"这组波形是在多大输入电压下测的"',
-      /这个峰值最多对应多大的输入电压/.test(stepRegion) && /最多只有 \d/.test(stepRegion),
-      (stepRegion.match(/最多只有[^。）]*/) || ['(missing)'])[0]);
-    check('步骤里给出完整下限（含 2·Vin 这一项）',
-      /Vds,pk ≥ 2·Vin_max/.test(stepRegion) && /低于这个下限/.test(stepRegion));
+    check('填了实测 Vds,pk 后出现"（实测 @Vin=…）"校核行且判通过',
+      /Vds,pk（实测 @Vin=/.test(chkRegion) && /ok/.test(chkRegion.split('Vds,pk（实测 @Vin=')[1] || ''), chkRegion.slice(-240));
+    check('设计步骤里出现"实测 Vds,pk 与模型对账"并给出理论下限与两种反推',
+      /实测 Vds,pk 与模型对账/.test(stepRegion) && /理论下限/.test(stepRegion) &&
+      /固定 Lm/.test(stepRegion) && /固定 C_res/.test(stepRegion),
+      (stepRegion.match(/反推 C_res[^；]*/) || ['(missing)'])[0]);
+    check('对账步骤指出实测点不是 Vin_max（实测 Vin 单独输入）',
+      /@ Vin = \d/.test(stepRegion) && /不是 Vin_max/.test(stepRegion));
     check('步骤里给出"简单解 vs 环形解"两种复位峰值估计与反推的 Lm',
       /简单解 vs 环形解/.test(stepRegion) && /需要的 Lm ≈ \d+ µH/.test(stepRegion),
       (stepRegion.match(/需要的 Lm ≈ \d+ µH/) || ['(missing)'])[0]);

@@ -1477,99 +1477,81 @@ header('33 board as built (C_res = 1 nF, IRF540N 100 V, Vin_max = 36 V)');
     Math.abs(c400.dVLk - c1.dVLk) < 1e-6, c400.dVLk.toFixed(1));
 }
 
-/* ---------------- 34. measured Vds,pk vs the analytic upper bound (reconciliation) ---------------- */
-header('34 measured Vds,pk (60 V) reconciled against the analytic reset model');
+/* ---------------- 34. measured Vds,pk reconciled with the ring model (real board) ---------------- */
+header('34 measured 60 V @ Vin=24 V vs the corrected resonant-reset floor (real board)');
 {
-  const board = { topology: 'Forward', vinMin: 18, vinMax: 36, vout: 19, iout: 3.947, fs: 200, vf: 0.5,
-    resetMode: 'cap', cresNf: 1, vdsRated: 100, lkUh: 0.2, alLibNh: 1146, ae: 52, le: 32, aw: 38, mlt: 38,
-    auditOn: true, npGiven: 12, nsGiven: 23,
+  /* 实板参数：12 匝 / 0.4mm×2 初级（承认书 L = 165 µH ⇒ AL = 1146 nH/N²）、复位电容 1 nF、
+     Fs = 250 kHz、Vin = 18~36 V（波形在 24 V 下测得，峰值 60 V）、副边单整流+续流、无串阻/无钳位 */
+  const board = { topology: 'Forward', vinMin: 18, vinMax: 36, vout: 19, iout: 3.947, fs: 250, vf: 0.5,
+    resetMode: 'cap', cresNf: 1, vdsRated: 100, vdsMeasPk: 60, vdsMeasVin: 24, lkUh: 0.2,
+    alLibNh: 1146, ae: 52, le: 32, aw: 38, mlt: 38, auditOn: true, npGiven: 12, nsGiven: 23,
     wireModeP: 'mm', wireDiaP: 0.4, strandsP: 2, parP: 2, wireModeS: 'mm', wireDiaS: 0.2, strandsS: 2, parS: 3 };
-  const rel34 = (x, y) => Math.abs(x - y) / (Math.abs(y) > 1e-12 ? Math.abs(y) : 1);
-  const withMeas = TD.design(baseInputs(Object.assign({}, board, { vdsMeasPk: 60 })));
-  const cw = withMeas.summary.capReset, mw = cw.meas;
-  ok('the measurement is turned into an effective reset peak', Math.abs(mw.vResPk - 24) < 1e-9, String(mw.vResPk));
-  ok('the equivalent reset capacitance is C x (model/measured)^2 = 27.2 nF',
-    rel34(mw.cEffNf, 27.2) < 0.01, mw.cEffNf.toFixed(2));
-  ok('the equivalent magnetising inductance = 4.49 mH', rel34(mw.lmEffUh, 4493) < 0.02, mw.lmEffUh.toFixed(0));
-  ok('the equivalent switching frequency = 1044 kHz', rel34(mw.fsEffKHz, 1044) < 0.02, mw.fsEffKHz.toFixed(0));
-  ok('only ~3.7% of the modelled magnetising energy shows up on the capacitor', rel34(mw.eRatioOfMag, 3.7) < 0.05, mw.eRatioOfMag.toFixed(2));
-  ok('the reflected-output clamp level is reported (Vin_max + n*Vo = 46.2 V)', rel34(mw.vClampRefl, 46.2) < 0.01, mw.vClampRefl.toFixed(1));
-  /* 关键判据：无损谐振复位的理论下限 π·n·Vo/(1−D)（与 Lm、C、Fs 无关）——实测 24 V 低于它 ⇒ 纯电容解释不成立 */
-  ok('the lossless resonant reset has a theoretical floor of pi*n*Vo/(1-D)',
-    Math.abs(mw.vResMinTheo - 44.6) < 0.3, mw.vResMinTheo.toFixed(2));
-  ok('the measured 24 V sits below that floor, so a pure capacitor reset is ruled out',
-    mw.vResPk < mw.vResMinTheo && mw.belowTheo === true, mw.vResPk + ' < ' + mw.vResMinTheo.toFixed(1));
-  ok('the pure-capacitor equivalent would fail the reset timing in this converter',
-    mw.pureCFits === false && mw.tResetNeedUs > mw.tOffMinUs, mw.tResetNeedUs.toFixed(2) + ' > ' + mw.tOffMinUs.toFixed(2));
-  ok('a series damping resistance is offered as the quantitative alternative',
-    mw.rSeriesOhm > 1500 && mw.rSeriesOhm < 2500 && mw.rSeriesLossW > 1.0 && mw.rSeriesLossW < 2.0,
-    mw.rSeriesOhm.toFixed(0) + ' Ω, ' + mw.rSeriesLossW.toFixed(2) + ' W');
-  /* 完整下限：电容在导通期已被充到 Vin，所以峰值 = Vin + √(Vin² + (I·Z)²) ≥ Vin + √(Vin² + (π·n·Vo/(1−D))²) */
-  ok('the drain-peak floor accounts for the Vin the capacitor already holds',
-    Math.abs(mw.vdsFloorTheo - (36 + Math.sqrt(36 * 36 + mw.vResMinTheo * mw.vResMinTheo))) < 1e-9 &&
-    mw.vdsFloorTheo > 90 && mw.vdsFloorTheo < 96, mw.vdsFloorTheo.toFixed(2));
-  ok('even with zero magnetising current the floor is 2 x Vin', 2 * 36 === 72 && mw.vdsFloorTheo > 72);
-  ok('the measured 60 V is flagged as below that floor', mw.belowVdsFloor === true, mw.vdsFloorTheo.toFixed(1) + ' vs 60');
-  ok('the implied input voltage for a pure capacitor reset is Vds,pk/2 = 30 V',
-    Math.abs(mw.vinImplied - 30) < 1e-9, String(mw.vinImplied));
-  const revStep = withMeas.steps.find((s) => /这个峰值最多对应多大的输入电压/.test(s.t));
-  ok('a reverse-derivation step asks the user to check the input voltage used',
-    !!revStep && /最多只有 30\.0 V/.test(revStep.s) && /Vin_max = 36 V/.test(revStep.s), revStep ? revStep.s.slice(0, 160) : 'missing');
+  const rel = (x, y) => Math.abs(x - y) / (Math.abs(y) > 1e-12 ? Math.abs(y) : 1);
+  const r = TD.design(baseInputs(board));
+  const c = r.summary.capReset, m = c.meas;
+  ok('the measurement point is taken from the new Vin input (24 V, not Vin_max)', m && Math.abs(m.vinMeas - 24) < 1e-9, String(m && m.vinMeas));
+  ok('the measured reset peak is Vds,pk - Vin = 36 V', Math.abs(m.vResPk - 36) < 1e-9, String(m.vResPk));
 
-  /* 真实工况再算一次：Fs = 250 kHz、Vin_max = 36 V（用户实测 60 V 的板子） */
-  const board250 = Object.assign({}, board, { fs: 250 });
-  const r250 = TD.design(baseInputs(Object.assign({}, board250, { vdsMeasPk: 60 })));
-  const c250 = r250.summary.capReset;
-  ok('the ring (undamped steady-state) solution is computed separately from the simple one',
-    c250.vdsPkRing > c250.vdsPk && c250.ringOmDeg > 360 && c250.ringOmDeg < 450,
-    'ring ' + c250.vdsPkRing.toFixed(0) + ' V @ Ω=' + c250.ringOmDeg.toFixed(0) + '°, simple ' + c250.vdsPk.toFixed(0) + ' V');
-  ok('with the datasheet 165 uH the ring solution would run away (1.07 A magnetising current, ~470 V)',
-    c250.ringIoff > 0.8 && c250.ringIoff < 1.4 && c250.vdsPkRing > 400,
-    c250.ringIoff.toFixed(3) + ' A, ' + c250.vdsPkRing.toFixed(0) + ' V');
-  ok('the measured 60 V inverts to Lm ≈ 548 uH (AL ≈ 3804 nH/N² for 12 turns)',
-    Math.abs(c250.meas.lmFromMeasUh - 548) / 548 < 0.05 && Math.abs(c250.meas.alFromMeasNh - 3804) / 3804 < 0.05,
-    c250.meas.lmFromMeasUh.toFixed(0) + ' µH / ' + c250.meas.alFromMeasNh.toFixed(0) + ' nH/N²');
-  ok('that is ~3.3x the inductance implied by the datasheet value',
-    Math.abs(c250.meas.lmRatio - 3.32) / 3.32 < 0.05, c250.meas.lmRatio.toFixed(2));
-  const ws = r250.steps.find((s) => /简单解 vs 环形解/.test(s.t));
-  ok('a step row contrasts the two solutions and reports the inverted Lm',
-    !!ws && /环形解/.test(ws.f) && /I_off·\(1 − cosΩ\)/.test(ws.f) && /需要的 Lm ≈ 548 µH/.test(ws.s), ws ? ws.s.slice(0, 200) : 'missing');
-  ok('a warning tells the user to re-measure the primary inductance with an LCR meter',
-    r250.warns.some((w) => /反推的等效 Lm/.test(w) && /LCR 表实测/.test(w) && /6 匝/.test(w) && /串联/.test(w)),
-    r250.warns.filter((w) => /反推的等效 Lm/.test(w)).join(' | ').slice(0, 200));
+  /* 理论下限（修正版）：环形解在 Ω = π 时最小 ⇒ 峰值下限 = Vin + √(Vin² + (π·n·Vo/(2(1−D)))²) */
+  ok('the corrected floor uses I_off = dI/2 (Omega = pi) so the excitation term is pi*n*Vo/(2(1-D)) = 27.7 V',
+    Math.abs(m.vResMinTheo - 27.7) < 0.3, m.vResMinTheo.toFixed(2));
+  ok('the drain-peak floor at Vin=24 V is 60.6 V', Math.abs(m.vdsFloorTheo - 60.6) < 0.5, m.vdsFloorTheo.toFixed(2));
+  ok('the measured 60 V sits exactly on that floor (optimal Omega=pi design point)',
+    m.vdsMeasPk / m.vdsFloorTheo > 0.97 && m.vdsMeasPk / m.vdsFloorTheo < 1.05 && m.belowVdsFloor === false,
+    (m.vdsMeasPk / m.vdsFloorTheo).toFixed(3) + '  belowFloor=' + m.belowVdsFloor);
 
-  const chkMeas = withMeas.checks.find((c) => /电压应力/.test(c.name) && /实测/.test(c.name));
-  const chkAna = withMeas.checks.find((c) => /电压应力/.test(c.name) && !/实测/.test(c.name));
-  ok('a measured check row is added and passes (60 V <= 85 V)', !!chkMeas && chkMeas.pass === true && chkMeas.scope === 'core',
+  /* 反推：形状（驼峰填满关断期 ⇒ Ω = π）与峰值分别给出 C_res */
+  ok('the shape (hump fills the off-time, Omega = pi) implies C_res = (t_off/pi)^2/Lm = 3.25 nF',
+    Math.abs(m.cFromShapeNf - 3.25) < 0.1, m.cFromShapeNf.toFixed(3));
+  ok('inverting the measured peak at fixed Lm gives C_res ≈ 3.2 nF',
+    m.cFromPeakNf > 2.8 && m.cFromPeakNf < 3.8, m.cFromPeakNf.toFixed(2));
+  ok('both inversions say the fitted capacitance is ~3.2x the 1 nF that was entered',
+    Math.abs(m.cRatio - 3.2) / 3.2 < 0.2, m.cRatio.toFixed(2));
+  ok('inverting at fixed C_res instead points to Lm = 536 uH (the other possible explanation)',
+    m.lmFromMeasUh > 440 && m.lmFromMeasUh < 600, m.lmFromMeasUh.toFixed(0) + ' µH');
+
+  /* 用输入的 1 nF 会在 24 V 处落到"谐振累积"区，与实测差得远 */
+  const ring24 = TD.design(baseInputs(Object.assign({}, board, { vdsMeasPk: 0 })));
+  ok('with the entered 1 nF the ring solution at 24 V is far above the measurement',
+    ring24.summary.capReset.vdsPkRing > 400, ring24.summary.capReset.vdsPkRing.toFixed(0) + ' V');
+  ok('and the ring angle Omega at 24 V is ~405 deg (i.e. past a full half period, accumulating)',
+    ring24.summary.capReset.ringOmDeg > 380 && ring24.summary.capReset.ringOmDeg < 430,
+    ring24.summary.capReset.ringOmDeg.toFixed(0) + '°');
+
+  /* 外推到 Vin_max 的应力 */
+  ok('the tool extrapolates to Vin_max and reports the ring peak there',
+    m.peakAtVinMaxRing > 400 && Math.abs(m.peakAtVinMaxRing - c.vdsPkRing) < 1e-9, m.peakAtVinMaxRing.toFixed(0) + ' V');
+  const step = r.steps.find((s) => /实测 Vds,pk 与模型对账/.test(s.t));
+  ok('there is a reconciliation step naming the measurement point and both inversions',
+    !!step && /@ Vin = 24/.test(step.s) && /反推 C_res/.test(step.s) && /固定 Lm/.test(step.s) && /固定 C_res/.test(step.s),
+    step ? step.s.slice(0, 220) : 'missing');
+  ok('the step flags that 24 V is not Vin_max',
+    /不是 Vin_max/.test(step.s));
+  ok('a warning tells the user to verify the actual reset capacitance',
+    r.warns.some((w) => /反推的复位电容/.test(w) && /复核这只电容的实际容量/.test(w) && /第二只电容并联/.test(w)),
+    r.warns.filter((w) => /反推的复位电容/.test(w)).join(' | ').slice(0, 220));
+  ok('an extrapolation step reports the Vin_max stress',
+    r.steps.some((s) => /外推到 Vin_max/.test(s.t) && /环形解/.test(s.s)));
+
+  /* 判决：实测点不是 Vin_max ⇒ 模型 @Vin_max 是核心项、实测行降级为参考 */
+  const chkCore = r.checks.find((x) => /电压应力/.test(x.name) && /模型 @Vin_max/.test(x.name));
+  const chkRing = r.checks.find((x) => /环形解 @Vin_max/.test(x.name));
+  const chkMeas = r.checks.find((x) => /电压应力/.test(x.name) && /实测 @Vin=24/.test(x.name));
+  ok('the model row at Vin_max and the ring row stay core checks', !!chkCore && chkCore.scope === 'core' && !!chkRing && chkRing.scope === 'core',
+    JSON.stringify([chkCore && chkCore.scope, chkRing && chkRing.scope]));
+  ok('the measured row is demoted to peripheral because it was taken at 24 V', !!chkMeas && chkMeas.scope === 'peripheral',
     JSON.stringify(chkMeas));
-  ok('the analytic row stays visible but is demoted out of the verdict', !!chkAna && chkAna.pass === false && chkAna.scope === 'peripheral',
-    JSON.stringify({ pass: chkAna.pass, scope: chkAna.scope }));
-  ok('the model-based C_res lower bound is demoted as well',
-    withMeas.checks.filter((c) => /耐压要求下限/.test(c.name)).every((c) => c.scope === 'peripheral'));
-  ok('no core check is driven by the over-conservative Vds model',
-    withMeas.checks.filter((c) => c.scope !== 'peripheral' && c.pass === false && /电压应力|耐压要求下限/.test(c.name)).length === 0);
 
-  const st = withMeas.steps.find((s) => /实测 Vds,pk 与解析上界对账/.test(s.t));
-  ok('the reconciliation has its own design step', !!st && /等效复位电容/.test(st.f) && /能量比/.test(st.f));
-  ok('that step spells out the ratio, the equivalents and the clamp hypothesis',
-    /5\.22 倍/.test(st.s) && /27\.2 nF/.test(st.s) && /4493 µH/.test(st.s) && /1044 kHz/.test(st.s) && /3\.7%/.test(st.s) && /46\.2 V/.test(st.s),
-    st.s.slice(0, 200));
-  ok('a warning states the theoretical minimum and both remaining causes',
-    withMeas.warns.some((w) => /低于无损谐振复位的理论下限/.test(w) && /阻尼电阻/.test(w) && /钳位器件/.test(w)),
-    withMeas.warns.filter((w) => /理论下限/.test(w)).join(' | ').slice(0, 180));
-  ok('the "100 V class infeasible" warning admits the measurement contradicts the model',
-    withMeas.warns.some((w) => /模型判定）耐压档不可行/.test(w) && /实测 Vds,pk = 60 V/.test(w) && /不代表你板子会超压/.test(w)));
-
-  /* 不给实测值时行为回到原样 */
-  const noMeas = TD.design(baseInputs(Object.assign({}, board, {})));
-  ok('without a measurement there is no measured row and the analytic row is a core check',
-    !noMeas.checks.some((c) => /电压应力/.test(c.name) && /实测/.test(c.name)) &&
-    noMeas.checks.find((c) => /电压应力/.test(c.name)).scope === 'core' &&
-    noMeas.summary.capReset.meas === null);
-  ok('the panel has an input for the measured peak (forward + cap reset only)',
-    /id="vdsMeasPk"/.test(html) && /data-show="topo:Forward&resetMode:cap"[^>]*><label for="vdsMeasPk"/.test(html));
-  ok('the board preset carries the measurement (60 V)', /vdsMeasPk: 60/.test(html));
+  /* 不填实测点时行为回到原样 */
+  const plain = TD.design(baseInputs(Object.assign({}, board, { vdsMeasPk: 0, vdsMeasVin: 0 })));
+  ok('without a measurement there is no reconciliation and the analytic row is core',
+    plain.summary.capReset.meas === null && plain.checks.find((x) => /电压应力/.test(x.name)).scope === 'core');
+  ok('the panel has inputs for both the measured peak and the measurement input voltage',
+    /id="vdsMeasPk"/.test(html) && /id="vdsMeasVin"/.test(html) && /vdsMeasVin: num\('vdsMeasVin', 0\)/.test(html));
+  ok('the board preset carries the measurement and its input voltage (60 V @ 24 V)',
+    /vdsMeasPk: 60/.test(html) && /vdsMeasVin: 24/.test(html));
 }
+
 
 if (process.argv.includes('--diag')) {
   const show = (label, r) => {
