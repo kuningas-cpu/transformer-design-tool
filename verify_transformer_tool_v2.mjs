@@ -708,7 +708,8 @@ header('21 regression baselines');
     ['half-bridge 380-420V -> 12V/20A @100kHz', baseInputs({ topology: 'Half-Bridge', vinMin: 380, vinMax: 420, vout: 12, iout: 20 }), { Np: 82, Ns: 6, Bpk: 0.0998 }],
     ['push-pull 48V -> 12V/10A @100kHz', baseInputs({ topology: 'Push-Pull', vinMin: 48, vinMax: 48, vout: 12, iout: 10 }), { Bpk: 0.0998 }],
     ['llc 380-420V -> 12V/10A @100kHz (fr=100k, k=5)', baseInputs({ topology: 'LLC Resonant', vinMin: 380, vinMax: 420, vinNom: 400, vout: 12, iout: 10, llcFr: 100, llcK: 5 }), { Np: 101, Ns: 6 }],
-    ['EPC19 supplier-spec audit (23T/12T, AL=1146nH/N2)', baseInputs({ topology: 'Forward', vinMin: 21.6, vinMax: 26.4, vout: 5, iout: 2, vf: 0.6, eta: 0.88, fs: 200, auditOn: true, npGiven: 23, nsGiven: 12, alNh: 1146, ae: 21.5, le: 30, aw: 24, mlt: 38, wireModeP: 'mm', wireDiaP: 0.2, strandsP: 2, parP: 1, wireModeS: 'mm', wireDiaS: 0.4, strandsS: 2, parS: 1, dcrLimitS: 32 }), { Np: 23, Ns: 12, LmUH: 606.2, RdcSec25: 31.89 }]
+    /* 1 号主变 TST1724 实际结构（用户确认）：12 匝原边 / 23 匝副边，同匝数在 PCB 并联，电容谐振复位 */
+    ['EPC19 1号 TST1724 校核 (12T原边/23T副边, AL=1146 nH/N²)', baseInputs({ topology: 'Forward', vinMin: 18, vinMax: 36, vout: 19, iout: 3.947, fs: 200, auditMode: '1', npGiven: 12, nsGiven: 23, alNh: 1146, ae: 52, le: 32, aw: 38, mlt: 34, resetMode: 'cap', dutyMax: 0.65, wireModeP: 'mm', wireDiaP: 0.4, strandsP: 2, parP: 2, wireModeS: 'mm', wireDiaS: 0.2, strandsS: 2, parS: 3, dcrLimitP: 32 }), { Np: 12, Ns: 23, LmUH: 165.0 }]
   ];
   for (const [name, inp, exp] of cases) {
     const r = TD.design(inp), s = r.summary;
@@ -738,13 +739,23 @@ if (process.argv.includes('--dump')) {
     epc19board: {
       topology: 'Forward', vinMin: 10.8, vinMax: 13.2, vout: 12, iout: 1, fs: 200,
       auditMode: '1', npGiven: 12, nsGiven: 23,
-      alNh: 1146, ae: 21.5, le: 30, aw: 24, mlt: 31,
+      alNh: 1146, ae: 52, le: 32, aw: 38, mlt: 34,
       wireModeP: 'mm', wireDiaP: 0.4, strandsP: 2, parP: 2,
       wireModeS: 'mm', wireDiaS: 0.2, strandsS: 2, parS: 3,
       resetMode: 'cap', cresNf: 0, vdsRated: 100,
       nlGiven: 38, lmGiven: 145, naux: 25, dutyMax: 0.5, dcrLimitP: 32, dcrLimitS: 0
     },
     flyback: {}
+    ,board19: {
+      /* 用户的 19V/75W 隔离 DCDC 板（Vin 取 24V 轨假设）：1号 12/23 + 电容复位；2号 38T输出电感+25T辅助 */
+      topology: 'Forward', vinMin: 18, vinMax: 36, vout: 19, iout: 3.947, fs: 200,
+      auditMode: '1', npGiven: 12, nsGiven: 23,
+      alNh: 1146, ae: 52, le: 32, aw: 38, mlt: 34,
+      wireModeP: 'mm', wireDiaP: 0.4, strandsP: 2, parP: 2,
+      wireModeS: 'mm', wireDiaS: 0.2, strandsS: 2, parS: 3,
+      resetMode: 'cap', cresNf: 0, vdsRated: 150,
+      nlGiven: 38, lmGiven: 145, naux: 25, dutyMax: 0.65, dcrLimitP: 32
+    }
   }[scen] || {};
   /* 与 Excel 版默认输入保持一致（手动线径 0.4mm×10 股、k_pack 1.25） */
   const r = TD.design(baseInputs(Object.assign({}, wire, scenOver)));
@@ -761,7 +772,7 @@ if (process.argv.includes('--dump')) {
 header('23 forward with capacitor reset + transformer #2 as output inductor/aux');
 {
   const base = { topology: 'Forward', vinMin: 9, vinMax: 16, vout: 12, iout: 1, fs: 200,
-    alNh: 1146, ae: 21.5, le: 30, aw: 24, mlt: 31,
+    alNh: 1146, ae: 52, le: 32, aw: 38, mlt: 34,
     wireModeP: 'mm', wireDiaP: 0.4, strandsP: 2, parP: 2,
     wireModeS: 'mm', wireDiaS: 0.2, strandsS: 2, parS: 3,
     resetMode: 'cap', cresNf: 0, vdsRated: 100,
@@ -800,7 +811,7 @@ header('22 core library: provenance, measured AL, CSV import/export');
   ok('applying a measured-AL preset fills the AL input', typeof windowStub.__TD_APPLY_CORE__ === 'function');
   windowStub.__TD_APPLY_CORE__('EPC19');
   ok('EPC19 preset sets ae/mlt/AL from the library',
-    Number(dom.ae.value) === 21.5 && Number(dom.mlt.value) === 38 && Number(dom.alNh.value) === 1146,
+    Number(dom.ae.value) === 52 && Number(dom.mlt.value) === 38 && Number(dom.alNh.value) === 1146,
     [dom.ae.value, dom.mlt.value, dom.alNh.value].join('/'));
   const builtin = JSON.parse(JSON.stringify(TD.CORES));
   const csv = TD.coresToCsv(TD.CORES);

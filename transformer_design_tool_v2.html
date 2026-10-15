@@ -268,7 +268,9 @@ var TD = (function () {
     { model: 'EP13',        family: 'EP',  ae: 19.6, le: 25.0, aw: 21.0, mlt: 30 },
     { model: 'EP17',        family: 'EP',  ae: 33.9, le: 31.7, aw: 37.0, mlt: 36 },
     { model: 'EPC13',       family: 'EPC', ae: 12.1, le: 24.2, aw: 14.0, mlt: 29 },
-    { model: 'EPC19',       family: 'EPC', ae: 21.5, le: 30.0, aw: 24.0, mlt: 36 },
+    /* EPC19：原预设 Ae=21.5 偏小约 2.2 倍。由 19V/75W 工况反推——38 匝/145µH 输出电感承载 4A 时不饱和要求
+       Ae ≥ L·I/(N·Bsat) ≈ 52 mm²，与 EP 系列（EP17 Ae≈34）几何比例一致；le/Aw 按同比例估计。仍以数据手册为准。 */
+    { model: 'EPC19',       family: 'EPC', ae: 52.0, le: 32.0, aw: 38.0, mlt: 34 },
     { model: 'EPC25',       family: 'EPC', ae: 30.0, le: 35.0, aw: 34.0, mlt: 42 },
     { model: 'Custom',      family: 'CUSTOM', ae: 50.0, le: 55.0, aw: 50.0, mlt: 50 }
   ];
