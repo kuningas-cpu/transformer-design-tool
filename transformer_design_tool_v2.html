@@ -1071,7 +1071,13 @@ var TD = (function () {
            + '按实测峰值反推：固定 Lm（' + (Lm * 1e6).toFixed(0) + ' µH）时 C_res ≈ ' + meas.cFromPeakNf.toFixed(2) + ' nF，'
            + '固定 C_res（' + crNf.toFixed(2) + ' nF）时 Lm ≈ ' + meas.lmFromMeasUh.toFixed(0) + ' µH；'
            + '而当前输入的是 C_res = ' + crNf.toFixed(2) + ' nF / Lm = ' + (Lm * 1e6).toFixed(0) + ' µH（比值 ' + meas.cRatio.toFixed(2) + ' / ' + meas.lmRatio.toFixed(2) + '）。'
-           + '若两个反推值里有一个接近你的实际元件参数，就按它校准；若都差得多，说明还有别的机制（阻尼/钳位/副边回馈）。' });
+           + '若两个反推值里有一个接近你的实际元件参数，就按它校准；若都差得多，说明还有别的机制（阻尼/钳位/副边回馈）。'
+           + (Math.abs(meas.vdsMeasPk - meas.vClampRefl) < Math.max(15, 0.45 * meas.vResPk)
+               ? ' **注意：实测峰值只比 "Vin + n·Vo"（= ' + meas.vClampRefl.toFixed(1) + ' V）高 ' + (meas.vdsMeasPk - meas.vClampRefl).toFixed(1) +
+                 ' V —— 这个差距正好是漏感尖峰的量级**，说明 drain 是被"副边回馈/钳位"压住的（钳位型复位），而不是由复位电容的谐振决定的：'
+                 + '谐振型复位的峰值下限是 ' + meas.vdsFloorTheo.toFixed(1) + ' V，比实测高。'
+                 + '钳位型复位在**轻载/空载时会失去钳位**（副边不再有大电流），峰值会明显上升——请把负载从满载降到 10% 与空载各测一次峰值。'
+               : '') });
         if (meas.belowVdsFloor) {
           steps.push({ t: '反推：这个峰值最多对应多大的输入电压',
             f: '纯电容复位时 Vds,pk ≥ 2·Vin_max（复位电容在导通期已被充到 Vin，复位期间母线还要再灌入 Vin·Q 的电荷）⇒ Vin ≤ Vds,pk(实测)/2',
@@ -1555,6 +1561,14 @@ var TD = (function () {
         addCheck('开关管电压应力 Vds,pk（实测 @Vin=' + capReset.meas.vinMeas.toFixed(0) + ' V）≤ 0.85×耐压',
           capReset.meas.vdsMeasPk, 'V', capReset.vdsLimit, 'V', capReset.meas.vdsMeasPk <= capReset.vdsLimit, 0.9,
           measOffPoint ? 'peripheral' : 'core');
+        /* 实测峰值明显低于"纯电容谐振复位"的理论下限 ⇒ 复位不是靠这个电容完成的（另有回馈/钳位通路） */
+        if (capReset.meas.vdsMeasPk < capReset.meas.vdsFloorTheo * 0.9) {
+          warns.push('实测峰值 ' + capReset.meas.vdsMeasPk.toFixed(1) + ' V 明显低于"纯电容谐振复位"的理论下限 ' +
+            capReset.meas.vdsFloorTheo.toFixed(1) + ' V（Vin = ' + capReset.meas.vinMeas.toFixed(0) + ' V），而与 "Vin + n·Vo" = ' +
+            capReset.meas.vClampRefl.toFixed(1) + ' V 只差 ' + (capReset.meas.vdsMeasPk - capReset.meas.vClampRefl).toFixed(1) +
+            ' V（漏感尖峰量级）⇒ **复位是"钳位/回馈型"的（磁化能量经副边或其他低阻通路送回），这只电容只是缓冲**，不是谐振复位的主角。' +
+            '这类复位在轻载/空载时会失去钳位、峰值可能大幅上升，务必在满载 / 10% 载 / 空载三种情况下各测一次峰值，并用原边电流波形确认每个周期都复位到零。');
+        }
         if (capReset.vdsPk > capReset.vdsLimit * 1.3 && capReset.meas.vdsMeasPk <= capReset.vdsLimit * 0.9) {
           warns.push('注意：按当前输入（Lm = ' + (Lm * 1e6).toFixed(0) + ' µH、C_res = ' + capReset.crNf.toFixed(2) +
             ' nF）算出的 Vds,pk = ' + capReset.vdsPk.toFixed(0) + ' V，而实测只有 ' + capReset.meas.vdsMeasPk.toFixed(0) +

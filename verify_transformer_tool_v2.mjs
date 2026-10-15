@@ -1584,6 +1584,48 @@ header('34 measured 60 V @ Vin=24 V vs the corrected resonant-reset floor (real 
 }
 
 
+/* ---------------- 35. second measurement set: Vo = 12 V, 40-turn aux, 252.5 kHz, 37.6 V peak ---------------- */
+header('35 second capture (Vo=12 V, aux 40T): is the reset really the capacitor?');
+{
+  /* 新工况：输出改 12 V、辅助绕组 40 匝；实测 Fs = 252.5 kHz、周期 3.961 µs、正脉宽(hump) 2.724 µs、
+     低电平(开通) 1.237 µs ⇒ D = 31.2%；峰值（幅值读数）= 37.6 V，边沿 24 ns / 48 ns。
+     用 D = n·Vo/Vin 反推：Vin = 0.5217×12.5/0.312 ≈ 20.9 V（正激）或 14.4 V（反激式取样） */
+  const board = { topology: 'Forward', vinMin: 21, vinMax: 21, vout: 12, iout: 6.25, fs: 252.5, vf: 0.5,
+    resetMode: 'cap', cresNf: 3.2, vdsRated: 100, vdsMeasPk: 37.6, vdsMeasVin: 21, lkUh: 0.2, naux: 40,
+    alLibNh: 1146, ae: 52, le: 32, aw: 38, mlt: 38, auditOn: true, npGiven: 12, nsGiven: 23, nlGiven: 38, lmGiven: 145,
+    wireModeP: 'mm', wireDiaP: 0.4, strandsP: 2, parP: 2, wireModeS: 'mm', wireDiaS: 0.2, strandsS: 2, parS: 3 };
+  const r = TD.design(baseInputs(board));
+  const c = r.summary.capReset, m = c.meas;
+  ok('the measured duty (31.2%) matches a forward converter with Vin ≈ 21 V',
+    Math.abs(r.summary.dNeedMin - 0.312) < 0.006, r.summary.dNeedMin.toFixed(4));
+  ok('the pure-capacitor floor at 21 V is 46.7 V — above the measured 37.6 V',
+    Math.abs(m.vdsFloorTheo - 46.7) < 0.8 && m.vdsMeasPk < m.vdsFloorTheo,
+    m.vdsFloorTheo.toFixed(1) + ' V vs ' + m.vdsMeasPk.toFixed(1) + ' V');
+  ok('the measured peak sits ~10 V above Vin + n*Vo = 27.5 V (leakage-spike order)',
+    Math.abs(m.vClampRefl - 27.5) < 0.2 && m.vdsMeasPk - m.vClampRefl > 5 && m.vdsMeasPk - m.vClampRefl < 18,
+    m.vClampRefl.toFixed(1) + ' V, +' + (m.vdsMeasPk - m.vClampRefl).toFixed(1) + ' V');
+  ok('the tool calls this a clamp / energy-return reset, not a resonant one',
+    r.warns.some((w) => /低于"纯电容谐振复位"的理论下限/.test(w) && /这只电容只是缓冲/.test(w) && /轻载\/空载/.test(w)),
+    r.warns.filter((w) => /理论下限/.test(w)).join(' | ').slice(0, 240));
+  ok('the reconciliation step also says so and asks for light-load captures',
+    (r.steps.find((s) => /实测 Vds,pk 与模型对账/.test(s.t)) || { s: '' }).s.indexOf('钳位型复位') > 0 &&
+    (r.steps.find((s) => /实测 Vds,pk 与模型对账/.test(s.t)) || { s: '' }).s.indexOf('空载') > 0);
+  /* 上升时间判据：24 ns 只能是漏感换流，不可能是电容被励磁电流充电 */
+  const Lm = c.LmUH * 1e-6, iPk = c.dMaxUsed * 21 / (Lm * 252.5e3);
+  const need1 = 37.6 / (iPk / 1e-9) * 1e9, need32 = 37.6 / (iPk / 3.2e-9) * 1e9;
+  ok('charging the capacitor to 37.6 V with the magnetising current would take ~240 ns (1 nF) / ~770 ns (3.2 nF)',
+    need1 > 180 && need1 < 320 && need32 > 600 && need32 < 950,
+    need1.toFixed(0) + ' ns / ' + need32.toFixed(0) + ' ns');
+  ok('but the measured edge is only 24 ns ⇒ it is the leakage-driven commutation (Lk·C_par, ~28 ns), not the reset capacitor',
+    2 * Math.PI * Math.sqrt(0.2e-6 * 100e-12) * 1e9 > 15 && 2 * Math.PI * Math.sqrt(0.2e-6 * 100e-12) * 1e9 < 60,
+    (2 * Math.PI * Math.sqrt(0.2e-6 * 100e-12) * 1e9).toFixed(0) + ' ns');
+  /* 40 匝辅助绕组的合理性（UC3843 供电） */
+  const aux40 = r.summary.outStage && r.summary.outStage.auxV ? r.summary.outStage.auxV : 0;
+  const aux25 = (TD.design(baseInputs(Object.assign({}, board, { naux: 25 }))).summary.outStage || {}).auxV || 0;
+  ok('the 40-turn aux winding gives ~12.7 V (good for UC3843), while 25 turns would only give ~7.7 V',
+    Math.abs(aux40 - 12.7) < 0.3 && Math.abs(aux25 - 7.7) < 0.3, aux40.toFixed(2) + ' V vs ' + aux25.toFixed(2) + ' V');
+}
+
 if (process.argv.includes('--diag')) {
   const show = (label, r) => {
     const s = r.summary, o = s.outStage;
