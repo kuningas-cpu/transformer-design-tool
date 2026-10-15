@@ -139,7 +139,7 @@ const SCENARIOS = [
     hidden: ['rippleK', 'resetMode', 'vinNom'].concat(AC_ONLY)
   },
   {
-    s: 'dc,Forward,diode,cap,vdsRated=100,lkUh=0.8,vinMin=18,vinMax=36,vout=19,iout=3.947',
+    s: 'dc,Forward,diode,cap,vdsRated=100,cresNf=1,lkUh=0.8,vinMin=18,vinMax=36,vout=19,iout=3.947',
     title: '正激 + 电容复位 + 100 V 管（IRF540N）：复位电容窗口为空', topoLabel: '单端正激 / Forward',
     shown: ['vinMin', 'vinMax', 'resetMode', 'cresNf', 'vdsRated', 'lkUh'].concat(BUCK_ONLY),
     hidden: ['rippleK', 'secRect'].concat(AC_ONLY, ['pfcBus'], LLC_ONLY, ['rdsOnMOhm', 'vfBody', 'tDeadNs']),

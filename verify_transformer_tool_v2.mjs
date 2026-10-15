@@ -936,6 +936,9 @@ header('25 optimisation batch: DCM / AC front-end / leakage / window / inductor 
   ok('comparison table rendered for both suppliers', /A家/.test(dom.cmpTable.innerHTML) && /B家/.test(dom.cmpTable.innerHTML) && /结论/.test(dom.cmpTable.innerHTML));
   windowStub.__TD_UI__.loadMyBoard();
   ok('"my board" preset loads the 19V/75W forward', dom.topology.value === 'Forward' && Number(dom.vout.value) === 19 && dom.resetMode.value === 'cap' && Number(dom.nlGiven.value) === 38 && Number(dom.lkUh.value) === 0.8);
+  ok('the preset carries the board hardware: 1 nF reset capacitor and the 100 V switch (IRF540N)',
+    Number(dom.cresNf.value) === 1 && Number(dom.vdsRated.value) === 100 && Number(dom.vinMax.value) === 36,
+    [dom.cresNf.value, dom.vdsRated.value, dom.vinMax.value].join('/'));
   let saveOk = true;
   try { windowStub.__TD_UI__.savePreset(); windowStub.__TD_UI__.loadPreset(); } catch (e) { saveOk = false; }
   ok('save/load preset tolerates a missing localStorage', saveOk);
@@ -1434,6 +1437,44 @@ header('32 capacitor-reset C_res window (rating lower bound vs reset-time upper 
     /复位电容可行窗口/.test(osHtml) && /窗口为空/.test(osHtml) && /200 V/.test(osHtml), String(osHtml).replace(/<[^>]+>/g, ' ').slice(-260));
   Object.keys(before32).forEach((k) => { dom[k].value = before32[k]; });
   windowStub.__TD_RENDER__();
+}
+
+/* ---------------- 33. the board as built: C_res = 1 nF + 100 V switch ---------------- */
+header('33 board as built (C_res = 1 nF, IRF540N 100 V, Vin_max = 36 V)');
+{
+  const board = { topology: 'Forward', vinMin: 18, vinMax: 36, vout: 19, iout: 3.947, fs: 200, vf: 0.5,
+    resetMode: 'cap', cresNf: 1, vdsRated: 100, lkUh: 0.2, alLibNh: 1146, ae: 52, le: 32, aw: 38, mlt: 38,
+    auditOn: true, npGiven: 12, nsGiven: 23,
+    wireModeP: 'mm', wireDiaP: 0.4, strandsP: 2, parP: 2, wireModeS: 'mm', wireDiaS: 0.2, strandsS: 2, parS: 3 };
+  const run = (o) => TD.design(baseInputs(Object.assign({}, board, o)));
+  const c1 = run({}).summary.capReset;
+  ok('with 1 nF the magnetising term alone is ~125 V (Lm = 165 uH, 200 kHz)',
+    Math.abs(c1.vResetPk - 125.2) < 1.5, 'V_res,pk = ' + c1.vResetPk.toFixed(1));
+  ok('that already exceeds the 100 V device (and the 85 V derated limit)',
+    c1.vResetPk > c1.vdsRated && c1.vdsPk > c1.vdsLimit, JSON.stringify({ vr: c1.vResetPk, lim: c1.vdsLimit }));
+  ok('the 1 nF reset still completes well inside the off-time (0.64 us of 2.18 us)',
+    (Math.PI / 2 * Math.sqrt(c1.LmUH * 1e-6 * c1.crNf * 1e-9)) < (1 - c1.dMaxUsed) / (200e3), '');
+  ok('100 V class is reported as not usable; the smallest usable class is 150 V',
+    c1.crWindowEmpty === true && c1.vdsClassNeed === 150, String(c1.vdsClassNeed));
+  ok('the engine asks for C_res >= 24 nF but the reset time caps it at 11.6 nF',
+    Math.abs(c1.crMinNf - 24.06) < 0.3 && Math.abs(c1.crHardMaxNf - 11.61) < 0.1,
+    c1.crMinNf.toFixed(2) + ' / ' + c1.crHardMaxNf.toFixed(2));
+
+  /* 加大 C_res：复位峰值与漏感尖峰都按 1/√C 下降 */
+  const c82 = run({ cresNf: 8.2 }).summary.capReset;
+  ok('raising C_res to 8.2 nF cuts both terms roughly in half+',
+    c82.vResetPk < 45 && c82.dVLk < c1.dVLk * 0.4, JSON.stringify([c82.vResetPk.toFixed(1), c82.dVLk.toFixed(1)]));
+  ok('and it makes the 150 V class feasible while still completing the reset in time',
+    run({ cresNf: 8.2, vdsRated: 150 }).summary.capReset.crWindowEmpty === false &&
+    (Math.PI / 2 * Math.sqrt(c82.LmUH * 1e-6 * 8.2e-9)) < (1 - c82.dMaxUsed) / (200e3));
+  ok('even at the max usable C_res the 100 V class stays infeasible with Lk = 0.2 uH',
+    run({ cresNf: 11.6 }).summary.capReset.crWindowEmpty === true);
+
+  /* 复位峰值 ∝ 1/Fs：这是"到底多少"的敏感项之一 */
+  const c400 = run({ fs: 400 }).summary.capReset;
+  ok('the magnetising peak scales as 1/Fs (400 kHz -> ~63 V)', Math.abs(c400.vResetPk - 62.6) < 1.0, String(c400.vResetPk.toFixed(1)));
+  ok('but the leakage spike (1 nF) does not depend on Fs and stays huge',
+    Math.abs(c400.dVLk - c1.dVLk) < 1e-6, c400.dVLk.toFixed(1));
 }
 
 if (process.argv.includes('--diag')) {

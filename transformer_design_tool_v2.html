@@ -2040,7 +2040,8 @@ var TD = (function () {
         alNh: 0, alLibNh: 1146, lmMeasUh: 165, npMeasN: 12,
         ae: 52, le: 32, aw: 38, mlt: 38, mltTol: 20, marginMm: 1.5, corePreset: 'EPC19', matPreset: 'PC44',
         wireModeP: 'mm', wireDiaP: 0.4, strandsP: 2, parP: 2, wireModeS: 'mm', wireDiaS: 0.2, strandsS: 2, parS: 3,
-        nlGiven: 38, lmGiven: 145, naux: 25, nlDia: 0.25, nlStrands: 1, nlPar: 4, vdsRated: 250, lkUh: 0.8,
+        /* vdsRated = 100 (IRF540N)、cresNf = 1 nF 是板上实际值；lkUh 仍是待实测的占位值 */
+        nlGiven: 38, lmGiven: 145, naux: 25, nlDia: 0.25, nlStrands: 1, nlPar: 4, vdsRated: 100, cresNf: 1, lkUh: 0.8,
         dcrLimitP: 32, ripplePct: 1, esrOhm: 0.01, rdsOnMOhm: 10, rth: 28, dtTarget: 40, tamb: 40,
         kPack: 1.2, kuMax: 0.35, jTarget: 4, acFactor: 1.3, bsat100: 0.39, muI: 2400, pcvRef: 60, lossA: 1.45, lossB: 2.5 };
       Object.keys(v).forEach(function (k) {
@@ -2048,7 +2049,8 @@ var TD = (function () {
         if (node) node.value = v[k];
       });
       render();
-      coreLibMsg('已载入 19V/75W 板（1号 12T/23T + 电容复位；2号 38T 输出电感 + 25T 辅助）。工作点与漏感请按实测修改。');
+      coreLibMsg('已载入 19V/75W 板（1号 12T/23T + 电容复位 1 nF；2号 38T 输出电感 + 25T 辅助；开关管 IRF540N = 100 V 档）。'
+        + '注意：按当前参数，工具判定开关管电压应力超限（C_res = 1 nF 偏小）——请看"校核清单"与"设计步骤→复位电容 C_res 的可行窗口"；漏感 Lk 请按实测修改。');
     }
     var FORMROWS = {
       'Flyback': ['Vo = Vin·D/((1-D)·n)', 'ΔB = Lp·ΔI/(Np·Ae) = Vin·D/(Np·Ae·Fs)', '单极性，Bpk=ΔB；D 为开关导通占空比；Lp 由 ΔI/Ipk 决定'],
