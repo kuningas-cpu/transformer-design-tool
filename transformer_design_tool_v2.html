@@ -925,10 +925,15 @@ var TD = (function () {
         var vEndR = vinV * Math.cos(Om) - iOffR * Zz * Math.sin(Om);
         var dumpJ = 0.5 * crNf * 1e-9 * Math.abs(vEndR * vEndR - vinV * vinV);
         var iMagLoop = Math.sqrt(iOffR * iOffR + Math.pow(vinV / Zz, 2));   /* 关断期回路电流幅值 */
+        /* drain 电压自己回落到开通电平（0）的相位：解 Vin(1−cos)+IZ·sin = 0 得 ωt = 2π − 2·atan(IZ/Vin)
+           —— 这才是"驼峰宽度"，它在 180°（IZ≫Vin）到 360°（IZ≪Vin）之间；
+           Ω = ω·t_off 与它相比：Ω 明显小 → 驼峰被开通沿掐断（复位勉强）；≈ 相等 → 完美匹配（最优点）；明显大 → 走完还有空档 */
+        var omRet = 2 * Math.PI - 2 * Math.atan((iOffR * Zz) / Math.max(vinV, 1e-9));
         return { vds: vinV + Math.sqrt(vinV * vinV + Math.pow(iOffR * Zz, 2)), iOff: iOffR,
           omDeg: Om * 180 / Math.PI, resonance: Math.abs(Math.sin(Om)) < 0.15 || Math.abs(den) < 0.05,
           vEnd: vEndR, dumpW: dumpJ * Fs, iPkLoop: iMagLoop,
-          bPk: Np > 0 ? lmH * iMagLoop / (Np * Ae) : 0 };
+          bPk: Np > 0 ? lmH * iMagLoop / (Np * Ae) : 0,
+          omReturnDeg: omRet * 180 / Math.PI, match: omRet > 1e-9 ? Om / omRet : 0 };
       }
       var ring = ringSolve(Lm, I.vinMax);
       var lkMaxUh = null;
@@ -1022,6 +1027,7 @@ var TD = (function () {
         vdsClassNeed: vdsClassNeed,
         vdsPkRing: ring.vds, ringIoff: ring.iOff, ringOmDeg: ring.omDeg, ringResonance: ring.resonance,
         ringVend: ring.vEnd, ringDumpW: ring.dumpW, ringIPk: ring.iPkLoop, ringBpk: ring.bPk,
+        ringOmReturnDeg: ring.omReturnDeg, ringMatch: ring.match,
         meas: meas,
         LmUH: Lm * 1e6, dMaxUsed: dReset, dInput: I.dutyMax };
       /* 警告：窗口为空 / 电容超出窗口 —— 这两条决定"这个耐压档能不能用" */
@@ -1135,10 +1141,14 @@ var TD = (function () {
       }
       /* 复位没走完 / 走过头 的代价：关断期末电容还带电压，开通瞬间这部分能量就地烧掉 */
       var omDegN = ((ring.omDeg % 360) + 360) % 360;
-      steps.push({ t: '复位波形"走完没有"：Ω、关断期末电压、开通损耗与复位电流磁密',
-        f: 'Ω = t_off/√(Lm·C_res)（理想 180°，即复位正好在关断期末完成）；v_end = Vin·cosΩ − I_off·Z·sinΩ；'
+      steps.push({ t: '复位波形"走完没有"：驼峰宽度 Ω_回落、Ω/Ω_回落、开通损耗与复位电流磁密',
+        f: 'drain 电压回落到开通电平的相位 Ω_回落 = 2π − 2·atan(I_off·Z/Vin)（这就是**驼峰宽度**：180°~360°，不是"可见两个波峰"）;  '
+          + '关断期实际走过的相位 Ω = t_off/√(Lm·C_res)；Ω/Ω_回落 = 1 表示**驼峰的回落在开通瞬间正好到 0**（最优点）；'
+          + 'v_end = Vin·cosΩ − I_off·Z·sinΩ；'
           + '开通瞬间烧掉的储能 = ½C·|v_end² − Vin²|（×Fs 得功率）；复位回路电流幅值 = √(I_off² + (Vin/Z)²) → B = Lm·I/(Np·Ae)',
-        s: 'Vin_max 处：Ω = ' + ring.omDeg.toFixed(0) + '°（归一化 ' + omDegN.toFixed(0) + '°）' + (ring.omDeg > 180 ? '，复位走过头' : '，复位没走完') +
+        s: 'Vin_max 处：驼峰宽度 Ω_回落 = ' + ring.omReturnDeg.toFixed(0) + '°，实际走过 Ω = ' + ring.omDeg.toFixed(0) + '° → 匹配度 Ω/Ω_回落 = ' +
+           ring.match.toFixed(2) + (Math.abs(ring.match - 1) <= 0.15 ? '（**驼峰回落在开通瞬间正好到 0，最优点** ✓）'
+             : (ring.match < 1 ? '（关断期不够长：驼峰被开通沿掐断，复位勉强）' : '（关断期偏长：驼峰走完还有空档/体二极管钳位）')) +
            '；v_end = ' + ring.vEnd.toFixed(1) + ' V → 每周期开通瞬间多烧 ' + (ring.dumpW / Fs * 1e6).toFixed(1) + ' µJ ≈ **' + ring.dumpW.toFixed(2) +
            ' W**；复位电流幅值 ' + ring.iPkLoop.toFixed(3) + ' A → B_pk = ' + ring.bPk.toFixed(3) + ' T（允许 ' + BsatAllow.toFixed(3) + ' T）。' +
            (ring.omDeg > 175 && ring.omDeg < 187 ? 'Ω ≈ 180°，正是峰值电压与开通损耗都最小的设计点 ✓' : '') +
@@ -1565,8 +1575,9 @@ var TD = (function () {
       /* 复位波形本身的健康度：Ω 是否接近 180°、开通损耗、复位电流磁密 */
       if (capReset.ringOmDeg > 0) {
         var omN = ((capReset.ringOmDeg % 360) + 360) % 360;
-        addCheck('复位角 Ω（理想 180°＝复位正好在关断期末完成）', omN, '°', 180, '°',
-          Math.abs(omN - 180) <= 60, 0.85, 'peripheral');
+        /* 更好的判据：关断期走过的相位 Ω 与"驼峰回落到 0 的相位"之比，理想 = 1.00 */
+        addCheck('复位匹配度 Ω ÷ Ω_回落（驼峰是否正好在开通瞬间回到 0；理想 1.00）', capReset.ringMatch, '', 1, '',
+          Math.abs(capReset.ringMatch - 1) <= 0.25, 0.85, 'peripheral');
         addCheck('复位回路电流磁密 B_pk（环形解）≤ Bsat 降额', capReset.ringBpk, 'T', BsatAllow, 'T',
           capReset.ringBpk <= BsatAllow, 0.9);
         if (capReset.ringDumpW > Math.max(0.005 * Po, 0.05)) {
@@ -1873,8 +1884,11 @@ var TD = (function () {
     }
     /* ---------- 复位网络 ---------- */
     if (cr) {
-      row('复位电容 C_res（让复位正好在关断期末完成）', 'C ≈ (t_off(Vin_min)/π)²/Lm', cr.crHardMaxNf.toFixed(1) + ' nF（自动上限 ' + cr.crMaxNf.toFixed(2) + ' nF，1/4 值）',
-        'Ω = t_off/√(Lm·C) 要落在 180° 附近；值越大峰值越低但开通损耗与偏磁风险上升');
+      row('复位电容 C_res（取值窗口）', '自动值与硬上限之间', 'C_res = ' + cr.crMaxNf.toFixed(2) + ' ~ ' + cr.crHardMaxNf.toFixed(1) + ' nF（建议取中部偏小，例如 ' +
+        ((cr.crMaxNf + cr.crHardMaxNf) / 2).toFixed(1) + ' nF）',
+        '窗口下限 ' + cr.crMaxNf.toFixed(2) + ' nF = 复位在 Vin_min 处用 1/2 个关断期完成（留 2 倍时间余量）；上限 ' + cr.crHardMaxNf.toFixed(1) +
+        ' nF = 复位刚好在 Vin_min 的关断期末完成；**判据是"驼峰回落在开通瞬间正好到 0"（复位匹配度 Ω/Ω_回落 ≈ 1.00）**，'
+        + 'C 越大峰值越低但开通损耗与偏磁风险上升；实际值应落在该窗口内（你的板实测峰值 57 V 与 2~3 nF 吻合，1 nF 会被算成 500 V 级，可直接排除）');
       row('复位电容 耐压', '≥ 1.5×复位峰值', Math.ceil(1.5 * Math.max(cr.vResetPk, 10)) + ' V',
         '复位峰值 ' + cr.vResetPk.toFixed(0) + ' V（应力在电容与开关上同量级）');
       row('复位电容 脉冲电流', '允许峰值 ≥ I_pk,loop', cr.ringIPk.toFixed(2) + ' A 峰值',

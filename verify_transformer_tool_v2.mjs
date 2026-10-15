@@ -1561,8 +1561,13 @@ header('34 measured 60 V @ Vin=24 V vs the corrected resonant-reset floor (real 
     fc.ringDumpW < 0.8 && fc.ringBpk < 0.1, fc.ringDumpW.toFixed(2) + ' W, ' + fc.ringBpk.toFixed(3) + ' T');
   ok('the ring fields are exposed (v_end, dump power, loop peak current, B)',
     typeof fc.ringVend === 'number' && typeof fc.ringDumpW === 'number' && typeof fc.ringIPk === 'number' && typeof fc.ringBpk === 'number');
-  ok('a check row grades Omega against the ideal 180 deg',
-    fitted.checks.some((x) => /复位角 Ω/.test(x.name) && x.scope === 'peripheral'));
+  ok('a check row grades the reset match ratio (Omega / return phase, ideal 1.00)',
+    fitted.checks.some((x) => /复位匹配度/.test(x.name) && x.scope === 'peripheral') &&
+    fitted.summary.capReset.ringOmReturnDeg > 180 && fitted.summary.capReset.ringOmReturnDeg < 360,
+    fitted.summary.capReset.ringOmReturnDeg.toFixed(0) + '° / match ' + fitted.summary.capReset.ringMatch.toFixed(2));
+  ok('the hump-width row explains that one visible hump spans 180~360 deg of tank phase (not two lobes)',
+    fitted.steps.some((s) => /驼峰宽度/.test(s.t) && /不是"可见两个波峰"/.test(s.f)),
+    (fitted.steps.find((s) => /驼峰宽度/.test(s.t)) || { f: 'missing' }).f.slice(0, 120));
   ok('a step row explains what "not completed / overshooting" costs',
     fitted.steps.some((s) => /复位波形"走完没有"/.test(s.t) && /开通瞬间多烧/.test(s.s) && /B_pk/.test(s.s)));
 
