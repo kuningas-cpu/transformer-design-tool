@@ -748,7 +748,9 @@ header('21 regression baselines');
 {
   const cases = [
     ['flyback 9-36V -> 12V/2A @100kHz', baseInputs(), { Np: 7, Ns: 12, LpUH: 12.3019, Bpk: 0.278, fill: 38.78, dT: 12.20, gap: 0.2363 }],
-    ['forward 48-72V -> 5V/10A @100kHz', baseInputs({ topology: 'Forward', vinMin: 48, vinMax: 72, vout: 5, iout: 10 }), { Np: 21, Ns: 5, resetTurns: 18, Bpk: 0.2107 }],
+    /* 48-72V -> 5V/10A：整数匝原来取 21T/5T（D(Vin_min) = 0.481 > 输入 D_max = 0.45，也超 ΔB 目标）。
+       现在正激把 D_max 当上限取整 → 21T/6T：D = 0.401 ≤ 0.45、ΔB = 0.176 ≤ 0.2 T（ΔB 只由 Ns 决定）。 */
+    ['forward 48-72V -> 5V/10A @100kHz', baseInputs({ topology: 'Forward', vinMin: 48, vinMax: 72, vout: 5, iout: 10 }), { Np: 21, Ns: 6, resetTurns: 18, Bpk: 0.1756 }],
     ['half-bridge 380-420V -> 12V/20A @100kHz', baseInputs({ topology: 'Half-Bridge', vinMin: 380, vinMax: 420, vout: 12, iout: 20 }), { Np: 82, Ns: 6, Bpk: 0.0998 }],
     ['push-pull 48V -> 12V/10A @100kHz', baseInputs({ topology: 'Push-Pull', vinMin: 48, vinMax: 48, vout: 12, iout: 10 }), { Bpk: 0.0998 }],
     ['llc 380-420V -> 12V/10A @100kHz (fr=100k, k=5)', baseInputs({ topology: 'LLC Resonant', vinMin: 380, vinMax: 420, vinNom: 400, vout: 12, iout: 10, llcFr: 100, llcK: 5 }), { Np: 101, Ns: 6 }],
@@ -1786,6 +1788,68 @@ if (process.argv.includes('--diag')) {
   console.log('  verdict = ' + e.verdict);
   epc.checks.forEach((c) => console.log('   ' + (c.pass === false ? 'FAIL' : (c.warn ? 'WARN' : 'ok  ')) + ' ' + c.name + ' = ' + (typeof c.value === 'number' ? c.value.toFixed(3) : c.value) + ' / ' + c.limit + ' ' + c.unit));
 }
+/* ---------------- 37. 240 W 单端正激（用户给出的规格）+ 正激 D_max / ΔB / 耐压档三口径 ---------------- */
+header('37 240 W forward (200/310/400 V -> 24 V/10 A, EE42/PC40, cap reset)');
+{
+  const fw240 = {
+    topology: 'Forward', fs: 100, vinMin: 200, vinMax: 400, vinNom: 310, vout: 24, iout: 10, vf: 0.5, eta: 0.88,
+    dutyMax: 0.45, deltaBTarget: 0.2, bsatDerate: 0.8, ae: 155, le: 97, aw: 120, mlt: 90,
+    resetMode: 'cap', cresNf: 0, vdsRated: 0, lkUh: 0, lkSplitPct: 50, acMode: 'dc', rectDevice: 'diode'
+  };
+  const run = (o) => TD.design(baseInputs(Object.assign({}, fw240, o)));
+  const r = run({}), s = r.summary, c = s.capReset;
+  /* 变比口径：n ≤ D_max·Vin_min/Vo；Ns 由 ΔB 目标定：ΔB = Vo·T/(Ns·Ae) */
+  ok('240W: turns land on 30T/9T (n = 3.3333)', s.Np === 30 && s.Ns === 9, s.Np + '/' + s.Ns);
+  close(s.nTarget, 200 * 0.45 / 24.5, 1e-12, '240W: n_target = Vin_min·D_max/Vo');
+  ok('240W: D(Vin_min) <= input D_max (integer turns)', s.dNeedMin <= 0.45 + 1e-9 && Math.abs(s.dNeedMin - 0.40833) < 1e-4, s.dNeedMin.toFixed(4));
+  close(s.dNeedMax, s.n * 24.5 / 400, 1e-12, '240W: D(Vin_max) = n·Vo/Vin_max');
+  /* 正激：ΔB 与 Np 无关（V·t = n·Vo/Fs 代回后 Np 消掉）→ 只由 Ns 定 */
+  close(s.dBpp, 24.5 / (9 * 155e-6 * 100e3), 1e-9, '240W: ΔB = Vo·T/(Ns·Ae)');
+  ok('240W: achieved ΔB inside the 0.18~0.22 T band asked for', s.dBpp > 0.17 && s.dBpp < 0.2, s.dBpp.toFixed(4));
+  ok('240W: worst case at D_max also inside the band (Vin_min·D_max·T/(Np·Ae))',
+    (200 * 0.45 * 1e-5) / (30 * 155e-6) > 0.18 && (200 * 0.45 * 1e-5) / (30 * 155e-6) < 0.22,
+    ((200 * 0.45 * 1e-5) / (30 * 155e-6)).toFixed(4));
+  ok('240W: Bpk stays below the derated Bsat', s.Bpk <= s.BsatAllow, s.Bpk.toFixed(3) + ' <= ' + s.BsatAllow.toFixed(3));
+  ok('240W: copper fills a sane share of the window', s.fillPct > 20 && s.fillPct < 40, s.fillPct.toFixed(1) + '%');
+  /* 复位：自动 C_res 让 Vin_min 处 Ω = π（驼峰正好填满关断期） */
+  const Lm = s.LmUH * 1e-6, FsH = 100e3;
+  close(c.crMaxNf, Math.pow(1 - s.dNeedMin, 2) / (Math.PI * Math.PI * Lm * FsH * FsH) * 1e9, 1e-6, '240W: auto C_res = (1-D)²/(π²·Lm·Fs²)');
+  close(c.vResetPk, s.n * s.Vo / FsH / Math.sqrt(Lm * c.crNf * 1e-9), 1e-6, '240W: V_res,pk = n·Vo·T/√(Lm·C)');
+  close(c.vResetPk, Math.PI * s.n * s.Vo / (1 - s.dNeedMin), 1e-3, '240W: closed form π·n·Vo/(1-D)');
+  ok('240W: ring solution gives a lower peak than the conservative sum',
+    c.vdsPkRing < c.vdsPk && c.vdsPk > 0.85 * 800, 'ring ' + c.vdsPkRing.toFixed(0) + ' vs simple ' + c.vdsPk.toFixed(0));
+  ok('240W: peak switch stress is a 1000 V-class problem (not 800 V)',
+    c.vdsRecClass === 1000 && c.vdsClassStress === 1000 && c.vdsClassRing === 1000,
+    [c.vdsClassNeed, c.vdsClassStress, c.vdsClassRing, c.vdsRecClass].join('/'));
+  /* 漏感一进来，保守上界口径就要跳档 */
+  const lk = run({ lkUh: 1, vdsRated: 1200 }).summary.capReset;
+  ok('240W: 1 µH leakage pushes the conservative class to 1200 V while the ring stays at 1000 V',
+    lk.vdsClassStress === 1200 && lk.vdsClassRing === 1000 && lk.vdsRecClass === 1200,
+    [lk.vdsClassStress, lk.vdsClassRing, lk.vdsRecClass].join('/'));
+  ok('240W: the leakage split factor still applies (k_p = 50 % for the forward)',
+    Math.abs(lk.dVLk - lk.iLkPri * Math.sqrt(1e-6 * 0.5 / (lk.crNf * 1e-9))) < 1e-6, lk.dVLk.toFixed(1) + ' V');
+  /* 三项新校核行都在，并且是"上限"语义 */
+  const rowOf = (re) => r.checks.find((x) => re.test(x.name));
+  const dRow = rowOf(/实际占空比 D ≤ 输入 D_max/);
+  ok('240W: new row "D(Vin_min) <= input D_max" exists and passes',
+    !!dRow && dRow.pass === true && Math.abs(dRow.limit - 0.45) < 1e-12, dRow ? String(dRow.value) + ' / ' + dRow.limit : 'missing');
+  const bRow = rowOf(/磁通摆幅 ΔB_pp（实际）vs 目标/);
+  ok('240W: new row "achieved ΔB vs target" is advisory (pass=true as a ceiling check)', !!bRow && bRow.pass === true && !bRow.warn, bRow ? String(bRow.value) : 'missing');
+  /* ΔB 目标只管到 Ns：给定 Np 也改不了 ΔB */
+  const n30 = run({ auditMode: '1', npGiven: 30, nsGiven: 7 });
+  ok('240W audit: Np=30/Ns=7 breaks both ΔB (0.226 T) and D (0.525)',
+    Math.abs(n30.summary.dBpp - 24.5 / (7 * 155e-6 * 1e5)) < 1e-9 && n30.summary.dNeedMin > 0.45,
+    n30.summary.dBpp.toFixed(4) + ' T / D ' + n30.summary.dNeedMin.toFixed(4));
+  ok('240W audit: the D_max row fails, and the ΔB row only warns',
+    n30.checks.find((x) => /实际占空比 D ≤ 输入 D_max/.test(x.name)).pass === false &&
+    n30.checks.find((x) => /磁通摆幅 ΔB_pp（实际）vs 目标/.test(x.name)).warn === true);
+  /* ΔB 与 Np 无关：改 Np 不改变 ΔB，只改变 D 与电流 */
+  const n40 = run({ auditMode: '1', npGiven: 40, nsGiven: 9 });
+  ok('240W: ΔB depends only on Ns (Np = 30 vs 40 gives the same swing)',
+    Math.abs(n40.summary.dBpp - s.dBpp) < 1e-9 && n40.summary.dNeedMin > s.dNeedMin,
+    n40.summary.dBpp.toFixed(4) + ' T, D ' + n40.summary.dNeedMin.toFixed(4));
+}
+
 console.log('\n================ RESULT ================');
 console.log('passed: ' + nPass + '   failed: ' + fails.length);
 if (fails.length) { console.log('failures:'); fails.forEach((f) => console.log('  - ' + f)); process.exit(1); }

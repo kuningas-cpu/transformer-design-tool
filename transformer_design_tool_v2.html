@@ -842,6 +842,11 @@ var TD = (function () {
           score = Math.abs(vNom / (2 * nA) - Vo) / Vo;    /* LLC duty is fixed: rank by resonant-point output error */
         } else {
           score = Math.abs(dAtMin - dMax);
+          /* 正激类：ΔB 只由 Ns 决定（ΔB = Vo·T/(Ns·Ae)，与 Np 无关），所以"多绕点副边"只会让磁通更安全；
+             而 D_max 是硬上限（关断期要留给复位）。整数匝常只能取到 D_max 两侧的值，原来看"离 D_max 最近"
+             会选到略超 D_max 的那一侧（例如 30T/8T 给 D = 0.459 > 0.45），现在超限的一侧加惩罚。
+             反激不做这个惩罚：那里 Ns 变大会把 D 压低、同时把磁通/Bpk 顶上去，需要连 Np 一起重算才安全。 */
+          if (T.kind === 'forward' && dAtMin > dMax + 1e-9) score += 5;
           if (dAtMin > dLimit + 1e-12) score += 10;
           if (dAtMax < 0.02) score += 1;
         }
@@ -855,7 +860,7 @@ var TD = (function () {
     })();
     var Ns = pick.Ns, nAch = pick.n;
     steps.push({ t: NpGiven ? '匝比（校核模式）' : '整数匝数',
-      f: NpGiven ? 'n = Np/Ns（给定值）' : 'Np = max(磁通下限, 饱和下限)；Ns 取使 Vin_min 处占空比最接近 D_max 且不超限的整数',
+      f: NpGiven ? 'n = Np/Ns（给定值）' : 'Np = max(磁通下限, 饱和下限)；Ns 取使 Vin_min 处占空比最接近 D_max 且不超限的整数；正激再按 D(Vin_min) ≤ D_max 回调 Np',
       s: 'Np = ' + Np + ' 匝, Ns = ' + Ns + ' 匝, 实际 n = ' + nAch.toFixed(4) + '（' + (NpGiven ? '规格值' : '目标 ' + nTarget.toFixed(4)) + '）' });
     var dNeedMin = dutyForVin(T, nAch, Vo, I.vinMin);
     var dNeedMax = dutyForVin(T, nAch, Vo, I.vinMax);
@@ -968,6 +973,15 @@ var TD = (function () {
         var roomC = vc * 0.85 - I.vinMax;
         if (roomC > 1e-9 && Math.pow(vdsAB / roomC, 2) * 1e9 <= crHardMaxNf + 1e-9) vdsClassNeed = vc;
       });
+      /* 另外两个口径（避免"窗口允许 800 V"与"Vds,pk 校核 934 V > 0.85×1000 V"自相矛盾）：
+         ① vdsClassStress：按保守上界 Vds,pk = Vin_max + 复位峰值 + 漏感尖峰 反推的最小标准档；
+         ② vdsClassRing：按环形（谐振稳态）解 Vds,pk_ring 反推的最小标准档。
+         窗口口径问的是"存在某个 C_res 让应力压到 0.85×耐压以下吗"，两者要一起看才完整。 */
+      var vdsClassStress = null, vdsClassRing = null;
+      [100, 150, 200, 250, 300, 400, 500, 600, 650, 800, 1000, 1200, 1500].forEach(function (vc) {
+        if (vdsClassStress === null && vc * 0.85 >= vdsPkVal - 1e-9) vdsClassStress = vc;
+        if (vdsClassRing === null && vc * 0.85 >= ring.vds - 1e-9) vdsClassRing = vc;
+      });
       /* ---------- 实测对账：把示波器上的 Vds,pk 读回来，反推"等效复位电容 / 等效 Lm / 等效 Fs" ----------
          模型给的是"磁化能量全部进 C_res"的解析值；如果实测远低于它，说明要么参数不同（Lm/Fs），
          要么还有别的复位/钳位路径（例如磁化能量经副边回馈到输出，drain 被钳在 Vin_max + n·Vo 附近）。 */
@@ -1034,7 +1048,8 @@ var TD = (function () {
         vdsPk: vdsPkVal, vdsRated: vdsRated, vdsLimit: vdsRated * 0.85,
         iLkPri: iLkTurn, lkUsed: lkH > 0,
         crMinNf: crMinNf, crHardMaxNf: crHardMaxNf, crWindowEmpty: crWindowEmpty, lkMaxUh: lkMaxUh, vdsRoom: vdsRoom,
-        vdsClassNeed: vdsClassNeed,
+        vdsClassNeed: vdsClassNeed, vdsClassStress: vdsClassStress, vdsClassRing: vdsClassRing,
+        vdsRecClass: Math.max(vdsClassNeed || 0, vdsClassStress || 0),
         lkTotalUh: lkTotalH * 1e6, lkPriUh: lkH * 1e6, lkSplitF: lkSplitF,
         vdsPkRing: ring.vds, ringIoff: ring.iOff, ringOmDeg: ring.omDeg, ringResonance: ring.resonance,
         ringVend: ring.vEnd, ringDumpW: ring.dumpW, ringIPk: ring.iPkLoop, ringBpk: ring.bPk,
@@ -1048,7 +1063,12 @@ var TD = (function () {
           ' nF）→ 即使取到该上限，V_res,pk 也要 ' + (vdsA / Math.sqrt(crHardMaxNf * 1e-9)).toFixed(1) + ' V。' +
           (crMinNf === Infinity ? '（Vin_max 本身已超过 0.85×耐压）' : '（需要 C_res ≥ ' + crMinNf.toFixed(1) + ' nF，与上限矛盾）') +
           (lkMaxUh !== null && isFinite(lkMaxUh) ? ' 同样的 C_res 下漏感需 ≤ ' + lkMaxUh.toFixed(3) + ' µH；' : ' ') +
-          (capReset.vdsClassNeed ? '\n本工况在这组 Vin_max 与漏感下，最小可行的标准耐压档 = **' + capReset.vdsClassNeed + ' V**。' : '\n本工况即使 1000 V 档也不可行（Vin_max 太高或漏感太大）。') +
+          '\n耐压档三个口径（别只看其中一个）：① 复位窗口口径 = ' +
+          (capReset.vdsClassNeed ? capReset.vdsClassNeed + ' V' : '>1000 V') + '（它只回答"存在某个 C_res 能把峰值压到 0.85×耐压以下吗"，不代表你手上这个管子安全）；' +
+          '② 保守上界 Vds,pk = Vin_max + 复位峰值 + 漏感尖峰 = ' + vdsPkVal.toFixed(0) + ' V → ≥ ' +
+          (vdsClassStress ? vdsClassStress + ' V' : '1500 V 以上') + ' 档；③ 环形（谐振稳态）解 = ' + ring.vds.toFixed(0) + ' V → ≥ ' +
+          (vdsClassRing ? vdsClassRing + ' V' : '1500 V 以上') + ' 档。选型卡按 ③ 给档（②只是上界提示；实测表明真实峰值通常落在 ③ 附近），' +
+          '若无法测漏感/实测 Vds，就往 ② 那一侧留裕量。' +
           '请提高耐压档（或降低 Vin_max、加大 C_res 到上限、减漏感）。' +
           (meas ? '\n但**实测 Vds,pk = ' + meas.vdsMeasPk.toFixed(0) + ' V** 与这个模型判定矛盾（见"实测 Vds,pk 与解析上界对账"那一步）：本板很可能另有复位/钳位通路（磁化能量并不走这个电容），所以这条判定不代表你板子会超压。' : ''));
       } else if (vdsRated > 0 && cresNf > 0 && crNf < crMinNf) {
@@ -1182,7 +1202,10 @@ var TD = (function () {
                   ? ' → **窗口为空：' + vdsRated + ' V 档在这组 Vin_max/漏感 下不可行**；'
                     + (isFinite(lkMaxUh) ? '同样的 C 下漏感要降到 ≤ ' + lkMaxUh.toFixed(3) + ' µH，' : '') + '否则必须提高耐压档'
                   : ' → 窗口 [ ' + crMinNf.toFixed(1) + ' , ' + crHardMaxNf.toFixed(1) + ' ] nF')
-              + (vdsClassNeed ? '；本工况最小可行的标准耐压档 = ' + vdsClassNeed + ' V' : '；本工况到 1000 V 档仍不可行（Vin_max 太高或漏感太大）')
+              + (vdsClassNeed ? '；按复位窗口最小可行的标准耐压档 = ' + vdsClassNeed + ' V' : '；本工况到 1000 V 档仍无可行窗口（Vin_max 太高或漏感太大）')
+              + '；同一组 Vin_max/漏感下另外两个口径：保守上界 Vds,pk = ' + vdsPkVal.toFixed(0) + ' V → ≥ ' +
+                (vdsClassStress ? vdsClassStress + ' V' : '1500 V 以上') + ' 档，环形（谐振稳态）解 ' + ring.vds.toFixed(0) + ' V → ≥ ' +
+                (vdsClassRing ? vdsClassRing + ' V' : '1500 V 以上') + ' 档（选型卡按环形解给档；窗口口径只说明"存在某个 C_res 能压到限制以下"）'
             : '填了开关管耐压后，这里会给出满足它的 C_res 下限、复位允许的上限，以及两者是否矛盾') });
     }
     var common = { n: nAch, Vo: Vo, VinNom: I.vinNom > 0 ? I.vinNom : (I.vinMin + I.vinMax) / 2, Iout: I.iout, Pin: Pin, Fs: Fs, Lp: Lp, Lm: Lm, Np: Np, Ns: Ns, Ae: Ae, dIL: I.rippleLout, nSecWind: nSecWind };
@@ -1518,7 +1541,14 @@ var TD = (function () {
         scope: scope || 'core' });   /* core = 与变压器磁芯相关的硬性校核；peripheral = 外围元件（输出电感/电容/整流） */
     }
     addCheck('磁通峰值 Bpk ≤ Bsat·降额', maxBpk, 'T', BsatAllow, 'T', maxBpk <= BsatAllow, 0.9);
+    /* 正激的 D_max 是硬上限（关断期必须留给磁复位：绕组复位 D ≤ 0.5、电容复位要留够复位半周），
+       所以对正激单独校核"整数匝下实际占空比也没超输入 D_max"。反激/桥式的 D_max 只是选变比的目标值，
+       整数取整后略超 1% 属正常，仍用上面/下面按拓扑物理上限的那条。 */
     addCheck('Vin_min 所需占空比 D', dNeedMin, '', dLimit, '', dNeedMin <= dLimit + 1e-9, 0.92);
+    if (T.kind === 'forward') addCheck('Vin_min 处实际占空比 D ≤ 输入 D_max（整数匝，复位需关断时间）', dNeedMin, '', dMax, '', dNeedMin <= dMax + 1e-9, 0.92);
+    /* 目标磁通摆幅是"设计目标"而非物理极限（硬极限是上面的 Bsat 降额），
+       所以这条只做提示：超过目标就标 warn，不判 FAIL。正激类 ΔB 只由 Ns 决定（ΔB = Vo·T/(Ns·Ae)）。 */
+    addCheck('磁通摆幅 ΔB_pp（实际）vs 目标 ΔB_pp', maxDB, 'T', I.deltaBTarget, 'T', true, 1.0);
     addCheck('窗口填充率', fillPct, '%', I.kuMax * 100, '%', fillPct <= I.kuMax * 100 + 1e-9, 0.9);
     /* J is an experience-based proxy, not a physical limit: the binding constraint is the temperature rise,
        so exceeding the target J only raises a flag (小磁芯散热面积相对更大，J 可以更高). */
