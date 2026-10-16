@@ -1,4 +1,7 @@
 /* 当 github.com:443 被阻断、api.github.com 可用时，用 Git Data API 把本地 HEAD 推送上去。
+   本机若开着本地代理（Windows Internet Settings 里 ProxyEnable=1，例如 127.0.0.1:7890），
+   直连 api.github.com 会 ConnectTimeout（Node 的 fetch 默认不读系统代理），此时这样跑：
+     PowerShell: $env:HTTPS_PROXY="http://127.0.0.1:7890"; $env:NODE_USE_ENV_PROXY="1"; node push_via_api.mjs <owner> <repo> --parent-from-remote
    做法：把本地 HEAD 的 blob/tree/提交元数据原样搬到远端，使远端 commit SHA == 本地 commit SHA。
    令牌从环境变量 GH_TOKEN 读取，绝不打印。用法：node push_via_api.mjs <owner> <repo> [--dry] */
 import { execFileSync } from 'node:child_process';
