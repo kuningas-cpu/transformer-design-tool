@@ -743,3 +743,54 @@ D_allowed = min(D_topology, D_controller, D_design)        ← 作为"设计目�
 - 回归：新增一整组（三口径定义、反激无固定上限、设计裕量超出只 warn、控制器上限可改、
   正激绕组复位 = Nr/(Nr+Np)、电容复位逐点算、"扫不到可行点"判硬失败、ACF 钳位/ZVS、LLC 50%、
   以及"设计裕量超限不产生硬失败"），并把"越限被钳位"的老用例改成"超控制器上限才钳位"。
+
+## 17. 开发主线切到 V3，V2 冻结（2026-10-16）
+
+用户决定：**后续只修改 V3**（`v3/transformer_design_tool_v3.html`），V2 到此为止。
+V2 的最后一个状态即本文件所述：**690 项引擎检查 + 114 项真浏览器检查全过，Excel 反激分支 19/19**。
+
+### 17.1 从 V2 移植进 V3 的内容
+
+```
+① 占空比三层（§16）：D_allowed = min(拓扑/电路, 控制器, 设计)
+     · 拓扑/电路硬限按电路算：正激绕组复位 Nr/(Nr+Np)、电容复位逐点扫描（Ω ≥ ωt1）、
+       ACF 由 V_clamp 反推、反激按 V_or×耐压反推（可选）、推挽/桥式 0.50、LLC 0.50
+     · 控制器上限：单管按手册（默认 0.95），推挽/桥式自动用 0.5 − t_dead·Fs
+     · 设计裕量：工程默认值（反激 0.60 / 正激 0.45（电容复位 0.60）/ 桥式 0.45 / LLC 0.50），超出只提示确认
+② 系数输入兜底：kPack / kuMax / rippleK / rippleLout / jTarget / acFactor / … / 线径与股数，
+   缺失或非数值按界面默认补齐（只补缺失，不掩盖用户填的非法值）→ 消灭 NaN 假红
+③ 耐压档三口径：vdsClassNeed（复位窗口）/ vdsClassStress（保守上界）/ vdsClassRing（环形解）+ vdsRecClass
+④ 正激取整规则：Ns 守 ΔB 目标、Np 守 D_max（并新增"实际 ΔB vs 目标"提示行）
+⑤ ACF 钳位与软开关：V_clamp = Vin·D/(1−D)、主管承压、无载 ZVS 判据
+```
+
+### 17.2 顺手修掉的 V3 真 bug（每条都有回归守着）
+
+| # | 位置 | 症状 | 修法 |
+|---|---|---|---|
+| 1 | `operatingPoint` 正激/桥式 `IpkPri` | 励磁分量写成 `+ dIm`（应为 `dIm/2`）→ 原边峰值偏高 0.8~5%，"安匝平衡"自检不过 | 改 `+ dIm/2` |
+| 2 | `ringSolve` | 擅自把 `I_off` 钳到 ΔI → "复位走过头"区间把 471 V 的危险点算成 142 V，实测峰值反推从 ~3 nF 偏到 19 nF | 去掉钳位，让发散暴露（`ringResonance` + 告警） |
+| 3 | C_res 口径 | 自动值 = crMaxNf/4、硬上限 = crMaxNf → 复位峰值翻倍，把实测能工作的 3.2 nF 判成超限 | 自动值 = crMaxNf（Ω=π）；硬上限 = 4×（宽松端）；正激另给逐点硬限 |
+| 4 | 输出级原边设计电流 | 仍读界面上已删除的 `rippleLout` 隐藏常量 | 改用 `buckRippleK·Iout`（与输出级口径一致） |
+| 5 | `IDS` 列表 | 引用已删除的 `rippleLout` 输入（悬空） | 移除该 id，并补 `dCtrlMax` |
+| 6 | 选型卡"复位电容推荐值" | 仍按 crMaxNf/4 给推荐 | 改为 crMaxNf，同时给出可行窗口 |
+
+### 17.3 有意保留的 V3 差异（不是 bug）
+
+```
+· 输出电感口径：v3 用 buckMode（CCM/BCM/DCM）+ buckRippleK（纹波比 K）代替 v2 的绝对 ΔI_L 输入
+· 反激：fbMode（CCM/BCM/DCM）显式模式 + vorTarget + fbDutyD（v3 的功能）
+· 界面默认 lkSplitPct：v3 用 100%（保守）vs v2 的 50% → 同一工况 v3 的耐压档会高一档
+· 板载预设的实测 Vds：v3 用 64 V @24 V（v2 用 60 V；你修正后的读数是 57.2 V）→ 建议统一，待确认
+```
+
+### 17.4 验证
+
+```
+v3/verify_transformer_tool_v3.mjs          → 691 项引擎检查全过
+v3/verify_visibility_browser_v3.mjs        → 真浏览器（无头 Edge）114 项全过
+v2/verify_transformer_tool_v2.mjs          → 690 项（V2 冻结状态，仍全过）
+v2/verify_visibility_browser.mjs           → 114 项全过
+```
+
+两版共用本文件描述的模型与公式；V3 的引擎/UI 以 `v3/transformer_design_tool_v3.html` 为准。

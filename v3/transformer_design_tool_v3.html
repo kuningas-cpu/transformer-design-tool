@@ -104,7 +104,8 @@
       <div class="hint" id="rectHint" style="margin-top:10px;">次级整流器件会随拓扑换措辞：正激/推挽/桥式是 Buck 型副边，整流管与续流管都要算；反激副边只有一只整流管（关断期导通），没有续流管。</div>
       <h3>拓扑工作点 / Operating point</h3>
       <div class="two-col">
-        <div class="field"><label for="dutyMax">Vin_min 处占空比 D_max</label><input id="dutyMax" type="number" value="0.45" step="0.01" min="0.05" max="0.8"/></div>
+<div class="field"><label for="dutyMax">设计占空比上限 D_design <span class="unit">(工程默认值，可改；超出只提示确认裕量)</span></label><input id="dutyMax" type="number" value="0.45" step="0.01" min="0.05" max="0.95"/></div>
+<div class="field"><label for="dCtrlMax">控制器允许占空比上限 D_controller <span class="unit">(按芯片手册填；推挽/桥式由死区时间自动算上限)</span></label><input id="dCtrlMax" type="number" value="0.95" step="0.01" min="0.05" max="1"/></div>
         <div class="field" data-show="topo:Flyback,Active Clamp Flyback"><label for="vorTarget">目标反射电压 Vor <span class="unit">(V，0=按匝比反推)</span></label><input id="vorTarget" type="number" value="0" step="1" min="0"/></div>
         <div class="field" data-show="topo:Flyback,Active Clamp Flyback"><label for="rippleK">原边纹波比 K = ΔI/Ipk <span class="unit">(反激类)</span></label><input id="rippleK" type="number" value="0.4" step="0.05" min="0.05" max="2"/></div>
         <div class="field" data-show="topo:Flyback,Active Clamp Flyback"><label for="fbMode">反激工作模式</label>
@@ -177,7 +178,7 @@
         <div class="field"><label for="esrOhm">输出电容 ESR <span class="unit">(Ω)</span></label><input id="esrOhm" type="number" value="0.01" step="0.001" min="0.0001"/></div>
         <div class="field" data-show="rect:sr1,sr2"><label for="rdsOnMOhm">同步整流 Rds(on) <span class="unit">(mΩ，仅 SR 模式用)</span></label><input id="rdsOnMOhm" type="number" value="0" step="1" min="0"/></div>
         <div class="field" data-show="rect:sr1,sr2"><label for="vfBody">SR 体二极管压降 <span class="unit">(V，仅 SR 模式用)</span></label><input id="vfBody" type="number" value="0.8" step="0.05" min="0"/></div>
-        <div class="field" data-show="rect:sr1,sr2|topo:LLC Resonant"><label for="tDeadNs">死区时间 t_dead <span class="unit">(ns，仅 SR/LLC 用)</span></label><input id="tDeadNs" type="number" value="0" step="20" min="0"/></div>
+<div class="field" data-show="rect:sr1,sr2|topo:LLC Resonant,Push-Pull,Half-Bridge,Full-Bridge,Active Clamp Flyback"><label for="tDeadNs">死区时间 t_dead <span class="unit">(ns；SR / LLC / ACF / 桥式驱动用)</span></label><input id="tDeadNs" type="number" value="0" step="20" min="0"/></div>
       </div>
       <h3 data-show="topo:LLC Resonant">LLC 谐振腔 / LLC tank（仅 LLC 拓扑使用）</h3>
       <div class="three-col">
@@ -185,7 +186,7 @@
         <div class="field" data-show="topo:LLC Resonant"><label for="llcFr">谐振频率 fr <span class="unit">(kHz，0 = 用 Fs)</span></label><input id="llcFr" type="number" value="0" step="1" min="0"/></div>
         <div class="field" data-show="topo:LLC Resonant"><label for="llcK">电感比 k = Lm/Lr</label><input id="llcK" type="number" value="5" step="0.5" min="1.5" max="15"/></div>
         <div class="field" data-show="topo:LLC Resonant"><label for="llcQ">品质因数 Q（0 = 自动取 0.9·Q_max）</label><input id="llcQ" type="number" value="0" step="0.05" min="0"/></div>
-        <div class="field" data-show="topo:LLC Resonant"><label for="cossP">开关管 Coss（单管）<span class="unit">(pF)</span></label><input id="cossP" type="number" value="200" step="10" min="10"/></div>
+<div class="field" data-show="topo:LLC Resonant,Active Clamp Flyback"><label for="cossP">开关管 Coss（单管）<span class="unit">(pF)</span></label><input id="cossP" type="number" value="200" step="10" min="10"/></div>
       </div>
       <h3>校核模式 / Audit mode（评审供应商承认书用）</h3>
       <div class="three-col">
@@ -431,13 +432,18 @@ var TD = (function () {
     epc19.note = 'AL=1146 nH/N²、MLT≈38mm 来自天胜 TST1724 承认书实测（Ae/le 待数据手册确认）';
   }
   var TOPOS = {
-    'Flyback':              { kind: 'flyback', gFactor: 1, fluxV: 1,   bipolar: false, dLimit: 0.60, label: '反激 / Flyback' },
-    'Active Clamp Flyback': { kind: 'flyback', gFactor: 1, fluxV: 1,   bipolar: false, dLimit: 0.60, label: '有源钳位反激 / ACF' },
-    'Forward':              { kind: 'forward', gFactor: 1, fluxV: 1,   bipolar: false, dLimit: 0.50, label: '单端正激 / Forward' },
-    'Push-Pull':            { kind: 'bipolar', gFactor: 2, fluxV: 2,   bipolar: true,  dLimit: 0.48, label: '推挽 / Push-Pull' },
-    'Half-Bridge':          { kind: 'bipolar', gFactor: 1, fluxV: 0.5, bipolar: true,  dLimit: 0.48, label: '半桥 / Half-Bridge' },
-    'Full-Bridge':          { kind: 'bipolar', gFactor: 2, fluxV: 1,   bipolar: true,  dLimit: 0.48, label: '全桥 / Full-Bridge' },
-    'LLC Resonant':         { kind: 'llc',     gFactor: 1, fluxV: 0.5, bipolar: true,  dLimit: 0.50, label: 'LLC 谐振 / LLC' }
+    /* 占空比上限分三层（不要把"工程默认值"当成物理上限）：
+       dTopoKind : 'none'（无本质上限）| 'flybackVor'（按 V_or 与耐压反推）| 'acfClamp'（钳位电压反推）
+                   'forwardReset'（绕组复位 Nr/(Nr+Np)；电容复位按复位电路逐点算）| 'fixed'（结构硬限）
+       dCtrl     : 控制器/PWM/驱动允许值（'deadTime' = 由死区时间算 0.5 − t_dead·Fs）
+       dDesign   : 工程默认设计裕量（**可改**，超出只提示确认，不判物理失败） */
+    'Flyback':              { kind: 'flyback', gFactor: 1, fluxV: 1,   bipolar: false, dTopoKind: 'none',         dCtrl: 0.95,      dDesign: 0.60, label: '反激 / Flyback' },
+    'Active Clamp Flyback': { kind: 'flyback', gFactor: 1, fluxV: 1,   bipolar: false, dTopoKind: 'acfClamp',     dCtrl: 0.95,      dDesign: 0.60, label: '有源钳位反激 / ACF' },
+    'Forward':              { kind: 'forward', gFactor: 1, fluxV: 1,   bipolar: false, dTopoKind: 'forwardReset', dCtrl: 0.95,      dDesign: 0.45, label: '单端正激 / Forward' },
+    'Push-Pull':            { kind: 'bipolar', gFactor: 2, fluxV: 2,   bipolar: true,  dTopoKind: 'fixed', dTopoFixed: 0.50, dCtrl: 'deadTime', dDesign: 0.45, label: '推挽 / Push-Pull' },
+    'Half-Bridge':          { kind: 'bipolar', gFactor: 1, fluxV: 0.5, bipolar: true,  dTopoKind: 'fixed', dTopoFixed: 0.50, dCtrl: 'deadTime', dDesign: 0.45, label: '半桥 / Half-Bridge' },
+    'Full-Bridge':          { kind: 'bipolar', gFactor: 2, fluxV: 1,   bipolar: true,  dTopoKind: 'fixed', dTopoFixed: 0.50, dCtrl: 'deadTime', dDesign: 0.45, label: '全桥 / Full-Bridge' },
+    'LLC Resonant':         { kind: 'llc',     gFactor: 1, fluxV: 0.5, bipolar: true,  dTopoKind: 'fixed', dTopoFixed: 0.50, dCtrl: 0.50,      dDesign: 0.50, label: 'LLC 谐振 / LLC' }
   };
   var AWG_TABLE = [10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44];
   function awgToMm(awg) { return 0.127 * Math.pow(92, (36 - awg) / 39); }
@@ -484,6 +490,25 @@ var TD = (function () {
     return n * Vo / (T.gFactor * Vin);
   }
   function voltSeconds(T, Vin, duty, Fs) { return T.fluxV * Vin * duty / Fs; }
+  /* 电容复位正激的"拓扑/电路硬上限"：给定 Vin / Lm / C_res / Fs，逐点求"磁通仍能在关断期内回零"的最大占空比。
+     磁通过零相位 ωt1 = π − arctan(I_off·Z/Vin)，关断期相位 Ω = t_off/√(Lm·C)；条件 Ω ≥ ωt1。
+     I_off 由环形稳态闭合方程给出：I_off·(1−cosΩ) = ΔI + (Vin/Z)·sinΩ，ΔI = n·Vo/(Fs·Lm) = Vin·D/(Fs·Lm)。 */
+  function maxDutyForFluxReset(Vin, LmH, crNfVal, FsHz) {
+    if (!(Vin > 0) || !(LmH > 0) || !(crNfVal > 0) || !(FsHz > 0)) return null;
+    var Cf = crNfVal * 1e-9;
+    var Zz = Math.sqrt(LmH / Cf);
+    var tau = Math.sqrt(LmH * Cf);
+    for (var dd = 0.90; dd >= 0.05; dd -= 0.0025) {
+      var Om = (1 - dd) / FsHz / tau;
+      var dIr = Vin * dd / (LmH * FsHz);
+      var den = 1 - Math.cos(Om);
+      var iOff = Math.abs(den) < 1e-4 ? dIr : (dIr + (Vin / Zz) * Math.sin(Om)) / den;
+      if (!(iOff > 0) || !isFinite(iOff)) iOff = dIr;
+      var w1 = Math.PI - Math.atan((iOff * Zz) / Math.max(Vin, 1e-9));
+      if (Om >= w1 - 1e-9) return dd;
+    }
+    return null;
+  }
   function voutFromDuty(T, n, Vin, duty, Vf) {
     var Vo;
     if (T.kind === 'flyback') Vo = Vin * duty / ((1 - duty) * n);
@@ -536,7 +561,9 @@ var TD = (function () {
     } else if (T.kind === 'forward') {
       var Ia = Math.max(p.Iout - p.dIL / 2, 0), Ib = p.Iout + p.dIL / 2;
       o.IsPkSec = Ib; o.IrmsSec = rmsTrapezoid(Ia, Ib, D);
-      o.IpkPri = Ib / p.n + o.dIm;
+      /* 励磁电流是"三角波峰峰值 dIm"，峰值电流里的励磁分量只有 dIm/2
+         （写 + dIm 会把原边峰值电流抬高 0.8~5%，并让"安匝平衡"自检失败） */
+      o.IpkPri = Ib / p.n + o.dIm / 2;
       o.Ivalley = Ia / p.n;
       o.IrmsPri = Math.sqrt(Math.pow(rmsTrapezoid(Ia / p.n, Ib / p.n, D), 2) + Math.pow(o.dIm * Math.sqrt(D / 3), 2));
       o.dIpri = o.IpkPri - o.Ivalley;
@@ -548,7 +575,7 @@ var TD = (function () {
       var dutyPri = pp ? D : 2 * D;
       o.IsPkSec = Ihi;
       o.IrmsSec = rmsTrapezoid(Ilo, Ihi, p.nSecWind === 2 ? D : 2 * D);
-      o.IpkPri = k * Ihi / p.n + o.dIm;
+      o.IpkPri = k * Ihi / p.n + o.dIm / 2;
       o.Ivalley = k * Ilo / p.n;
       o.IrmsPri = Math.sqrt(Math.pow(rmsTrapezoid(k * Ilo / p.n, k * Ihi / p.n, dutyPri), 2) + Math.pow(o.dIm * Math.sqrt(dutyPri / 3), 2));
       o.dIpri = o.IpkPri - o.Ivalley;
@@ -641,8 +668,7 @@ var TD = (function () {
     var le = I.le * 1e-3;
     var Aw = I.aw;
     var BsatAllow = I.bsat100 * I.bsatDerate;
-    var dLimit = T.dLimit;
-    var dMax = Math.min(I.dutyMax, dLimit);
+    /* 占空比上限在读到 tDeadNs / resetMode / vdsRated 之后再算（见下方"占空比上限三层"） */
     /* 新增/可选输入取安全默认值，避免缺失或 NaN 渗入硬性校核 */
     function numOr(v, dflt) { var x = parseFloat(v); return (isFinite(x) && x > 0) ? x : dflt; }
     var ripplePct = numOr(I.ripplePct, 1);
@@ -694,7 +720,107 @@ var TD = (function () {
     var nlStrands = (isFinite(parseFloat(I.nlStrands)) && parseFloat(I.nlStrands) >= 1) ? Math.round(parseFloat(I.nlStrands)) : 1;
     var nlPar = (isFinite(parseFloat(I.nlPar)) && parseFloat(I.nlPar) >= 1) ? Math.round(parseFloat(I.nlPar)) : 1;
     if (T.kind === 'forward' && resetMode === 'cap') dLimit = 0.60;   /* 0.70 太激进，复位时间不够 */
-    dMax = Math.min(I.dutyMax, dLimit);
+    /* ---------- 系数类输入兜底归一（只补"缺失/非数值"，不覆盖用户填的非法值） ----------
+       少了这一步，Pcu / 温升 / 填充率会静默变 NaN，再被当成"校核不通过"——脚本/CSV 驱动时最易踩。 */
+    var NUM_DEFAULTS = { kPack: 1.25, kuMax: 0.4, rippleK: 0.4, rippleLout: 0.6, jTarget: 4, acFactor: 1.2,
+      bsatDerate: 0.8, deltaBTarget: 0.2, rth: 28, dtTarget: 40, tamb: 40, lossA: 1.45, lossB: 2.5,
+      pcvRef: 70, bsat100: 0.39, muI: 2300, mltTol: 0, marginMm: 0, rdsOnMOhm: 10, vfBody: 0.8,
+      cossP: 200, llcK: 5, tDeadNs: 200 };
+    Object.keys(NUM_DEFAULTS).forEach(function (kk) {
+      var vv = parseFloat(I[kk]);
+      if (!isFinite(vv)) I[kk] = NUM_DEFAULTS[kk];
+    });
+    function normWireV3(modeKey, diaKey, strKey, parKey) {
+      var m = I[modeKey];
+      if (m !== 'mm' && m !== 'awg' && m !== 'auto') I[modeKey] = 'auto';
+      var sp = parseInt(I[strKey], 10);
+      I[strKey] = (isFinite(sp) && sp >= 1) ? sp : 1;
+      var pp = parseInt(I[parKey], 10);
+      I[parKey] = (isFinite(pp) && pp >= 1) ? pp : 1;
+      var dv = parseFloat(I[diaKey]);
+      if (!isFinite(dv) || dv <= 0) I[diaKey] = 0.4;
+    }
+    normWireV3('wireModeP', 'wireDiaP', 'strandsP', 'parP');
+    normWireV3('wireModeS', 'wireDiaS', 'strandsS', 'parS');
+
+    /* ---------- 占空比上限三层：拓扑/电路上限 · 控制器上限 · 设计裕量上限 ----------
+       以前把 0.60 / 0.50 / 0.48 说成"物理上限"并用于钳位，害得有人以为 D = 0.627 的反激物理上不能工作。
+       现在分开：D_allowed = min(拓扑/电路, 控制器, 设计)；只有前两者是硬性判据，
+       设计裕量（工程默认值，可改）超出只提示确认。 */
+    var dCtrlIn = (isFinite(parseFloat(I.dCtrlMax)) && parseFloat(I.dCtrlMax) > 0) ? parseFloat(I.dCtrlMax) : 0;
+    var dCtrlDeadTime = Math.max(0.05, 0.5 - tDeadNs * 1e-9 * Fs);
+    var dCtrlAllow, dCtrlSrc;
+    if (T.dCtrl === 'deadTime') {
+      dCtrlAllow = (dCtrlIn > 0) ? Math.min(dCtrlIn, dCtrlDeadTime) : dCtrlDeadTime;
+      dCtrlSrc = '0.5 − t_dead·Fs = ' + dCtrlDeadTime.toFixed(4) + '（t_dead = ' + tDeadNs + ' ns）' +
+        (dCtrlIn > 0 ? '，与你填的 ' + dCtrlIn + ' 取小' : '');
+    } else {
+      dCtrlAllow = (dCtrlIn > 0) ? dCtrlIn : T.dCtrl;
+      dCtrlSrc = (dCtrlIn > 0 ? '按你填的控制器手册值' : '单管 PWM 默认 ' + T.dCtrl + '（按芯片手册可改）');
+    }
+    var dDesignIn = (isFinite(parseFloat(I.dutyMax)) && parseFloat(I.dutyMax) > 0) ? parseFloat(I.dutyMax) : T.dDesign;
+    var dTopoAllow = Infinity, dTopoSrc = '', dTopoTag = '无固定硬限', dTopoPending = false, dTopoKind = T.dTopoKind || 'none';
+    if (dTopoKind === 'fixed') {
+      dTopoAllow = T.dTopoFixed;
+      dTopoTag = '拓扑结构';
+      dTopoSrc = '拓扑结构硬限：' + T.dTopoFixed + '（推挽/桥式是"单管"占空比，另一半周期留给另一只管子）';
+    } else if (dTopoKind === 'flybackVor') {
+      if (vdsRated > 0 && 0.85 * vdsRated > I.vinMax) {
+        var vOrMaxV3 = 0.85 * vdsRated - I.vinMax;
+        dTopoAllow = vOrMaxV3 / (I.vinMin + vOrMaxV3);
+        dTopoTag = '反射电压×耐压反推';
+        dTopoSrc = '由反射电压与开关管耐压反推：V_or,max = 0.85×' + vdsRated + ' − ' + I.vinMax + ' = ' + vOrMaxV3.toFixed(1) +
+          ' V → D ≤ V_or/(Vin_min+V_or) = ' + dTopoAllow.toFixed(4);
+      } else {
+        dTopoSrc = '反激无固定拓扑上限：真正约束是反射电压 V_or、开关管耐压与复位时间（填开关管耐压后可按耐压反推）';
+      }
+    } else if (dTopoKind === 'acfClamp') {
+      if (vdsRated > 0 && 0.85 * vdsRated > I.vinMax) {
+        dTopoAllow = (0.85 * vdsRated - I.vinMax) / (0.85 * vdsRated);
+        dTopoTag = '钳位电压反推';
+        dTopoSrc = '有源钳位：V_clamp = Vin·D/(1−D)，开关管承压 Vin+V_clamp ≤ 0.85×' + vdsRated +
+          ' → D ≤ (0.85×U − Vin_max)/(0.85×U) = ' + dTopoAllow.toFixed(4) + '（@Vin_max）';
+      } else {
+        dTopoSrc = '有源钳位：填开关管耐压后按 V_clamp = Vin·D/(1−D) 反推上限；未填时无硬限，另见钳位电容/软开关校核';
+      }
+    } else if (dTopoKind === 'forwardReset') {
+      dTopoPending = true;
+      dTopoTag = (resetMode === 'winding') ? '复位绕组匝比' : '电容复位电路';
+      dTopoSrc = (resetMode === 'winding')
+        ? '绕组复位：D ≤ Nr/(Nr+Np)（由复位绕组匝比算，1:1 时 0.5）'
+        : '电容复位：按复位电路逐点算 —— 磁通必须在关断期内回零（ωt_1 ≤ Ω），与 C_res / Lm / Fs / Vin_min 有关';
+      var NpEstF = Math.max(1, Math.ceil(I.vinMin * dDesignIn / Fs / (Ae * I.deltaBTarget) - 1e-9));
+      /* 单位：alNh / alFromL / alLibNh 是 nH/N²；ALideal = µ0·µi·Ae/le 已是 H/N² —— 不能一起乘 1e-9 */
+      var ALestF = (I.alNh > 0) ? I.alNh * 1e-9
+        : (alFromL > 0 ? alFromL * 1e-9
+        : (alLibNh > 0 ? alLibNh * 1e-9 : MU0 * I.muI * Ae / le));
+      var LmEstF = ALestF * NpEstF * NpEstF;
+      var cresF = (I.cresNf > 0) ? I.cresNf : Math.pow(1 - dDesignIn, 2) / (Math.PI * Math.PI * LmEstF * Fs * Fs) * 1e9;
+      if (resetMode === 'winding') {
+        var NrEstF = Math.max(1, Math.ceil(NpEstF * dDesignIn / (1 - dDesignIn) - 1e-9));
+        dTopoAllow = NrEstF / (NrEstF + NpEstF);
+      } else if (LmEstF > 0 && cresF > 0) {
+        var dTopoEstF = maxDutyForFluxReset(I.vinMin, LmEstF, cresF, Fs);
+        if (dTopoEstF !== null) dTopoAllow = dTopoEstF;
+      }
+      dTopoSrc += '（当前估算：' + (isFinite(dTopoAllow) ? dTopoAllow.toFixed(4) : '待算') +
+        '，按 Np≈' + NpEstF + ' 匝 / C_res≈' + cresF.toFixed(2) + ' nF）';
+    } else {
+      dTopoSrc = '无本质上限（真正的约束是反射电压 V_or、开关管耐压与复位时间）';
+    }
+    var dMax = Math.min(dDesignIn, dCtrlAllow, dTopoAllow);
+    if (!(dMax > 0)) dMax = Math.min(dDesignIn, dCtrlAllow);
+    dMax = Math.min(Math.max(dMax, 0.02), 0.95);
+    var dAllowed = dMax;
+    var dLimit = dAllowed;   /* 兼容旧代码里的名字 */
+    if (dDesignIn > dCtrlAllow + 1e-9) warns.push('设计占空比上限 D_design = ' + dDesignIn + ' 超过控制器允许值 ' +
+      dCtrlAllow.toFixed(4) + '（' + dCtrlSrc + '）→ 已按控制器允许值计算；要按更高占空比设计请先确认控制器确实允许。');
+    if (dDesignIn > dTopoAllow + 1e-9) warns.push('设计占空比上限 D_design = ' + dDesignIn + ' 超过拓扑/电路硬上限 ' +
+      dTopoAllow.toFixed(4) + '（' + dTopoSrc + '）→ 已按硬上限计算。');
+    steps.push({ t: '占空比上限的三个口径', f: 'D_allowed = min(D_topology, D_controller, D_design)',
+      s: '拓扑/电路 ' + (isFinite(dTopoAllow) ? dTopoAllow.toFixed(4) : '无硬限') + '（' + dTopoSrc + '）；控制器 ' +
+        dCtrlAllow.toFixed(4) + '（' + dCtrlSrc + '）；设计裕量 ' + dDesignIn.toFixed(4) + '（可改） ⇒ **D_allowed = ' +
+        dAllowed.toFixed(4) + '**。注意：0.60 / 0.48 这类数字是"工程默认值/控制器与驱动允许值"，不是所有拓扑都适用的物理上限。' });
     if (I.fs <= 0) errs.push('开关频率必须大于 0');
     if (!(I.vinMin > 0) || I.vinMax < I.vinMin) errs.push('输入电压范围无效（0 < Vin_min ≤ Vin_max）');
     if (!(I.vout > 0) || !(I.iout > 0)) errs.push('输出电压与电流必须大于 0');
@@ -943,7 +1069,10 @@ var TD = (function () {
           score = Math.abs(vNom / (2 * nA) - Vo) / Vo;    /* LLC duty is fixed: rank by resonant-point output error */
         } else {
           score = Math.abs(dAtMin - dMax);
-          if (dAtMin > dLimit + 1e-12) score += 10;
+          /* 正激：D 决定"关断期够不够复位"，取整必须守上限；其它拓扑压低 D 要付出更大的 Ipk，
+             所以只惩罚"超过拓扑/电路硬上限"的一侧，设计裕量（D_design）只做提示。 */
+          if (T.kind === 'forward' && dAtMin > dMax + 1e-9) score += 5;
+          if (dAtMin > dTopoAllow + 1e-12) score += 10;
           if (dAtMax < 0.02) score += 1;
         }
         if (best === null || score < best.score - 1e-12) best = { Ns: k, n: nA, dMin: dAtMin, dMax: dAtMax, score: score };
@@ -989,7 +1118,10 @@ var TD = (function () {
          关断时间由实际占空比决定。闭式：C 取到上限时 V_res,pk = π·n·Vo/(1-D)（与 Lm、Fs 无关） */
       var dReset = Math.min(Math.max(dNeedMin, 0.05), 0.9);
       var crMaxNf = Math.pow(1 - dReset, 2) / (Math.PI * Math.PI * Lm * Fs * Fs) * 1e9;
-      var crNf = cresNf > 0 ? cresNf : crMaxNf / 4;   /* 自动取 1/4 硬上限，t_reset = T_off/2 */
+      /* 自动值 = crMaxNf，即"Ω = π"工作点（驼峰正好填满 Vin_min 处的关断期）：
+         这是复位峰值与开通损耗都最低的点（实板实测印证：24 V 处 Ω ≈ 180° ↔ C_res ≈ 3.2 nF）。
+         曾经用过"crMaxNf/4"，那会让复位峰值翻倍，并把实测能工作的电容判成超限。 */
+      var crNf = cresNf > 0 ? cresNf : crMaxNf;
       var vResetPk = nAch * Vo / Fs / Math.sqrt(Lm * crNf * 1e-9);
       /* 漏感能量：½Lk·Ipk² 也全部倒进复位电容 → 额外抬升 ΔV = Ipk·√(Lk/C) */
       /* 漏感分配（关键口径）：
@@ -1003,11 +1135,19 @@ var TD = (function () {
       var lkTotalH = lkUh * 1e-6;
       var lkH = lkTotalH * lkSplitF;
       var iMagPk = dReset * I.vinMin / (Lm * Fs);            /* 励磁电流峰值（关断瞬间） */
-      var iDesignPri = Math.max((I.iout + I.rippleLout / 2) / Math.max(nAch, 1e-9), 1e-9);
-      /* 正激/Buck 型副边：副边续流回路分担负载电流，漏感尖峰主要由励磁电流决定；
-         反激/LLC：原边无副边通路，励磁+负载全部灌进钳位/复位电容 */
+      /* 原边设计电流用的输出电感纹波口径要与输出级一致：
+         本版界面用"纹波比 K"（buckRippleK，BCM 时 K = 2）而不是绝对 ΔI_L，
+         所以这里也按 K·Iout 取（否则会依赖一个界面上已经不存在的隐藏常量）。 */
+      var buckKIn = (I.buckMode === 'bcm') ? 2 : numOr(I.buckRippleK, 0.3);
+      var dILForPri = (T.kind === 'forward' || T.kind === 'bipolar') ? buckKIn * I.iout : numOr(I.rippleLout, 0.6);
+      var iDesignPri = Math.max((I.iout + dILForPri / 2) / Math.max(nAch, 1e-9), 1e-9);
+      /* 关断瞬间漏感里流的是"全部原边电流"（负载折算分量 + 励磁分量）：
+         反激/LLC：原边没有副边通路 → 全部能量必须由钳位/复位网络吸收 ⇒ iDesignPri + iMagPk
+         正激/推挽/半桥/全桥：副边续流回路分担负载电流，只有"折算到原边"的那部分漏感能量进复位电容
+           （由 lkSplitF = k_p 折算），但**电流口径仍是折算到原边的负载电流**（iDesignPri），
+           不是只取励磁电流 —— 只取励磁会把漏感尖峰低估 1~2 个数量级。 */
       var iLkTurn = lkH > 0
-        ? ((T.kind === 'flyback' || T.kind === 'llc') ? (iDesignPri + iMagPk) : iMagPk)
+        ? ((T.kind === 'flyback' || T.kind === 'llc') ? (iDesignPri + iMagPk) : iDesignPri)
         : 0;
       var dVLk = lkH > 0 ? iLkTurn * Math.sqrt(lkH / (crNf * 1e-9)) : 0;
       var wLeak = lkH > 0 ? 0.5 * lkH * iLkTurn * iLkTurn : 0;
@@ -1032,16 +1172,12 @@ var TD = (function () {
         var Om = tOffR / Math.sqrt(lmH * crNf * 1e-9);
         var dIr = nAch * Vo / Fs / lmH;
         var den = 1 - Math.cos(Om);
-        var iOffR;
-        if (Math.abs(den) < 1e-4) {
-          iOffR = dIr;
-        } else {
-          iOffR = (dIr + (vinV / Zz) * Math.sin(Om)) / den;
-          /* 物理上限：复位电流不会超过 ΔI；Ω 落在 360° 附近时无阻尼解会发散，钳到 ΔI */
-          if (iOffR > dIr) iOffR = dIr;
-          if (iOffR < 0) iOffR = 0;
-        }
-        if (!(iOffR > 0) || !isFinite(iOffR)) iOffR = dIr;
+        /* 稳态闭合：I_off·(1 − cosΩ) = ΔI + (Vin/Z)·sinΩ。
+           注意 Ω 落在 360° 整数倍附近时无阻尼解会发散——那是**真实会导致电压/电流失控**的工作点
+           （C_res 太小、复位走过头），所以不在这里钳位：要让发散本身暴露出来（ringResonance + 告警），
+           否则会把 470 V 的危险点算成 142 V 的"安全"点，实测峰值反推也会偏（3 nF ↔ 19 nF）。 */
+        var iOffR = Math.abs(den) < 1e-4 ? dIr : (dIr + (vinV / Zz) * Math.sin(Om)) / den;
+        if (!(iOffR > 0) || !isFinite(iOffR)) iOffR = dIr;      /* 非物理区间退回简单解 */
         /* 关断期末复位电容上的电压（drain 端）：v_end = Vin·cosΩ − I_off·Z·sinΩ
            开通瞬间开关把它强制到 +Vin，储能差 ½C|v_end² − Vin²| 就地在开关/回路里烧掉 —— 这是"复位没走完/走过头"的直接代价 */
         var vEndR = vinV * Math.cos(Om) - iOffR * Zz * Math.sin(Om);
@@ -1065,7 +1201,11 @@ var TD = (function () {
         if (vdsRoom > 1e-9) crMinNf = Math.pow((vdsA + iLkTurn * Math.sqrt(Math.max(lkH, 0))) / vdsRoom, 2) * 1e9;
         else { crMinNf = Infinity; crWindowEmpty = true; }
       }
-      var crHardMaxNf = crMaxNf;   /* 与 crMaxNf 同值：π·√(Lm·C) = T_off 时的真正硬上限 */
+      /* 硬上限（宽松端）：磁通刚好在关断期末复位，π·√(Lm·C) = 2·T_off 时的值。
+         严格端（谐振电流相对小时）是 crMaxNf —— 工程上更实用的做法是：
+         · 这里给宽松上限用于"耐压 vs 复位时间"的窗口分析；
+         · 正激电容复位另有逐点解出的硬限（看 maxDutyForFluxReset / D_topo），不受这个系数影响。 */
+      var crHardMaxNf = Math.pow(2 * (1 - dReset) / (Math.PI * Fs), 2) / Lm * 1e9;
       if (vdsRated > 0) {
         /* 若 C 已取到硬上限，留给漏感的电压还有多少 → 反推允许的最大漏感 */
         var dVroom = vdsRoom - vdsA / Math.sqrt(crHardMaxNf * 1e-9);
@@ -1079,6 +1219,14 @@ var TD = (function () {
         if (vdsClassNeed !== null) return;
         var roomC = vc * 0.85 - I.vinMax;
         if (roomC > 1e-9 && Math.pow(vdsAB / roomC, 2) * 1e9 <= crHardMaxNf + 1e-9) vdsClassNeed = vc;
+      });
+      /* 另外两个口径（避免"窗口允许 800 V"与"Vds,pk 校核 934 V > 0.85×1000 V"自相矛盾）：
+         ① vdsClassStress：按保守上界 Vds,pk = Vin_max + 复位峰值 + 漏感尖峰 反推；
+         ② vdsClassRing：按环形（谐振稳态）解反推。选型卡按环形解给档，另两个口径在步骤里列出。 */
+      var vdsClassStress = null, vdsClassRing = null;
+      [100, 150, 200, 250, 300, 400, 500, 600, 650, 800, 1000, 1200, 1500].forEach(function (vc) {
+        if (vdsClassStress === null && vc * 0.85 >= vdsPkVal - 1e-9) vdsClassStress = vc;
+        if (vdsClassRing === null && vc * 0.85 >= ring.vds - 1e-9) vdsClassRing = vc;
       });
       /* ---------- 实测对账：把示波器上的 Vds,pk 读回来，反推"等效复位电容 / 等效 Lm / 等效 Fs" ----------
          模型给的是"磁化能量全部进 C_res"的解析值；如果实测远低于它，说明要么参数不同（Lm/Fs），
@@ -1140,13 +1288,37 @@ var TD = (function () {
         meas.cFromPeakNf = bestC * 1e9;
         meas.cRatio = crNf > 0 ? meas.cFromPeakNf / crNf : 0;
       }
+      /* 电容复位正激的"拓扑/电路硬上限"：用**实际**匝数/AL/C_res 复算（前面的估算只用于选匝数） */
+      var dTopoCapC = maxDutyForFluxReset(I.vinMin, Lm, crNf, Fs);
+      if (resetMode === 'cap') {
+        if (dTopoCapC !== null) {
+          dTopoAllow = dTopoCapC;
+          dTopoPending = false;
+          dTopoTag = '电容复位电路';
+          dTopoSrc = '电容复位硬限（磁通在关断期内回零）：用实际 Np = ' + Np + ' 匝 / Lm = ' + (Lm * 1e6).toFixed(0) +
+            ' µH / C_res = ' + crNf.toFixed(2) + ' nF / Fs = ' + (Fs / 1000).toFixed(0) + ' kHz 逐点解得 D ≤ ' + dTopoCapC.toFixed(4);
+          steps.push({ t: '拓扑/电路占空比硬上限（电容复位）',
+            f: 'Ω = t_off/√(Lm·C_res) ≥ ωt1 = π − arctan(I_off·Z/Vin_min) ；I_off 由环形稳态闭合方程给出',
+            s: 'D ≤ ' + dTopoCapC.toFixed(4) + '（按上式逐点扫描）；实际 D(Vin_min) = ' + dNeedMin.toFixed(4) +
+              (dNeedMin <= dTopoCapC + 1e-9 ? '（满足）' : '（**超限：磁通回零来不及 → 逐周期偏磁、磁芯走磁**）') +
+              '。这个上限随 C_res / Lm / Fs 变化（C_res 加大 → 复位更慢、上限更低，但复位峰值更低）；Ω ≈ 180° 是最优工作点。' });
+        } else {
+          dTopoAllow = 0.02;
+          dTopoPending = false;
+          dTopoSrc = '电容复位：用实际 Np / Lm / C_res / Fs 逐点扫描，**在任何占空比下磁通都来不及在关断期内回零**' +
+            '（复位半周已超过最短关断期）→ 请加大 C_res（复位更快）或降低 Fs，或减少 Np（Lm 变小、t₁ 变短）';
+          warns.push(dTopoSrc);
+        }
+      }
       capReset = { crMaxNf: crMaxNf, crNf: crNf, crAuto: !(cresNf > 0), vResetPk: vResetPk,
+        dTopoFluxReset: dTopoCapC,
         dVLk: dVLk, lkUH: lkUh, wLeak: wLeak, wMag: wMag, wRatio: wMag > 0 ? wLeak / wMag : 0,
         vResetClosed: Math.PI * nAch * Vo / (1 - dReset),
         vdsPk: vdsPkVal, vdsRated: vdsRated, vdsLimit: vdsRated * 0.85,
         iLkPri: iLkTurn, lkUsed: lkH > 0,
         crMinNf: crMinNf, crHardMaxNf: crHardMaxNf, crWindowEmpty: crWindowEmpty, lkMaxUh: lkMaxUh, vdsRoom: vdsRoom,
-        vdsClassNeed: vdsClassNeed,
+        vdsClassNeed: vdsClassNeed, vdsClassStress: vdsClassStress, vdsClassRing: vdsClassRing,
+        vdsRecClass: Math.max(vdsClassNeed || 0, vdsClassStress || 0),
         lkTotalUh: lkTotalH * 1e6, lkPriUh: lkH * 1e6, lkSplitF: lkSplitF,
         vdsPkRing: ring.vds, ringIoff: ring.iOff, ringOmDeg: ring.omDeg, ringResonance: ring.resonance,
         ringVend: ring.vEnd, ringDumpW: ring.dumpW, ringIPk: ring.iPkLoop, ringBpk: ring.bPk,
@@ -1335,6 +1507,18 @@ var TD = (function () {
     /* flux must fully reset inside the off-time: Vin·D·T/Np = Vin·t_reset/Nr with t_reset ≤ (1-D)T
        ->  Nr/Np ≥ D/(1-D)   (equivalent to the textbook D_max = Nr/(Nr+Np); a 1:1 winding gives D ≤ 0.5) */
     if (T.kind === 'forward' && resetMode === 'winding') resetTurns = Math.max(1, Math.ceil(Np * dMax / (1 - dMax) - 1e-9));
+    if (T.kind === 'forward' && resetMode === 'winding') {
+      /* 绕组复位的硬上限 = Nr/(Nr+Np)：复位期加在复位绕组上的是 Vin·Nr/Np，伏秒必须与导通期平衡 → D ≤ Nr/(Nr+Np) */
+      dTopoAllow = resetTurns / (resetTurns + Np);
+      dTopoTag = '复位绕组匝比';
+      dTopoPending = false;
+      dTopoSrc = '绕组复位硬限：D ≤ Nr/(Nr+Np) = ' + resetTurns + '/(' + resetTurns + '+' + Np + ') = ' + dTopoAllow.toFixed(4) +
+        '（复位绕组 ' + resetTurns + ' 匝，1:1 时上限 0.50）';
+      steps.push({ t: '拓扑/电路占空比硬上限（绕组复位）', f: 'Vin·D·T/Np = Vin·(1−D)·t_reset/Nr，t_reset ≤ (1−D)T ⇒ D ≤ Nr/(Nr+Np)',
+        s: 'Nr = ' + resetTurns + ' 匝 → D ≤ ' + dTopoAllow.toFixed(4) + '；实际 D(Vin_min) = ' + dNeedMin.toFixed(4) +
+          (dNeedMin <= dTopoAllow + 1e-9 ? '（满足）' : '（**超限：复位走不完全，磁通逐周期累积**）') +
+          '。设计裕量上限 D_design = ' + dDesignIn + ' 是工程默认值、可改，超出只提示确认裕量。' });
+    }
     var copperPrimary = Np * Aprim;
     var copperReset = resetTurns * Aprim;
     var copperSecondary = Ns * Asec * nSecWind;
@@ -1679,7 +1863,21 @@ var TD = (function () {
         scope: scope || 'core' });   /* core = 与变压器磁芯相关的硬性校核；peripheral = 外围元件（输出电感/电容/整流） */
     }
     addCheck('磁通峰值 Bpk ≤ Bsat·降额', maxBpk, 'T', BsatAllow, 'T', maxBpk <= BsatAllow, 0.9);
-    addCheck('Vin_min 所需占空比 D', dNeedMin, '', dLimit, '', dNeedMin <= dLimit + 1e-9, 0.92);
+    /* 占空比三层校核：拓扑/电路上限与控制器上限是硬性判据；设计裕量超出只提示确认，
+       不因为一个"工程默认值"就判物理上不能工作。 */
+    if (isFinite(dTopoAllow)) {
+      addCheck('Vin_min 实际占空比 D ≤ 拓扑/电路硬上限（' + dTopoTag + '）', dNeedMin, '', dTopoAllow, '',
+        dNeedMin <= dTopoAllow + 1e-9, 0.97);
+    } else {
+      addCheck('Vin_min 实际占空比 D vs 拓扑/电路上限（该拓扑无固定硬限，仅供参考）', dNeedMin, '', '',
+        '', true, 1e9);
+    }
+    addCheck('Vin_min 实际占空比 D ≤ 控制器允许上限 D_controller', dNeedMin, '', dCtrlAllow, '',
+      dNeedMin <= dCtrlAllow + 1e-9, 0.97);
+    addCheck('Vin_min 实际占空比 D vs 设计裕量上限 D_design（超出只提示确认裕量，不判失败）', dNeedMin, '', dDesignIn, '',
+      true, 1.0);
+    /* 目标磁通摆幅是"设计目标"而非物理极限（硬极限是上面的 Bsat 降额），所以只做提示 */
+    addCheck('磁通摆幅 ΔB_pp（实际）vs 目标 ΔB_pp', maxDB, 'T', I.deltaBTarget, 'T', true, 1.0);
     addCheck('窗口填充率', fillPct, '%', I.kuMax * 100, '%', fillPct <= I.kuMax * 100 + 1e-9, 0.9);
     /* J is an experience-based proxy, not a physical limit: the binding constraint is the temperature rise,
        so exceeding the target J only raises a flag (小磁芯散热面积相对更大，J 可以更高). */
@@ -1722,6 +1920,39 @@ var TD = (function () {
       if (!tank.lightLoadOK) warns.push('高线轻载时所需增益低于 FHA 渐近值 k/(k+1)=' + (tank.mMinAsymptote).toFixed(3) + '：需要 burst/skip 模式，或减小 k（增大 Lm/Lr 比）以降低最小增益。');
       if (tank.fMaxLight_kHz > frHz * 2.2 / 1000) warns.push('轻载下要把增益压到 M_min 需要升频到约 ' + tank.fMaxLight_kHz.toFixed(0) + ' kHz（fr 的 ' + (tank.fnHighLight).toFixed(1) + ' 倍）：确认控制器与驱动能支持这么高的最高频率。');
       if (tank.crRated <= 0) warns.push('未填谐振电容耐压：按 V_cr,pk ≈ ' + tank.VcrPk.toFixed(0) + ' V 留裕量选型（建议 ≥ ' + (tank.VcrPk / 0.8).toFixed(0) + ' V）。');
+    }
+
+    /* ---------- 有源钳位反激（ACF）专属：钳位电容电压 + 软开关条件 ---------- */
+    if (I.topology === 'Active Clamp Flyback' && Lm > 0) {
+      var dAcfMaxV = dutyForVin(T, nAch, Vo, I.vinMax), dAcfMinV = dutyForVin(T, nAch, Vo, I.vinMin);
+      var vClampAcfMax = I.vinMax * dAcfMaxV / Math.max(1 - dAcfMaxV, 1e-9);
+      var vClampAcfMin = I.vinMin * dAcfMinV / Math.max(1 - dAcfMinV, 1e-9);
+      var vClampAcfWorst = Math.max(vClampAcfMax, vClampAcfMin);
+      var vdsAcf = I.vinMax + vClampAcfMax;                     /* 主管承压 = Vin + V_clamp（漏感能量进钳位电容，不叠尖峰） */
+      var iLmPkAcf = I.vinMax * dAcfMaxV / (2 * Lm * Fs);       /* 无载时励磁电流半幅（钳位允许双向摆动） */
+      var iZvsNeedAcf = (tDeadNs > 0) ? 2 * cossPIn * 1e-12 * vClampAcfWorst / (tDeadNs * 1e-9) : 0;
+      steps.push({ t: '有源钳位反激（ACF）钳位与软开关',
+        f: 'V_clamp = Vin·D/(1−D)（钳位电容稳态电压）；主管承压 = Vin + V_clamp；ZVS：I_Lm,pk ≥ 2·Coss·V_clamp/t_dead',
+        s: 'Vin ' + I.vinMin + '~' + I.vinMax + ' V → V_clamp = ' + vClampAcfMin.toFixed(0) + '~' + vClampAcfMax.toFixed(0) +
+          ' V，主管承压 ≈ ' + vdsAcf.toFixed(0) + ' V（ACF 的漏感能量进钳位电容，所以 Vds 不叠漏感尖峰）；' +
+          '钳位电容耐压建议 ≥ ' + (vClampAcfWorst / 0.8).toFixed(0) + ' V；主开关耐压建议 ≥ ' + (vdsAcf / 0.85).toFixed(0) + ' V；' +
+          '无载 ZVS：可用励磁半幅 I_Lm,pk = ' + iLmPkAcf.toFixed(2) + ' A vs 需要 ' + iZvsNeedAcf.toFixed(2) + ' A' });
+      if (vdsRated > 0) {
+        addCheck('ACF 主开关耐压：Vin_max + V_clamp ≤ 0.85×耐压', vdsAcf, 'V', vdsRated * 0.85, 'V', vdsAcf <= vdsRated * 0.85, 0.95);
+      } else {
+        addCheck('ACF 主开关承压 = Vin_max + V_clamp（填开关管耐压后可判定）', vdsAcf, 'V', '', '', true, 1e9);
+      }
+      if (tDeadNs > 0) {
+        addCheck('ACF 软开关：无载励磁半幅 I_Lm,pk ≥ 2·Coss·V_clamp/t_dead', iLmPkAcf, 'A', iZvsNeedAcf, 'A',
+          iLmPkAcf >= iZvsNeedAcf, 3, 'peripheral');
+      } else {
+        warns.push('ACF 的软开关判据需要死区时间：请在"死区时间 t_dead"填入实际值（否则不校核 ZVS）。');
+      }
+      if (iZvsNeedAcf > 0 && iLmPkAcf < iZvsNeedAcf) {
+        warns.push('ACF 软开关不足：无载时励磁电流半幅只有 ' + iLmPkAcf.toFixed(2) + ' A，要在 ' + tDeadNs +
+          ' ns 内把节点摆过 ' + vClampAcfWorst.toFixed(0) + ' V 需要 ' + iZvsNeedAcf.toFixed(2) +
+          ' A → 减小 Lm、缩短死区或加大换流电流才能 ZVS。');
+      }
     }
     if (T.kind === 'flyback') addCheck('所需气隙 l_g', gapMm, 'mm', 2.0, 'mm', gapMm <= 2.0, 0.75);
     if (T.kind === 'forward' && resetMode === 'winding') addCheck('复位绕组匝比 Nr/Np（需 ≥ D/(1-D)）', resetTurns / Np, '', dMax / (1 - dMax), '', resetTurns / Np >= dMax / (1 - dMax) - 1e-9, 0.98);
@@ -1884,6 +2115,8 @@ var TD = (function () {
       IpkPriMin: pts.vinMin.IpkPri, IpkPriMax: pts.vinMax.IpkPri,
       dBpp: maxDB, Bpk: maxBpk, BsatAllow: BsatAllow, Bsat: I.bsat100, derate: I.bsatDerate,
       dNeedMin: dNeedMin, dNeedMax: dNeedMax, dDesign: dMax, voutAtDmax: voutAtDmax,
+      dAllowed: dAllowed, dTopoAllow: (isFinite(dTopoAllow) ? dTopoAllow : null), dTopoTag: dTopoTag, dTopoSrc: dTopoSrc,
+      dCtrlAllow: dCtrlAllow, dCtrlSrc: dCtrlSrc, dDesignLimit: dDesignIn,
       Jpri: Jpri, Jsec: Jsec, wirePd: wireP.dia, wireSd: wireS.dia, wirePauto: wireP.auto, wireSauto: wireS.auto,
       wirePstrands: wireP.strands, wireSstrands: wireS.strands, wirePpar: wireP.par, wireSpar: wireS.par,
       Aprim: Aprim, Asec: Asec, Pcore: Pcore, Pcu: loss.Pcu, Ptotal: loss.Ptotal,
@@ -2096,8 +2329,10 @@ var TD = (function () {
     }
     /* ---------- 复位网络 ---------- */
     if (cr) {
-      row('复位电容 C_res（推荐值）', '推荐 = 硬上限 / 4；硬上限 = crMaxNf',
-        '推荐 ' + (cr.crMaxNf / 4).toFixed(2) + ' nF（硬上限 ' + cr.crHardMaxNf.toFixed(2) + ' nF）',
+      /* 自动/推荐值 = crMaxNf（Ω = π，复位正好填满 Vin_min 处的关断期）；
+         硬上限 = 磁通刚好在关断期末复位的宽松端（见 capReset.crHardMaxNf 的说明） */
+      row('复位电容 C_res（推荐值）', '推荐 = crMaxNf（Ω = π）；窗口上限 = crHardMaxNf',
+        '推荐 ' + cr.crMaxNf.toFixed(2) + ' nF（可行窗口 ' + cr.crMaxNf.toFixed(2) + ' ~ ' + cr.crHardMaxNf.toFixed(2) + ' nF）',
         '硬上限 crMaxNf = ' + cr.crMaxNf.toFixed(2) + ' nF（复位半周期 = 关断时间，即 t_reset = T_off）；推荐值 = 硬上限/4（t_reset = T_off/2，留 2 倍时间余量）。'
         + '判据是"驼峰回落在开通瞬间正好到 0"（复位匹配度 Ω/Ω_回落 ≈ 1.00）；实际值应 ≥ 硬上限的 1/10 且 ≤ 硬上限。');
       row('复位电容 耐压', '≥ 1.5×复位峰值', Math.ceil(1.5 * Math.max(cr.vdsPkRing - I.vinMax, 10) / 10) * 10 + ' V（选 100 V 以上薄膜电容）',
@@ -2185,13 +2420,13 @@ var TD = (function () {
 /* ================= UI ================= */
 (function () {
   'use strict';
-  var IDS = ['topology','fs','vinMin','vinMax','vout','iout','vf','eta','vinNom','secRect','dutyMax','rippleK','fbMode','fbDutyD','vorTarget','buckMode','buckRippleK','buckDcmD','rippleLout',
+  var IDS = ['topology','fs','vinMin','vinMax','vout','iout','vf','eta','vinNom','secRect','dutyMax','dCtrlMax','rippleK','fbMode','fbDutyD','vorTarget','buckMode','buckRippleK','buckDcmD',
     'auditMode','npGiven','nsGiven','dcrLimitP','dcrLimitS',
     'resetMode','cresNf','vdsRated','vdsMeasPk','vdsMeasVin','lkSplitPct','nlGiven','lmGiven','naux',
     'alLibNh',
     'rectDevice',
     'lmMeasUh','npMeasN',
-    'lkUh','mltTol','marginMm','awW','awH','nlDia','nlStrands','nlPar','crRated',
+    'lkUh','mltTol','marginMm','awW','awH','nlDia','nlStrands','nlPar','crRated','dCtrlMax',
     'acMode','vacMin','vacMax','fline','cbusUf','cbusEsr','rsAc','vdBridge','holdMs','holdVmin','pfcBus',
     'ripplePct','esrOhm','rdsOnMOhm','vfBody','tDeadNs','llcFr','llcK','llcQ','cossP',
     'deltaBTarget','bsatDerate','acFactor','corePreset','aw','ae','le','mlt','alNh','matPreset','bsat100','muI','pcvRef',
@@ -2283,7 +2518,7 @@ var TD = (function () {
       acMode: $('acMode').value, vacMin: num('vacMin', 176), vacMax: num('vacMax', 264), fline: num('fline', 50),
       cbusUf: num('cbusUf', 220), cbusEsr: num('cbusEsr', 0.3), rsAc: num('rsAc', 0.5), vdBridge: num('vdBridge', 1.4),
       holdMs: num('holdMs', 0), holdVmin: num('holdVmin', 0), pfcBus: num('pfcBus', 390),
-      dutyMax: num('dutyMax', 0.45), rippleK: num('rippleK', 0.4), rippleLout: num('rippleLout', 0.6),
+      dutyMax: num('dutyMax', 0.45), dCtrlMax: num('dCtrlMax', 0.95), rippleK: num('rippleK', 0.4), rippleLout: num('rippleLout', 0.6),
       fbMode: $('fbMode') ? String($('fbMode').value) : 'auto',
       fbDutyD: num('fbDutyD', 0.45),
       vorTarget: num('vorTarget', 0),
@@ -3019,9 +3254,29 @@ var TD = (function () {
       node.addEventListener('change', function (e) {
         if (e.target && e.target.id === 'corePreset') applyCorePreset($('corePreset').value);
         if (e.target && e.target.id === 'matPreset') applyMaterialPreset($('matPreset').value);
+        if (e.target && (e.target.id === 'topology' || e.target.id === 'resetMode')) applyDutyDefaults();
         render();
       });
     });
+    /* 占空比上限的"工程默认值"（可改）：换拓扑/换复位方式时自动填入，之后随时手改 */
+    var TOPO_DUTY_DEFAULTS = {
+      'Flyback':              { dCtrl: 0.95, dDesign: 0.60 },
+      'Active Clamp Flyback': { dCtrl: 0.95, dDesign: 0.60 },
+      'Forward':              { dCtrl: 0.95, dDesign: 0.45, dDesignCap: 0.60 },
+      'Push-Pull':            { dCtrl: 0.48, dDesign: 0.45 },
+      'Half-Bridge':          { dCtrl: 0.48, dDesign: 0.45 },
+      'Full-Bridge':          { dCtrl: 0.48, dDesign: 0.45 },
+      'LLC Resonant':         { dCtrl: 0.50, dDesign: 0.50 }
+    };
+    function applyDutyDefaults() {
+      var t = $('topology') ? String($('topology').value) : 'Flyback';
+      var def = TOPO_DUTY_DEFAULTS[t] || { dCtrl: 0.95, dDesign: 0.45 };
+      var d = def.dDesign;
+      if (t === 'Forward' && $('resetMode') && String($('resetMode').value) === 'cap' && def.dDesignCap) d = def.dDesignCap;
+      if ($('dutyMax')) $('dutyMax').value = String(d);
+      if ($('dCtrlMax')) $('dCtrlMax').value = String(def.dCtrl);
+    }
+    applyDutyDefaults();
     $('resetBtn').addEventListener('click', resetForm);
     $('exportBtn').addEventListener('click', exportCSV);
     function ui(fn) { return function () { var u = window.__TD_UI__; if (u && typeof u[fn] === 'function') u[fn](); }; }

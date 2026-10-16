@@ -20,25 +20,32 @@ transformer_tool_archive/
 │   ├─ parameter_reference.md / core_data_without_datasheet.md   参数与磁芯资料
 │   └─ pdf_text_extract.mjs                     承认书 PDF 文本提取
 ├─ v3/                          ← 你的 v3 分支
-│   ├─ transformer_design_tool_v3.html     改好文件名与页内标题的 v3（引擎与 final14 一致）
-│   ├─ history/                            生成过程：final10 … final14 五个中间版本
-│   └─ patches/                            生成 v3 的 4 个补丁脚本（final10→14 的来龙去脉）
+│   ├─ transformer_design_tool_v3.html     ★ 主开发线（V2 模型 + 占空比三层 + CCM·BCM·DCM 模式选择）
+│   ├─ verify_transformer_tool_v3.mjs      引擎回归（691 项，全过）
+│   ├─ verify_visibility_browser_v3.mjs    真浏览器回归（114 项，全过）
+│   ├─ history/                    生成过程：final10 … final14 五个中间版本
+│   └─ patches/                    生成 v3 的 4 个补丁脚本（final10→14 的来龙去脉）
 ├─ reference/                   ← 设计公式参考（v2/v3 共用，未改动）
 ├─ deprecated_do_not_use/       ← 旧版 v1（含 4.44 系数等已确认错误），仅追溯，禁止使用
 └─ _scratch/                    ← 临时草稿/比对产物（已 gitignore，可随时删）
 ```
 
-## v2 与 v3 怎么选
+## 开发主线：V3（V2 已冻结）
 
-| | `v2/transformer_design_tool_v2.html` | `v3/transformer_design_tool_v3.html` |
+> 2026-10-16 起：**后续所有修改都在 V3**（`v3/transformer_design_tool_v3.html`），V2 冻结在最后一个全绿状态。
+
+| | `v2/transformer_design_tool_v2.html`（冻结） | `v3/transformer_design_tool_v3.html`（**主线**） |
 |---|---|---|
-| 定位 | **已验证基准**：674 项引擎检查 + 114 项真浏览器检查全过 | 你的并行分支：多出 **CCM·BCM·DCM 模式选择**（反激与 Buck 型副边，含 DCM 专用公式） |
-| 复位电容上限 | 两层判据（最优点 Ω=π / 物理上限，逐点给 Ω、Ω_回落、匹配度、开通损耗） | 把两层合并成一个值 → 推荐值只有 v2 的 1/4、复位峰值约 2 倍；会把你实测能工作的 3.2 nF 判成超限 |
-| 漏感尖峰 | 用折算到原边的负载电流（关断瞬间漏感里流的是全部原边电流） | 只取励磁电流 → ΔV 低估约 30 倍 |
-| 正激整数匝 | 守 D(Vin_min) ≤ 输入 D_max | 仍会顶破 D_max（240 W 例：0.459 > 0.45） |
-| 验证状态 | 674 / 114 / Excel 19-19 全过 | 同一套测试 620 通过 / 46 失败（详见 notes §15） |
+| 定位 | 已验证基准，不再修改 | 后续开发目标：V2 的全部模型 + V3 的 CCM·BCM·DCM 模式选择 |
+| 占空比上限 | 三层（拓扑/电路 · 控制器 · 设计裕量） | **同样三层**（已移植，见 notes §17） |
+| 复位电容口径 | 自动值 = crMaxNf（Ω=π）、硬上限 = 4× | **已对齐到同一口径**（原先 v3 的自动值只有 1/4、复位峰值翻倍） |
+| 漏感尖峰电流 | 折算到原边的负载电流 | **已对齐**（原先只取励磁电流，低估 1~2 个数量级） |
+| 正激整数匝 | Ns 守 ΔB、Np 守 D_max | **已对齐** |
+| 输出电感纹波口径 | 绝对 ΔI_L 输入 | 纹波比 K（buckMode/buckRippleK）—— V3 自己的口径，保留 |
+| 验证状态 | 690 项引擎 + 114 项浏览器 + Excel 19/19 全过 | **691 项引擎 + 114 项浏览器全过**（`v3/verify_transformer_tool_v3.mjs`、`v3/verify_visibility_browser_v3.mjs`） |
 
-**结论**：选型、校核、写报告用 v2；只是想用"模式选择"功能时用 v3，两者数据不要混着抄。
+**怎么用**：日常设计与校核都用 V3；V2 只作为"已验证基线"用于对照（两者在同一工况下的差异见 notes §15/§17）。
+共用文档（设计说明 `transformer_design_tool_v2_notes.md`、参数速查、两家供应商承认书核算）仍在 `v2/` 下，V3 沿用同一套模型说明。
 
 ## 怎么办（三步）
 
@@ -826,6 +833,25 @@ C_res 加大到 3.2 nF → 任何占空比都来不及复位 → 这时才是硬
 **验证**：**690 项检查 0 失败**，真浏览器 114 项全过，Excel 反激分支 19/19 逐格一致。
 
 
+### 第二十八轮：V3 转为主开发线 + 占空比分层移植到 V3（2026-10-16）
+
+用户要求：**"我的 V3 版本也需要分层，后续都是修改 V3 版本，V2 版本结束了"**。本轮把 V3 升级成主线，并顺手修掉
+V3 相对 V2 漂出来的真 bug：
+
+```
+移植进 V3：占空比三层（含正激按复位电路算硬限、桥式按死区算控制器上限、设计裕量只提示确认）
+          系数输入兜底（消灭 NaN 假红）、耐压档三口径、正激取整规则、ACF 钳位与软开关校核
+修掉 V3 bug：① 正激/桥式 IpkPri 的励磁分量 +dIm 应为 +dIm/2（安匝平衡自检不过）
+            ② ringSolve 擅自把 I_off 钳到 ΔI → 复位走过头区间把 471 V 算成 142 V、实测反推 3 nF→19 nF
+            ③ C_res 口径（自动值 = 硬上限/4、硬上限 = Ω=π 值）→ 复位峰值翻倍、把实测能工作的 3.2 nF 判超限
+            ④ 输出级仍读界面上已删除的 rippleLout 隐藏常量 ⑤ IDS 悬空引用 ⑥ 选型卡推荐值仍按 /4
+保留 V3 自身口径：输出电感用 buckMode/buckRippleK（纹波比）、反激 CCM/BCM/DCM 模式选择、界面 lkSplitPct 默认 100%
+```
+
+**V3 现在有自己的一套验证**：`v3/verify_transformer_tool_v3.mjs`（**691 项**）+ `v3/verify_visibility_browser_v3.mjs`（真浏览器 **114 项**）**全过**。
+V2 冻结在最后全绿状态（690 + 114 + Excel 19/19），不再改动。两者差异的完整清单见 notes §17。
+
+
 ## 归档完整性
 
 归档整理于 2026-10-15（最后一轮更新 2026-10-16，本轮把 v2 / v3 拆成两个子目录），
@@ -837,7 +863,9 @@ C_res 加大到 3.2 nF → 任何占空比都来不及复位 → 这时才是硬
 | `v2/transformer_design_tool_v2.html` | `53B5F4966F669C464BBB293169049A2BC10109A825E76D0084AB6B30310144DB` |
 | `v2/verify_transformer_tool_v2.mjs` | `DADAC7EF0A571161FA2AE044C879D59D1747FE3135902E8606A2A7EFC312FF70` |
 | `v2/verify_visibility_browser.mjs` | `2C161B1447AFD47884F990C95D4045A0B119A57FEB1FF7EF7B0D3CB62D69331B` |
-| `v3/transformer_design_tool_v3.html` | `EAD1178F7C157D4C0AD7B0622F5D88D9A70CB29193ED2EA4C33BFE2BCF8B4ABD` |
+| `v3/transformer_design_tool_v3.html` | `A0C6EA2507390B405E4B58328507F464D6EADBD89ACEC12DB8F1D692E8693F7F` |
+| `v3/verify_transformer_tool_v3.mjs` | `1B0576166ADCF8A4EEB3C3B1AE4AE478368267B0FE2D00A513DA0C268689B93F` |
+| `v3/verify_visibility_browser_v3.mjs` | `57B22AFCF21A0E8FA44A4E7BB53A0F4BA027CE522DFFDEFC4C605E045F1BD7CC` |
 | `v2/supplier_spec_EPC19_review.md` | `3B12F62F67648E77FD4A4CE7DD7401B7E8FF547A844426CE10DAE0B7B84414E6` |
 
 两个验证脚本都以**脚本自身所在目录**解析工具文件路径，所以把 `v2/`、`v3/` 整体移动或改名后仍可直接运行
