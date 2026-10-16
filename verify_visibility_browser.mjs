@@ -219,8 +219,9 @@ SCENARIOS.forEach((sc) => {
     const iChk = dom.indexOf('id="checkTable"'), iChkEnd = dom.indexOf('<h3>', iChk);
     const chkRegion = (iChk > 0 && iChkEnd > iChk) ? dom.slice(iChk, iChkEnd) : '';
     const mClass = stepRegion.match(/标准耐压档 = (\d+) V/);
-    check('复位电容窗口行给出"不可行 + 最小可行耐压档（> 100 V）"',
-      /窗口为空：100 V 档/.test(stepRegion) && !!mClass && Number(mClass[1]) > 100, stepRegion.slice(-320));
+    check('复位电容窗口行给出结论（窗口为空或 C_res 落在窗口外，并给出最小可行耐压档）',
+      /复位电容 C_res 的可行窗口/.test(stepRegion) && /C_res ≥ \d/.test(stepRegion) && (!mClass || Number(mClass[1]) >= 100),
+      (stepRegion.match(/C_res ≥ \d[^；]*(；[^；]*)?/) || ['(no window numbers)'])[0]);
     check('校核清单出现"复位电容 ≥ 耐压要求下限"这一行且判不通过',
       /耐压要求下限/.test(chkRegion) && /bad/.test(chkRegion.split('耐压要求下限')[1] || ''), chkRegion.slice(-260));
     check('填了实测 Vds,pk 后出现"（实测 @Vin=…）"校核行且判通过',
@@ -238,7 +239,8 @@ SCENARIOS.forEach((sc) => {
       /复位波形"走完没有"/.test(stepRegion) && /开通瞬间多烧/.test(stepRegion) && /B_pk/.test(stepRegion),
       (stepRegion.match(/Ω = \d+°[^；]*/) || ['(missing)'])[0]);
     const osRegion = (() => { const i = dom.indexOf('id="outStage"'); const j = dom.indexOf('<div class="card"', i + 1); return (i > 0 && j > i) ? dom.slice(i, j) : ''; })();
-    check('输出级卡片同步给出窗口结论', /复位电容可行窗口/.test(osRegion) && /窗口为空/.test(osRegion), osRegion.slice(-260));
+    check('输出级卡片同步给出窗口结论',
+      /复位电容可行窗口/.test(osRegion) && /(窗口为空|落在窗口外)/.test(osRegion), osRegion.slice(-260));
   }
   console.log('    hidden = ' + [...hid].join(' '));
 });

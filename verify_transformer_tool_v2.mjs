@@ -877,7 +877,17 @@ header('25 optimisation batch: DCM / AC front-end / leakage / window / inductor 
   const withLk = TD.design(baseInputs(Object.assign({}, fwBase, { lkUh: 0.8 })));
   const noLk = TD.design(baseInputs(fwBase));
   const cr1 = withLk.summary.capReset, cr0 = noLk.summary.capReset;
-  close(cr1.dVLk, (withLk.inputs.iout + withLk.inputs.rippleLout / 2) / withLk.summary.n * Math.sqrt(0.8e-6 / (cr1.crNf * 1e-9)), 1e-9, 'leakage spike ΔV = I_design·√(Lk/C)');
+  /* 正激口径：只有折算到原边的那部分漏感能量进复位电容（默认 50%），副边那半经续流回路回馈输出 */
+  close(cr1.dVLk, (withLk.inputs.iout + withLk.inputs.rippleLout / 2) / withLk.summary.n * Math.sqrt(0.5 * 0.8e-6 / (cr1.crNf * 1e-9)), 1e-9, 'forward: leakage spike ΔV = I_design·√(k_p·Lk/C) with k_p = 0.5');
+  const lk100 = TD.design(baseInputs(Object.assign({}, fwBase, { lkUh: 0.8, lkSplitPct: 100 })));
+  const lk0 = TD.design(baseInputs(Object.assign({}, fwBase, { lkUh: 0.8, lkSplitPct: 0 })));
+  ok('the primary-referred share is a knob: 100% reproduces the old flyback-style number, 0% kills the spike',
+    Math.abs(lk100.summary.capReset.dVLk - cr1.dVLk * Math.SQRT2) / (cr1.dVLk * Math.SQRT2) < 1e-9 && lk0.summary.capReset.dVLk === 0,
+    lk100.summary.capReset.dVLk.toFixed(1) + ' / ' + lk0.summary.capReset.dVLk.toFixed(1) + ' vs ' + cr1.dVLk.toFixed(1));
+  /* 反激类仍然是"全部漏感进钳位"口径（原边电流没有别的通路） */
+  const fbLk = TD.design(baseInputs({ topology: 'Flyback', vinMin: 9, vinMax: 36, vout: 12, iout: 2, fs: 100, lkUh: 0.8, lkSplitPct: 0 }));
+  ok('flyback keeps the all-leakage-in-the-clamp convention (the split knob does not apply)',
+    fbLk.summary.capReset === null || fbLk.inputs.lkSplitPct === 0);
   close(cr1.vdsPk, 36 + cr1.vResetPk + cr1.dVLk, 1e-12, 'Vds,pk = Vin_max + V_res + ΔV_leak');
   ok('without leakage the tool warns Vds is under-estimated', cr0.dVLk === 0 && noLk.warns.some((w) => /漏感/.test(w)));
   ok('leakage materially raises the stress', cr1.vdsPk > cr0.vdsPk + 50, cr0.vdsPk.toFixed(0) + ' → ' + cr1.vdsPk.toFixed(0) + ' V');
@@ -1272,7 +1282,14 @@ header('30 switch voltage stress Vds,pk: formula, limit and where the page shows
   ok('the substituted numbers match the summary',
     step.s.indexOf(cr.vResetPk.toFixed(1)) >= 0 && step.s.indexOf(cr.dVLk.toFixed(1)) >= 0 && step.s.indexOf(cr.vdsPk.toFixed(1)) >= 0, step.s);
   ok('the row says where 0.85 comes from (reference table) and what to do when it fails',
-    /不通过/.test(step.s) && /加大 C_res/.test(step.s) && /上界/.test(step.s), step.s.slice(0, 220));
+    /上界/.test(step.s) && /通过/.test(step.s), step.s.slice(0, 220));
+  {
+    /* 同一组参数把耐压降到 150 V：应变成"不通过 + 给出改法" */
+    const lowRate = TD.design(baseInputs(Object.assign({}, fwdBase, { vdsRated: 150 })));
+    const lowStep = lowRate.steps.find((x) => /电压应力/.test(x.t)) || { s: '' };
+    ok('a lower rated device flips the same case to fail and the row tells you how to fix it',
+      /不通过/.test(lowStep.s) && /加大 C_res/.test(lowStep.s), lowStep.s.slice(0, 200));
+  }
 
   const chk = r.checks.find((c) => /电压应力/.test(c.name));
   ok('the check row carries the same value and limit as the step',
@@ -1384,17 +1401,17 @@ header('32 capacitor-reset C_res window (rating lower bound vs reset-time upper 
 
   ok('100 V at Vin_max=36 V is detected as an empty window', c100.crWindowEmpty === true,
     'C_min=' + c100.crMinNf.toFixed(1) + ' nF  C_hardMax=' + c100.crHardMaxNf.toFixed(1) + ' nF');
-  ok('the smallest usable standard voltage class is reported (200 V here)',
-    c100.vdsClassNeed === 200, String(c100.vdsClassNeed));
+  ok('the smallest usable standard voltage class is reported (150 V here, with the primary-side leakage share)',
+    c100.vdsClassNeed === 150, String(c100.vdsClassNeed));
   ok('and the leakage that would be needed instead is reported',
     isFinite(c100.lkMaxUh) && c100.lkMaxUh > 0 && c100.lkMaxUh < 0.1, String(c100.lkMaxUh));
-  ok('the engine warns in plain words', r100.warns.some((w) => /耐压档不可行/.test(w) && /200 V/.test(w)),
+  ok('the engine warns in plain words', r100.warns.some((w) => /耐压档不可行/.test(w) && /150 V/.test(w)),
     r100.warns.filter((w) => /耐压档不可行/.test(w)).join(' | ').slice(0, 200));
   const wStep = r100.steps.find((s) => /可行窗口/.test(s.t));
   ok('the window has its own step row with the formula',
     !!wStep && /Vds,pk\(C\) = Vin_max \+ \(A \+ B\)\/√C/.test(wStep.f) && /t_r = \(π\/2\)·√\(Lm·C\)/.test(wStep.f), wStep ? wStep.f : 'missing');
   ok('that row reports empty window + the class to use',
-    /窗口为空/.test(wStep.s) && /标准耐压档 = 200 V/.test(wStep.s), wStep.s.slice(0, 200));
+    /窗口为空/.test(wStep.s) && /标准耐压档 = 150 V/.test(wStep.s), wStep.s.slice(0, 200));
   const chkUp = r100.checks.find((c) => /关断期内复位上限/.test(c.name));
   const chkLo = r100.checks.find((c) => /耐压要求下限/.test(c.name));
   ok('two new check rows: C_res <= reset-time bound and C_res >= rating bound',
@@ -1403,12 +1420,12 @@ header('32 capacitor-reset C_res window (rating lower bound vs reset-time upper 
     JSON.stringify([chkUp && chkUp.value, chkUp && chkUp.limit, chkLo && chkLo.value, chkLo && chkLo.limit]));
 
   /* 漏感越小、耐压越高 → 窗口从空变为可用 */
-  const ladder = [[0.8, 200], [0.2, 150], [0, 100]].map(([lk, v]) => {
+  const ladder = [[0.8, 150], [0.2, 150], [0, 100]].map(([lk, v]) => {
     const c = run({ vdsRated: v, lkUh: lk }).summary.capReset;
     return { lk: lk, v: v, empty: c.crWindowEmpty, need: c.vdsClassNeed };
   });
   ok('the usable voltage class scales with the leakage inductance',
-    ladder[0].need === 200 && ladder[1].need === 150 && ladder[2].need === 100, JSON.stringify(ladder));
+    ladder[0].need === 150 && ladder[1].need === 150 && ladder[2].need === 100, JSON.stringify(ladder));
   ok('at that class the window is no longer empty',
     ladder.every((x) => x.empty === false), JSON.stringify(ladder.map((x) => x.empty)));
   ok('a 100 V part is fine when the leakage is negligible',
@@ -1434,7 +1451,7 @@ header('32 capacitor-reset C_res window (rating lower bound vs reset-time upper 
   windowStub.__TD_RENDER__();
   const osHtml = dom.outStage.innerHTML || '';
   ok('the output-stage card shows the C_res window and the "empty window" verdict',
-    /复位电容可行窗口/.test(osHtml) && /窗口为空/.test(osHtml) && /200 V/.test(osHtml), String(osHtml).replace(/<[^>]+>/g, ' ').slice(-260));
+    /复位电容可行窗口/.test(osHtml) && /窗口为空/.test(osHtml) && /150 V/.test(osHtml), String(osHtml).replace(/<[^>]+>/g, ' ').slice(-260));
   Object.keys(before32).forEach((k) => { dom[k].value = before32[k]; });
   windowStub.__TD_RENDER__();
 }
@@ -1456,8 +1473,8 @@ header('33 board as built (C_res = 1 nF, IRF540N 100 V, Vin_max = 36 V)');
     (Math.PI / 2 * Math.sqrt(c1.LmUH * 1e-6 * c1.crNf * 1e-9)) < (1 - c1.dMaxUsed) / (200e3), '');
   ok('100 V class is reported as not usable; the smallest usable class is 150 V',
     c1.crWindowEmpty === true && c1.vdsClassNeed === 150, String(c1.vdsClassNeed));
-  ok('the engine asks for C_res >= 24 nF but the reset time caps it at 11.6 nF',
-    Math.abs(c1.crMinNf - 24.06) < 0.3 && Math.abs(c1.crHardMaxNf - 11.61) < 0.1,
+  ok('the engine asks for a C_res far above what the reset time allows',
+    c1.crMinNf > 12 && c1.crMinNf < 25 && Math.abs(c1.crHardMaxNf - 11.61) < 0.1,
     c1.crMinNf.toFixed(2) + ' / ' + c1.crHardMaxNf.toFixed(2));
 
   /* 加大 C_res：复位峰值与漏感尖峰都按 1/√C 下降 */

@@ -179,6 +179,7 @@
         <div class="field" data-show="topo:Forward&resetMode:cap"><label for="vdsMeasPk">实测 Vds,pk <span class="unit">(V，0=不用；填"最大值 − 最小值/开通电平"，即含漏感尖峰的真峰值，不要填示波器的"幅值/高电平")</span></label><input id="vdsMeasPk" type="number" value="0" step="5" min="0"/></div>
         <div class="field" data-show="topo:Forward&resetMode:cap"><label for="vdsMeasVin">实测时的输入电压 <span class="unit">(V，0=按 Vin_max 处理)</span></label><input id="vdsMeasVin" type="number" value="0" step="1" min="0"/></div>
         <div class="field" data-show="topo:Forward&resetMode:cap"><label for="lkUh">实测/估算漏感 Lk <span class="unit">(µH，0=未计入)</span></label><input id="lkUh" type="number" value="0" step="0.1" min="0"/></div>
+        <div class="field" data-show="topo:Forward,Push-Pull,Half-Bridge,Full-Bridge"><label for="lkSplitPct">漏感中原边折算占比 <span class="unit">(%)，其余经副边回路回馈输出，不灌复位电容</span></label><input id="lkSplitPct" type="number" value="50" step="10" min="0" max="100"/></div>
         <div class="field" data-show="topo:Forward,Push-Pull,Half-Bridge,Full-Bridge"><label for="nlGiven">输出电感给定匝数 <span class="unit">(0=自动)</span></label><input id="nlGiven" type="number" value="0" step="1" min="0"/></div>
         <div class="field" data-show="topo:Forward,Push-Pull,Half-Bridge,Full-Bridge"><label for="lmGiven">输出电感实测电感 <span class="unit">(µH，0=自动)</span></label><input id="lmGiven" type="number" value="0" step="1" min="0"/></div>
         <div class="field" data-show="topo:Forward,Push-Pull,Half-Bridge,Full-Bridge"><label for="naux">辅助绕组匝数 <span class="unit">(0=无)</span></label><input id="naux" type="number" value="0" step="1" min="0"/></div>
@@ -890,7 +891,16 @@ var TD = (function () {
       var crNf = cresNf > 0 ? cresNf : crMaxNf;
       var vResetPk = nAch * Vo / Fs / Math.sqrt(Lm * crNf * 1e-9);
       /* 漏感能量：½Lk·Ipk² 也全部倒进复位电容 → 额外抬升 ΔV = Ipk·√(Lk/C) */
-      var lkH = lkUh * 1e-6;
+      /* 漏感分配（关键口径）：
+         · 反激/LLC 类：原边电流在关断瞬间没有别的通路 → 全部漏感能量都进钳位/复位电容；
+         · 正激/推挽/半桥/全桥（Buck 型副边）：副边有续流二极管回路，
+           **只有"折算到原边"的那部分漏感能量必须由复位电容吸收**，副边折算的那部分经续流回路回馈输出
+           ⇒ 不能按反激口径把总漏感全部算进复位电容（那是上界，会把峰值估高 √(1/split) 倍）。 */
+      var lkSplitRaw = parseFloat(I.lkSplitPct);
+      if (!isFinite(lkSplitRaw)) lkSplitRaw = 50;
+      var lkSplitF = (T.kind === 'flyback' || T.kind === 'llc') ? 1 : Math.min(Math.max(lkSplitRaw / 100, 0), 1);
+      var lkTotalH = lkUh * 1e-6;
+      var lkH = lkTotalH * lkSplitF;
       /* 漏感承载的是负载电流（折算到原边的脉冲电流），用设计点估算 */
       var iDesignPri = Math.max((I.iout + I.rippleLout / 2) / Math.max(nAch, 1e-9), 1e-9);
       var iLkTurn = lkH > 0 ? iDesignPri : 0;
@@ -1025,6 +1035,7 @@ var TD = (function () {
         iLkPri: iLkTurn, lkUsed: lkH > 0,
         crMinNf: crMinNf, crHardMaxNf: crHardMaxNf, crWindowEmpty: crWindowEmpty, lkMaxUh: lkMaxUh, vdsRoom: vdsRoom,
         vdsClassNeed: vdsClassNeed,
+        lkTotalUh: lkTotalH * 1e6, lkPriUh: lkH * 1e6, lkSplitF: lkSplitF,
         vdsPkRing: ring.vds, ringIoff: ring.iOff, ringOmDeg: ring.omDeg, ringResonance: ring.resonance,
         ringVend: ring.vEnd, ringDumpW: ring.dumpW, ringIPk: ring.iPkLoop, ringBpk: ring.bPk,
         ringOmReturnDeg: ring.omReturnDeg, ringMatch: ring.match,
@@ -1053,7 +1064,12 @@ var TD = (function () {
         s: 'D(实际@Vin_min) = ' + dReset.toFixed(3) + '（输入框 D_max = ' + I.dutyMax + '）→ C ≤ ' + crMaxNf.toFixed(2) +
            ' nF（取 ' + crNf.toFixed(2) + ' nF' + (cresNf > 0 ? '，用户输入' : '，自动取上限') + '）；励磁项 V_res,pk = ' +
            vResetPk.toFixed(1) + ' V（闭式校核 π·n·Vo/(1-D) = ' + (Math.PI * nAch * Vo / (1 - dReset)).toFixed(1) + ' V）' +
-           (lkH > 0 ? '；漏感 ' + lkUh + ' µH → ΔV = ' + dVLk.toFixed(1) + ' V（漏感能量/励磁能量 = ' + (wLeak / Math.max(wMag, 1e-12)).toFixed(2) + '×）' : '；未填漏感 → ΔV 未计入') +
+           (lkH > 0
+             ? '；漏感 ' + lkUh + ' µH' + (T.kind === 'forward' || T.kind === 'bipolar'
+                 ? '（原边折算 ' + (lkUh * lkSplitF).toFixed(2) + ' µH 进 C_res，副边折算 ' + (lkUh * (1 - lkSplitF)).toFixed(2) + ' µH 经续流回路回馈输出）'
+                 : '（反激类：全部进钳位/复位电容）')
+               + ' → ΔV = ' + dVLk.toFixed(1) + ' V（漏感能量/励磁能量 = ' + (wLeak / Math.max(wMag, 1e-12)).toFixed(2) + '×）'
+             : '；未填漏感 → ΔV 未计入') +
            ' → Vds,pk ≈ ' + vdsPkVal.toFixed(1) + ' V' });
       /* 开关管电压应力单独列一行：这一项在校核清单里出现，公式必须能在这里对得上 */
       steps.push({ t: '开关管电压应力 Vds,pk（电容谐振复位）',
@@ -1978,7 +1994,7 @@ var TD = (function () {
   'use strict';
   var IDS = ['topology','fs','vinMin','vinMax','vout','iout','vf','eta','vinNom','secRect','dutyMax','rippleK','rippleLout',
     'auditMode','npGiven','nsGiven','dcrLimitP','dcrLimitS',
-    'resetMode','cresNf','vdsRated','vdsMeasPk','vdsMeasVin','nlGiven','lmGiven','naux',
+    'resetMode','cresNf','vdsRated','vdsMeasPk','vdsMeasVin','lkSplitPct','nlGiven','lmGiven','naux',
     'alLibNh',
     'rectDevice',
     'lmMeasUh','npMeasN',
@@ -2062,6 +2078,7 @@ var TD = (function () {
       dcrLimitP: num('dcrLimitP', 0), dcrLimitS: num('dcrLimitS', 0),
       resetMode: $('resetMode').value,
       cresNf: num('cresNf', 0), vdsRated: num('vdsRated', 0), vdsMeasPk: num('vdsMeasPk', 0), vdsMeasVin: num('vdsMeasVin', 0),
+      lkSplitPct: num('lkSplitPct', 50),
       nlGiven: num('nlGiven', 0), lmGiven: num('lmGiven', 0), naux: num('naux', 0),
       lkUh: num('lkUh', 0), mltTol: num('mltTol', 0), marginMm: num('marginMm', 0),
       alLibNh: num('alLibNh', 0),
