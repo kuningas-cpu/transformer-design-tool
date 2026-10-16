@@ -1860,6 +1860,19 @@ header('37 240 W forward (200/310/400 V -> 24 V/10 A, EE42/PC40, cap reset)');
   ok('explicit kPack / Ku still win over the fallback',
     Math.abs(rK2.summary.fillPct - rK2.summary.copperTotal * 1.6 / noK.aw * 100) < 1e-9 && rK2.inputs.kuMax === 0.35,
     rK2.summary.fillPct.toFixed(2) + '%');
+  /* 线径输入漏传：不应变成 NaN（否则 Pcu / 温升 / 填充率会假红） */
+  const noWire = baseInputs(Object.assign({}, fw240));
+  delete noWire.wireModeP; delete noWire.wireModeS; delete noWire.strandsP; delete noWire.strandsS;
+  delete noWire.parP; delete noWire.parS; delete noWire.wireDiaP; delete noWire.wireDiaS;
+  const rW = TD.design(noWire);
+  ok('engine falls back to auto winding / 1 strand when the wire inputs are omitted',
+    rW.ok === true && isFinite(rW.summary.Pcu) && isFinite(rW.summary.dT) && isFinite(rW.summary.fillPct) &&
+    rW.inputs.strandsP >= 1 && rW.inputs.parP >= 1 && isFinite(rW.inputs.wireDiaP),
+    'Pcu=' + rW.summary.Pcu + ' dT=' + rW.summary.dT + ' fill=' + rW.summary.fillPct);
+  const badMode = TD.design(Object.assign({}, baseInputs(Object.assign({}, fw240)), { wireModeP: 'litz' }));
+  ok('an unknown wire mode falls back to auto instead of producing NaN',
+    badMode.ok === true && isFinite(badMode.summary.Pcu) && badMode.inputs.wireModeP === 'auto',
+    String(badMode.inputs.wireModeP) + ' Pcu=' + badMode.summary.Pcu);
 }
 
 console.log('\n================ RESULT ================');

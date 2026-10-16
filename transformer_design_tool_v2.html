@@ -632,6 +632,20 @@ var TD = (function () {
        界面里本来就有默认值 1.25 / 0.4，这里只做防御性归一，不改变界面行为。 */
     if (!(numOr(I.kPack, 0) > 0)) I.kPack = 1.25;
     if (!(numOr(I.kuMax, 0) > 0)) I.kuMax = 0.4;
+    /* 绕组输入同样兜底：未知/缺失的线径模式按 auto，股数与并联数至少 1 股。
+       否则 Pcu / 温升 / 填充率会静默变成 NaN，再被当成"校核不通过"——这是最难排查的假红。 */
+    function normWire(modeKey, diaKey, strKey, parKey) {
+      var m = I[modeKey];
+      if (m !== 'mm' && m !== 'awg' && m !== 'auto') I[modeKey] = 'auto';
+      var sp = parseInt(I[strKey], 10);
+      I[strKey] = (isFinite(sp) && sp >= 1) ? sp : 1;
+      var pp = parseInt(I[parKey], 10);
+      I[parKey] = (isFinite(pp) && pp >= 1) ? pp : 1;
+      var dv = parseFloat(I[diaKey]);
+      if (!isFinite(dv) || dv <= 0) I[diaKey] = 0.4;
+    }
+    normWire('wireModeP', 'wireDiaP', 'strandsP', 'parP');
+    normWire('wireModeS', 'wireDiaS', 'strandsS', 'parS');
     var rdsOnMOhm = numOr(I.rdsOnMOhm, 10);
     var vfBody = numOr(I.vfBody, 0.8);
     var tDeadNs = (isFinite(parseFloat(I.tDeadNs)) && parseFloat(I.tDeadNs) >= 0) ? parseFloat(I.tDeadNs) : 200;
