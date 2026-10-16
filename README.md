@@ -795,6 +795,37 @@ marginMm / rdsOnMOhm / vfBody / cossP / llcK / tDeadNs / kPack / kuMax`），缺
 `push_via_api.mjs` 用 `git ls-tree -r` 枚举文件，子目录自动带上，不用改。
 
 
+### 第二十七轮：占空比上限拆成"拓扑/电路 · 控制器 · 设计裕量"三层（2026-10-16）
+
+用户指出：**0.60 / 0.48 这类数字不能一律标成"物理上限"**——反激 0.60、ACF 0.60、电容复位正激 0.60
+是**可修改的工程默认值**；推挽/半桥/全桥的 0.48 是"接近 50% 理论边界留裕量"的实用设置。
+而且电容复位正激、有源钳位反激的上限必须**按电路参数算**，不能靠拓扑名定。
+
+```
+以前：dLimit 一个数（0.60/0.50/0.48）→ 当作物理上限去钳位，D = 0.627 的反激被判"物理上不能工作"
+现在：D_allowed = min(D_topology, D_controller, D_design)
+      校核分三种：拓扑/电路硬上限（硬）· 控制器允许值（硬）· 设计裕量（**只提示确认**）
+```
+
+| 拓扑 | D_topology（硬，怎么来的） | D_controller 默认 | D_design 默认（可改） |
+|---|---|---|---|
+| Flyback | 无固定值；填耐压后按 V_or 反推 | 0.95 | **0.60** |
+| ACF | V_clamp = Vin·D/(1−D) ≤ 0.85·Vds 反推 | 0.95 | **0.60**（+新增钳位/软开关校核） |
+| Forward 绕组复位 | **D ≤ Nr/(Nr+Np)**（1:1 → 0.50） | 0.95 | 0.45 |
+| Forward 电容复位 | **按复位电路逐点算**（Ω ≥ ωt₁，随 C_res/Lm/Fs 变） | 0.95 | **0.60** |
+| Push-Pull / 半桥 / 全桥 | 0.50（单管） | **0.5 − t_dead·Fs**（200 ns/100 kHz → 0.48） | 0.45 |
+| LLC | 0.50（互补驱动标称） | 0.50 | 0.50 |
+
+**语义变化（用户明确要求的那条）**：D = 0.55 在默认 0.60 下通过；D = 0.627 只**提示确认设计裕量**，
+只有在超过控制器允许值或复位条件时才判不通过。240 W 电容复位正激实算：C_res = 0.85 nF → D_topo ≈ 0.65；
+C_res 加大到 3.2 nF → 任何占空比都来不及复位 → 这时才是硬性不通过（并给出改法）。
+
+**UI / Excel 同步**：面板新增「控制器允许占空比上限 D_controller」，原输入改名「设计占空比上限 D_design」
+（上限放宽到 0.95，换拓扑/换复位方式自动填默认值仍可手改）；Excel 新增 D_topo / D_controller 两行，
+`D_allowed = MIN(设计, 控制器, 拓扑)`。ACF 新增 V_clamp 步骤行 + 主开关耐压/无载 ZVS 两条校核。
+**验证**：**690 项检查 0 失败**，真浏览器 114 项全过，Excel 反激分支 19/19 逐格一致。
+
+
 ## 归档完整性
 
 归档整理于 2026-10-15（最后一轮更新 2026-10-16，本轮把 v2 / v3 拆成两个子目录），
@@ -803,8 +834,8 @@ marginMm / rdsOnMOhm / vfBody / cossP / llcK / tDeadNs / kPack / kuMax`），缺
 
 | 文件 | SHA-256 |
 |---|---|
-| `v2/transformer_design_tool_v2.html` | `56DA0AC7D0391624F6BFA11DE19FC5E127F1C7C67DA1B47E26E504B13E46182E` |
-| `v2/verify_transformer_tool_v2.mjs` | `99BB2ACB9242F3FADB0D6128B75054B74170FB16DF16BA4E5AF1600B15EC7E41` |
+| `v2/transformer_design_tool_v2.html` | `53B5F4966F669C464BBB293169049A2BC10109A825E76D0084AB6B30310144DB` |
+| `v2/verify_transformer_tool_v2.mjs` | `DADAC7EF0A571161FA2AE044C879D59D1747FE3135902E8606A2A7EFC312FF70` |
 | `v2/verify_visibility_browser.mjs` | `2C161B1447AFD47884F990C95D4045A0B119A57FEB1FF7EF7B0D3CB62D69331B` |
 | `v3/transformer_design_tool_v3.html` | `EAD1178F7C157D4C0AD7B0622F5D88D9A70CB29193ED2EA4C33BFE2BCF8B4ABD` |
 | `v2/supplier_spec_EPC19_review.md` | `3B12F62F67648E77FD4A4CE7DD7401B7E8FF547A844426CE10DAE0B7B84414E6` |

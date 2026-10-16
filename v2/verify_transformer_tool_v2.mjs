@@ -292,7 +292,15 @@ for (const [top, over] of scenarios) {
     ok(tag + 'LLC: deviation is reported as a check', r.checks.some((c) => /谐振点输出电压偏差/.test(c.name) && c.value < 10));
   }
   if (/Bridge|Push-Pull/.test(top)) {
-    ok(tag + 'duty stays within the topology limit', r.sweep.every((p) => p.D <= r.T.dLimit + 1e-9), 'max D=' + Math.max(...r.sweep.map((p) => p.D)).toFixed(4));
+    /* 推挽/桥式：单管占空比必须守"拓扑硬限 0.5"与"控制器/死区允许值 0.5 − t_dead·Fs"；
+       设计裕量 D_design 只是工程默认值，超出只提示确认。 */
+    const dTopoHard = r.summary.dTopoAllow === null ? 1 : r.summary.dTopoAllow;
+    ok(tag + 'duty stays within the topology + controller hard limits',
+      r.sweep.every((p) => p.D <= dTopoHard + 1e-9 && p.D <= r.summary.dCtrlAllow + 1e-9),
+      'max D=' + Math.max(...r.sweep.map((p) => p.D)).toFixed(4) + ' topo=' + dTopoHard + ' ctrl=' + r.summary.dCtrlAllow.toFixed(4));
+    ok(tag + 'controller limit is derived from the dead time (0.5 − t_dead·Fs)',
+      Math.abs(r.summary.dCtrlAllow - (0.5 - r.inputs.tDeadNs * 1e-9 * r.inputs.fs * 1000)) < 1e-9,
+      r.summary.dCtrlAllow.toFixed(4) + ' @ t_dead=' + r.inputs.tDeadNs + ' ns, Fs=' + r.inputs.fs + ' kHz');
   }
 }
 
@@ -346,7 +354,8 @@ const irrelevant = {
   llcFr: ['Flyback', 'Active Clamp Flyback', 'Forward', 'Push-Pull', 'Half-Bridge', 'Full-Bridge'],
   llcK: ['Flyback', 'Active Clamp Flyback', 'Forward', 'Push-Pull', 'Half-Bridge', 'Full-Bridge'],
   llcQ: ['Flyback', 'Active Clamp Flyback', 'Forward', 'Push-Pull', 'Half-Bridge', 'Full-Bridge'],
-  cossP: ['Flyback', 'Active Clamp Flyback', 'Forward', 'Push-Pull', 'Half-Bridge', 'Full-Bridge'],
+  /* ACF 现在用 cossP 做软开关校核，所以不再列入"无关输入" */
+  cossP: ['Flyback', 'Forward', 'Push-Pull', 'Half-Bridge', 'Full-Bridge'],
   vinNom: ['Flyback', 'Active Clamp Flyback', 'Forward', 'Push-Pull', 'Half-Bridge', 'Full-Bridge'],
   secRect: ['Flyback', 'Active Clamp Flyback', 'Forward', 'LLC Resonant']
 };
@@ -405,8 +414,61 @@ ok('turns are sized so that Bpk stays under Bsat (flyback, AL=0)', sat.summary.B
 ok('tiny core is rejected on window filling instead', sat.summary.hardFail >= 1 && sat.checks.some((c) => /填充率/.test(c.name) && c.pass === false), 'fill=' + sat.summary.fillPct.toFixed(0) + '%');
 const alBad = TD.design(baseInputs({ alNh: 4000 }));
 ok('large AL on a small core -> flux limit flagged, not silently accepted', alBad.warns.some((w) => /AL/.test(w)) || alBad.checks.some((c) => /磁通峰值/.test(c.name) && c.pass === false), 'Bpk=' + alBad.summary.Bpk.toFixed(3));
-const overD = TD.design(baseInputs({ dutyMax: 0.9 }));
-ok('illegal duty (0.9) is clamped to the topology limit and warned', overD.summary.dDesign <= TD.TOPOS.Flyback.dLimit + 1e-9 && overD.warns.some((w) => /占空比/.test(w)));
+/* 占空比三口径（用户要求）：D_allowed = min(拓扑/电路, 控制器, 设计)；设计裕量超出只提示确认 */
+{
+  const rowOf = (r, re) => r.checks.find((c) => re.test(c.name));
+  const overD = TD.design(baseInputs({ dutyMax: 0.99 }));
+  ok('a design duty above the controller limit is clamped by the controller and warned',
+    overD.summary.dDesign <= overD.summary.dCtrlAllow + 1e-9 && overD.warns.some((w) => /D_design/.test(w)),
+    'dDesign=' + overD.summary.dDesign + ' dCtrl=' + overD.summary.dCtrlAllow);
+  const overD2 = TD.design(baseInputs({ dutyMax: 0.9 }));
+  ok('D_design = 0.9 is accepted when the controller allows 0.95 (no phantom clamp)',
+    Math.abs(overD2.summary.dAllowed - 0.9) < 1e-9, String(overD2.summary.dAllowed));
+  ok('D_allowed = min(topology, controller, design)',
+    Math.abs(overD.summary.dAllowed - Math.min(overD.summary.dCtrlAllow, overD.inputs.dutyMax)) < 1e-9,
+    JSON.stringify([overD.summary.dAllowed, overD.summary.dCtrlAllow, overD.inputs.dutyMax]));
+  /* 反激没有固定拓扑上限：0.60 只是工程默认值，不能被当成物理极限 */
+  const fb60 = TD.design(baseInputs({ dutyMax: 0.60 }));
+  ok('flyback has no fixed topology duty limit (0.60 is an engineering default, not physics)',
+    fb60.summary.dTopoAllow === null && /无固定拓扑上限|无本质上限/.test(fb60.summary.dTopoSrc || ''),
+    String(fb60.summary.dTopoAllow) + ' | ' + fb60.summary.dTopoSrc);
+  ok('flyback: the "topology limit" row is informational (no hard FAIL)',
+    rowOf(fb60, /拓扑\/电路上限/) && rowOf(fb60, /拓扑\/电路上限/).pass === true);
+  ok('flyback: a design-limit overshoot only warns (no hard FAIL from the duty rows)',
+    (() => { const r = TD.design(baseInputs({ topology: 'Forward', vinMin: 200, vinMax: 400, vout: 24, iout: 10,
+        dutyMax: 0.45, ae: 155, le: 97, aw: 120, mlt: 90, resetMode: 'cap', cresNf: 0,
+        auditMode: '1', npGiven: 30, nsGiven: 8 }));
+      const dRow = rowOf(r, /设计裕量上限 D_design/);
+      const hard = [rowOf(r, /拓扑\/电路硬上限/), rowOf(r, /控制器允许上限/)].filter(Boolean);
+      return r.summary.dNeedMin > 0.45 && dRow && dRow.pass === true && dRow.warn === true && hard.every((c) => c.pass === true);
+    })(), 'D=0.4594 超设计裕量 0.45 但没超复位电路硬限 → 只提示确认');
+  /* 控制器上限按芯片手册可改 */
+  const ctrl = TD.design(baseInputs({ dutyMax: 0.60, dCtrlMax: 0.45 }));
+  ok('an explicitly entered controller limit tightens D_allowed',
+    Math.abs(ctrl.summary.dAllowed - 0.45) < 1e-9 && rowOf(ctrl, /控制器允许上限/).limit === 0.45,
+    String(ctrl.summary.dAllowed));
+  /* 正激：绕组复位上限 = Nr/(Nr+Np)；电容复位上限按复位电路逐点算 */
+  const fwW = TD.design(baseInputs({ topology: 'Forward', vinMin: 48, vinMax: 72, vout: 5, iout: 10, resetMode: 'winding', dutyMax: 0.45 }));
+  ok('forward (reset winding): the hard limit is Nr/(Nr+Np)',
+    Math.abs(fwW.summary.dTopoAllow - fwW.summary.resetTurns / (fwW.summary.resetTurns + fwW.summary.Np)) < 1e-12 &&
+    rowOf(fwW, /拓扑\/电路硬上限/).limit === fwW.summary.dTopoAllow,
+    String(fwW.summary.dTopoAllow));
+  const fwC = TD.design(baseInputs({ topology: 'Forward', vinMin: 18, vinMax: 36, vout: 19, iout: 3.947, fs: 250, resetMode: 'cap', cresNf: 3.2, dutyMax: 0.60, auditMode: '1', npGiven: 12, nsGiven: 23, ae: 52, le: 32, aw: 38, mlt: 38, alNh: 1146 }));
+  ok('forward (cap reset): the hard limit is computed from the reset circuit, not a fixed number',
+    fwC.summary.dTopoAllow !== null && fwC.summary.dTopoAllow > 0.5 && fwC.summary.dTopoAllow < 0.75 &&
+    rowOf(fwC, /拓扑\/电路硬上限/).limit === fwC.summary.dTopoAllow,
+    'D_topo=' + (fwC.summary.dTopoAllow || 0).toFixed(4) + ' | ' + (fwC.summary.dTopoSrc || '').slice(0, 120));
+  /* ACF：钳位电压 + 软开关校核 */
+  const acf = TD.design(baseInputs({ topology: 'Active Clamp Flyback', dutyMax: 0.60, tDeadNs: 200, cossP: 200, vdsRated: 650 }));
+  ok('ACF: clamp capacitor voltage / switch stress / soft-switching are checked',
+    acf.checks.some((c) => /ACF 主开关耐压/.test(c.name)) && acf.checks.some((c) => /ACF 软开关/.test(c.name)) &&
+    acf.steps.some((x) => /ACF/.test(x.t)),
+    acf.checks.filter((c) => /ACF/.test(c.name)).map((c) => c.name + '=' + c.value).join(' | '));
+  /* LLC：互补驱动 50% 标称 */
+  const llc = TD.design(baseInputs({ topology: 'LLC Resonant', vinMin: 380, vinMax: 420, vinNom: 400, vout: 12, iout: 10, dutyMax: 0.5 }));
+  ok('LLC: nominal duty 50 % for complementary drive, all three limits agree',
+    llc.summary.dTopoAllow === 0.5 && llc.summary.dCtrlAllow === 0.5 && llc.summary.dAllowed === 0.5);
+}
 
 /* ---------------- 11. core comparison ---------------- */
 header('11 core comparison');
@@ -1135,7 +1197,8 @@ header('27 dynamic fields: DC vs AC front-end vs topology vs rectifier');
   let noCore = [];
   for (const t of TOPOS) {
     setV('topology', t); setV('rectDevice', 'diode'); setV('resetMode', 'cap'); windowStub.__TD_RENDER__();
-    const mustShow = ['fs', 'vout', 'iout', 'vf', 'eta', 'dutyMax', 'deltaBTarget', 'ae', 'le', 'aw', 'mlt', 'jTarget', 'ripplePct', 'esrOhm'];
+  /* dutyMax(D_design) 与 dCtrlMax(D_controller) 是所有拓扑都要看的两个"占空比上限"输入，任何场景都不许隐藏 */
+  const mustShow = ['fs', 'vout', 'iout', 'vf', 'eta', 'dutyMax', 'dCtrlMax', 'deltaBTarget', 'ae', 'le', 'aw', 'mlt', 'jTarget', 'ripplePct', 'esrOhm'];
     if (!shown(mustShow)) noCore.push(t);
   }
   ok('every topology keeps the shared specification fields visible', noCore.length === 0, noCore.join(','));
@@ -1830,9 +1893,16 @@ header('37 240 W forward (200/310/400 V -> 24 V/10 A, EE42/PC40, cap reset)');
     Math.abs(lk.dVLk - lk.iLkPri * Math.sqrt(1e-6 * 0.5 / (lk.crNf * 1e-9))) < 1e-6, lk.dVLk.toFixed(1) + ' V');
   /* 三项新校核行都在，并且是"上限"语义 */
   const rowOf = (re) => r.checks.find((x) => re.test(x.name));
-  const dRow = rowOf(/实际占空比 D ≤ 输入 D_max/);
-  ok('240W: new row "D(Vin_min) <= input D_max" exists and passes',
-    !!dRow && dRow.pass === true && Math.abs(dRow.limit - 0.45) < 1e-12, dRow ? String(dRow.value) + ' / ' + dRow.limit : 'missing');
+  /* 占空比三口径：正激的硬上限来自复位电路（电容复位逐点算），控制器与设计裕量各自一行 */
+  const dTopoRow = rowOf(/拓扑\/电路硬上限/);
+  ok('240W: the topology/circuit hard-limit row uses the reset-circuit value (not a fixed 0.60)',
+    !!dTopoRow && dTopoRow.limit === s.dTopoAllow && s.dTopoAllow !== null && s.dTopoAllow > 0.4,
+    dTopoRow ? String(dTopoRow.limit) : 'missing');
+  const dCtrlRow = rowOf(/控制器允许上限/);
+  ok('240W: the controller-limit row exists and passes', !!dCtrlRow && dCtrlRow.pass === true && dCtrlRow.limit === s.dCtrlAllow);
+  const dDesRow = rowOf(/设计裕量上限 D_design/);
+  ok('240W: the design-margin row is advisory (pass=true even when it warns)',
+    !!dDesRow && dDesRow.pass === true && dDesRow.limit === s.dDesignLimit, dDesRow ? String(dDesRow.value) : 'missing');
   const bRow = rowOf(/磁通摆幅 ΔB_pp（实际）vs 目标/);
   ok('240W: new row "achieved ΔB vs target" is advisory (pass=true as a ceiling check)', !!bRow && bRow.pass === true && !bRow.warn, bRow ? String(bRow.value) : 'missing');
   /* ΔB 目标只管到 Ns：给定 Np 也改不了 ΔB */
@@ -1840,9 +1910,19 @@ header('37 240 W forward (200/310/400 V -> 24 V/10 A, EE42/PC40, cap reset)');
   ok('240W audit: Np=30/Ns=7 breaks both ΔB (0.226 T) and D (0.525)',
     Math.abs(n30.summary.dBpp - 24.5 / (7 * 155e-6 * 1e5)) < 1e-9 && n30.summary.dNeedMin > 0.45,
     n30.summary.dBpp.toFixed(4) + ' T / D ' + n30.summary.dNeedMin.toFixed(4));
-  ok('240W audit: the D_max row fails, and the ΔB row only warns',
-    n30.checks.find((x) => /实际占空比 D ≤ 输入 D_max/.test(x.name)).pass === false &&
-    n30.checks.find((x) => /磁通摆幅 ΔB_pp（实际）vs 目标/.test(x.name)).warn === true);
+  /* D = 0.525 超"设计裕量 0.45"，但没超电容复位电路的硬上限（≈0.60）→ 只提示确认，不判失败 */
+  ok('240W audit: D=0.525 exceeds the design margin only → advisory warn, no hard duty FAIL',
+    (() => { const t = n30.checks.find((x) => /拓扑\/电路硬上限/.test(x.name));
+      const ctrl = n30.checks.find((x) => /控制器允许上限/.test(x.name));
+      const des = n30.checks.find((x) => /设计裕量上限 D_design/.test(x.name));
+      return t && t.pass === true && ctrl && ctrl.pass === true && des && des.pass === true && des.warn === true; })(),
+    'D_topo=' + (n30.summary.dTopoAllow || 0).toFixed(4) + ' D=' + n30.summary.dNeedMin.toFixed(4));
+  /* 把 C_res 加大到 3.2 nF（复位更慢）→ 磁通回零来不及，这时才是真正的物理失败 */
+  const n30slow = run({ auditMode: '1', npGiven: 30, nsGiven: 7, cresNf: 3.2 });
+  ok('240W audit: with C_res = 3.2 nF the reset cannot finish in time → topology row FAILs',
+    (() => { const t = n30slow.checks.find((x) => /拓扑\/电路硬上限/.test(x.name));
+      return t && t.pass === false && n30slow.summary.dTopoAllow < n30slow.summary.dNeedMin; })(),
+    'D_topo=' + (n30slow.summary.dTopoAllow || 0).toFixed(4) + ' D=' + n30slow.summary.dNeedMin.toFixed(4));
   /* ΔB 与 Np 无关：改 Np 不改变 ΔB，只改变 D 与电流 */
   const n40 = run({ auditMode: '1', npGiven: 40, nsGiven: 9 });
   ok('240W: ΔB depends only on Ns (Np = 30 vs 40 gives the same swing)',

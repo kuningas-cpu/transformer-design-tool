@@ -76,7 +76,7 @@ INPUTS = [
     ('vf', 'Vf (V)', 0.5, '输出整流压降'),
     ('fsk', 'Fs (kHz)', 100, ''),
     ('eta', 'eta', 0.9, ''),
-    ('dmaxin', 'D_max（Vin_min 处）', 0.45, '反激=开关；正激=单管；桥式=每管'),
+    ('dmaxin', 'D_design 设计占空比上限（工程默认值，可改）', 0.45, '反激 0.60 / 正激 0.45（电容复位 0.60）/ 推挽·桥式 0.45 / LLC 0.50；超出只提示确认'),
     ('dbt', 'ΔB_target (T)', 0.2, '允许磁通摆幅（峰峰）'),
     ('kder', 'Bsat 降额系数', 0.8, ''),
     ('K', '纹波比 K=ΔI/Ipk（反激类）', 0.4, '2=BCM 边界'),
@@ -234,8 +234,12 @@ def build(scenario='flyback'):
     add('isBuck', '有输出电感?', 'OR({isFW},{isBP})', '', 'bool')
     add('g', 'g（Vo 方程 Vin 倍数）', 'IF(OR({isPP},{isFBR}),2,IF({isHB},1,0))', '', '0')
     add('fluxV', 'k_v（折到整个 Np）', 'IF(OR({isPP},{isFBR}),2,IF(OR({isHB},{isLLC}),0.5,1))', '', '0.0')
-    add('dlim', '拓扑占空比上限', 'IF({isFB},0.6,IF({isFW},0.5,IF({isLLC},0.5,0.48)))', '', '0.00')
-    add('dmax', 'D_max（钳位后）', 'MIN({dmaxin},{dlim})', '', '0.0000')
+    # 占空比上限三层（与网页版一致）：拓扑/电路硬上限 · 控制器允许值 · 设计裕量
+    add('dlim', '拓扑/电路硬上限 D_topo', 'IF({isFB},0.95,IF({isFW},0.50,IF({isLLC},0.50,0.50)))',
+        '反激无固定值（真正约束是 V_or/耐压与复位时间，0.95 = 不设限）；正激 0.50 = 1:1 复位绕组，电容复位需按复位电路算', '0.00')
+    add('dctrl', '控制器允许上限 D_controller', '0.95', '按芯片手册改；推挽/桥式 = 0.5 − t_dead·Fs', '0.00')
+    add('dmax', 'D_allowed = min(拓扑, 控制器, 设计)', 'MIN({dmaxin},{dctrl},{dlim})',
+        '设计裕量 D_design 超出只提示确认，不判物理失败', '0.0000')
     add('po', 'Po (W)', '{vout}*{iout}', '', '0.00')
     add('pin', 'Pin (W)', '{po}/{eta}', '', '0.00')
     add('vo', 'Vo = Vout+Vf (V)', '{vout}+{vf}', '', '0.00')
