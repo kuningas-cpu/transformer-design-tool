@@ -9,6 +9,7 @@
 | 文件 | 说明 |
 |---|---|
 | `transformer_design_tool_v2.html` | 工具本体：输入 + 结果 + 校核清单 + 判决 + 电压扫描 + 设计步骤 + 磁芯对比 + 公式表，支持 CSV 导出 |
+| `transformer_design_tool_v3.html` | **用户自己的 v3 分支**（= 原 `transformer_design_tool_v3_final14.html`，仅改文件名与页内标题/报告名，引擎未动）：多出反激 / Buck 型副边的 **CCM·BCM·DCM 模式选择**（含 DCM 专用公式）。与 v2 的逐项差异与判据见 `transformer_design_tool_v2_notes.md` **§15**；v2 为已验证基准（672 项检查全过），v3 作为并行分支保留 |
 | `verify_transformer_tool_v2.mjs` | 验证脚本：**668 项检查**（结构/首次渲染/物理不变量/手算对照/模糊测试/校核模式/输出级/LLC 谐振腔/电容复位/复位电容窗口/两组实板实测对账/峰值÷Vin 健康度判据/修正后的峰值下限/复位环形解与 C_res·Lm 双反推/驼峰宽度 Ω_回落 与复位匹配度/复位电流磁密/读数口径提醒/**器件选型建议与损耗发热账本**（开关管·整流·续流·复位电容·复位绕组·RCD·各项损耗与实测效率对照）/辅助绕组电压/动态显示/面板顺序/续流管口径/按拓扑生成文字/开关管应力公式/热阻口径/漏感分配口径/两家供应商交叉验证/**240 W 单端正激算例与 D_max·ΔB·耐压档三口径**） |
 | `verify_visibility_browser.mjs` | 真浏览器回归：用无头 Edge/Chrome 打开工具，按 8 组「输入类型 × 拓扑 × 整流器件 × 耐压档」场景核对**实际被隐藏的输入项、面板顺序、整流器件选项措辞、公式表是否只列当前拓扑、Vds,pk 步骤行、热阻提示、复位电容窗口结论**（114 项检查；本机没有 Chromium 内核浏览器时自动跳过） |
 | `transformer_design_tool_v2_notes.md` | 设计说明：公式与约定、与 v1 的差异清单、适用边界、验证清单、EPC19 核算记录 |
@@ -735,6 +736,7 @@ v3 把上限压到 1.86 nF 并对**同一个值**判两次 → 会把 3.2 nF 这
 | `transformer_design_tool_v2.html` | `A49EF83D346AA6D192BE1E74B2736C202EE78F8EAFE1F4B26821795E875703C3` |
 | `verify_transformer_tool_v2.mjs` | `CF79F62559C3EB1CBE50CDB326FE2467C6E7CB3D06847FC05A623C1FA9FD7FCA` |
 | `verify_visibility_browser.mjs` | `2C161B1447AFD47884F990C95D4045A0B119A57FEB1FF7EF7B0D3CB62D69331B` |
+| `transformer_design_tool_v3.html` | `EAD1178F7C157D4C0AD7B0622F5D88D9A70CB29193ED2EA4C33BFE2BCF8B4ABD` |
 | `supplier_spec_EPC19_review.md` | `3B12F62F67648E77FD4A4CE7DD7401B7E8FF547A844426CE10DAE0B7B84414E6` |
 
 `verify_transformer_tool_v2.mjs` 以脚本自身位置解析工具文件路径，因此归档目录整体移动或改名后仍可直接运行。
