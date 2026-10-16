@@ -1873,6 +1873,22 @@ header('37 240 W forward (200/310/400 V -> 24 V/10 A, EE42/PC40, cap reset)');
   ok('an unknown wire mode falls back to auto instead of producing NaN',
     badMode.ok === true && isFinite(badMode.summary.Pcu) && badMode.inputs.wireModeP === 'auto',
     String(badMode.inputs.wireModeP) + ' Pcu=' + badMode.summary.Pcu);
+  /* 系数类输入整批漏传：全部按界面默认值补齐，不能出现 NaN 或假 FAIL */
+  const bare = baseInputs(Object.assign({}, fw240));
+  ['kPack', 'kuMax', 'rippleK', 'rippleLout', 'jTarget', 'acFactor', 'bsatDerate', 'deltaBTarget', 'rth',
+    'dtTarget', 'tamb', 'lossA', 'lossB', 'pcvRef', 'bsat100', 'muI', 'mltTol', 'marginMm', 'rdsOnMOhm',
+    'vfBody', 'cossP', 'llcK', 'tDeadNs'].forEach((k) => delete bare[k]);
+  const rB = TD.design(bare);
+  ok('all coefficient inputs fall back to their UI defaults (no NaN, no phantom FAIL)',
+    rB.ok === true && [rB.summary.Pcu, rB.summary.dT, rB.summary.fillPct, rB.summary.Pcore, rB.summary.Bpk]
+      .every((v) => isFinite(v)) &&
+    rB.inputs.kPack === 1.25 && rB.inputs.rippleK === 0.4 && rB.inputs.rth === 28 && rB.inputs.muI === 2300,
+    'Pcu=' + rB.summary.Pcu + ' dT=' + rB.summary.dT + ' fill=' + rB.summary.fillPct +
+    ' kPack=' + rB.inputs.kPack + ' rippleK=' + rB.inputs.rippleK + ' rth=' + rB.inputs.rth);
+  /* 但"填了非法值"仍必须走输入校验报错，不能被默认值掩盖 */
+  const badV = TD.design(Object.assign({}, baseInputs(Object.assign({}, fw240)), { vout: -1 }));
+  ok('an explicitly invalid value is still rejected by the validator (defaults must not mask it)',
+    badV.ok === false && badV.errs.length > 0);
 }
 
 console.log('\n================ RESULT ================');

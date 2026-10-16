@@ -628,10 +628,17 @@ var TD = (function () {
     function numOr(v, dflt) { var x = parseFloat(v); return (isFinite(x) && x > 0) ? x : dflt; }
     var ripplePct = numOr(I.ripplePct, 1);
     var esrOhm = numOr(I.esrOhm, 0.01);
-    /* 兜底：kPack / kuMax 是"窗口校核"的两个必需系数，缺了会让填充率变 NaN（脚本/CSV 驱动引擎时最容易踩）。
-       界面里本来就有默认值 1.25 / 0.4，这里只做防御性归一，不改变界面行为。 */
-    if (!(numOr(I.kPack, 0) > 0)) I.kPack = 1.25;
-    if (!(numOr(I.kuMax, 0) > 0)) I.kuMax = 0.4;
+    /* 系数类输入兜底归一（只补"缺失/非数值"，不覆盖用户填的非法值——那些仍由输入校验报错）。
+       默认值与界面 <input value> 一致。少了这一步，Pcu / 温升 / 填充率 / 铜损会静默变 NaN，
+       再被当成"校核不通过"——脚本或 CSV 驱动引擎时最容易踩，也是最难排查的假红。 */
+    var NUM_DEFAULTS = { kPack: 1.25, kuMax: 0.4, rippleK: 0.4, rippleLout: 0.6, jTarget: 4, acFactor: 1.2,
+      bsatDerate: 0.8, deltaBTarget: 0.2, rth: 28, dtTarget: 40, tamb: 40, lossA: 1.45, lossB: 2.5,
+      pcvRef: 70, bsat100: 0.39, muI: 2300, mltTol: 0, marginMm: 0, rdsOnMOhm: 10, vfBody: 0.8,
+      cossP: 200, llcK: 5, tDeadNs: 200 };
+    Object.keys(NUM_DEFAULTS).forEach(function (k) {
+      var v = parseFloat(I[k]);
+      if (!isFinite(v)) I[k] = NUM_DEFAULTS[k];
+    });
     /* 绕组输入同样兜底：未知/缺失的线径模式按 auto，股数与并联数至少 1 股。
        否则 Pcu / 温升 / 填充率会静默变成 NaN，再被当成"校核不通过"——这是最难排查的假红。 */
     function normWire(modeKey, diaKey, strKey, parKey) {

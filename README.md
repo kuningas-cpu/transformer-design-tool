@@ -725,6 +725,29 @@ v3 把上限压到 1.86 nF 并对**同一个值**判两次 → 会把 3.2 nF 这
 **验证**：**672 项检查 0 失败**，真浏览器 114 项全过，Excel 反激分支 19/19。
 
 
+### 第二十五轮：归档用户的 v3 分支 + 系数输入兜底（2026-10-16）
+
+用户要求"修改文件名和网页标题后推送我的 V3"。落地如下：
+
+```
+原文件：transformer_design_tool_v3_final14.html
+新文件：transformer_design_tool_v3.html          ← 与 v2 命名规则一致
+               <title>  Transformer Design Tool v3 / 变压器快速设计工具 v3（校核版）
+               <h1>     变压器快速设计工具 v3 · 校核版
+               页头副标题 / 打印报告落款 / CSV 导出文件名 ⇒ 一并改成 v3
+```
+
+引擎**逐字节未动**（用 `difflib` 逐行比对确认只有上述 5 处文字改动，249126 → 249213 字节），
+并用无头 Edge 实际加载验证：`<title>`/`<h1>` 就位、判决块渲染、134 行表格、错误框 hidden 且为空（无 JS 报错）。
+v3 的 `rippleLout` 悬空引用经确认**无害**：界面的 `num('rippleLout', 0.6)` 在元素缺失时返回默认 0.6。
+
+同轮把 v2 的"假红"缺口一次补齐：新增系数输入默认值表（`rippleK / rippleLout / jTarget / acFactor /
+bsatDerate / deltaBTarget / rth / dtTarget / tamb / lossA / lossB / pcvRef / bsat100 / muI / mltTol /
+marginMm / rdsOnMOhm / vfBody / cossP / llcK / tDeadNs / kPack / kuMax`），缺失或非数值时按界面默认值补齐；
+**用户填的非法值仍走输入校验报错**（不被默认值掩盖，有回归项守着）。
+**验证**：**674 项检查 0 失败**，真浏览器 114 项全过，Excel 反激分支 19/19。
+
+
 ## 归档完整性
 
 归档整理于 2026-10-15（最后一轮更新 2026-10-16），并在归档目录内重新运行验证脚本确认可用：**668 项检查全部通过**
@@ -733,8 +756,8 @@ v3 把上限压到 1.86 nF 并对**同一个值**判两次 → 会把 3.2 nF 这
 
 | 文件 | SHA-256 |
 |---|---|
-| `transformer_design_tool_v2.html` | `A49EF83D346AA6D192BE1E74B2736C202EE78F8EAFE1F4B26821795E875703C3` |
-| `verify_transformer_tool_v2.mjs` | `CF79F62559C3EB1CBE50CDB326FE2467C6E7CB3D06847FC05A623C1FA9FD7FCA` |
+| `transformer_design_tool_v2.html` | `56DA0AC7D0391624F6BFA11DE19FC5E127F1C7C67DA1B47E26E504B13E46182E` |
+| `verify_transformer_tool_v2.mjs` | `99BB2ACB9242F3FADB0D6128B75054B74170FB16DF16BA4E5AF1600B15EC7E41` |
 | `verify_visibility_browser.mjs` | `2C161B1447AFD47884F990C95D4045A0B119A57FEB1FF7EF7B0D3CB62D69331B` |
 | `transformer_design_tool_v3.html` | `EAD1178F7C157D4C0AD7B0622F5D88D9A70CB29193ED2EA4C33BFE2BCF8B4ABD` |
 | `supplier_spec_EPC19_review.md` | `3B12F62F67648E77FD4A4CE7DD7401B7E8FF547A844426CE10DAE0B7B84414E6` |
