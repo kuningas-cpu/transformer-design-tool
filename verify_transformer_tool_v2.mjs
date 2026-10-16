@@ -1848,6 +1848,18 @@ header('37 240 W forward (200/310/400 V -> 24 V/10 A, EE42/PC40, cap reset)');
   ok('240W: ΔB depends only on Ns (Np = 30 vs 40 gives the same swing)',
     Math.abs(n40.summary.dBpp - s.dBpp) < 1e-9 && n40.summary.dNeedMin > s.dNeedMin,
     n40.summary.dBpp.toFixed(4) + ' T, D ' + n40.summary.dNeedMin.toFixed(4));
+  /* kPack / kuMax 兜底：脚本/CSV 驱动引擎时漏传这两个系数不应让填充率变成 NaN */
+  const noK = baseInputs(Object.assign({}, fw240));
+  delete noK.kPack; delete noK.kuMax;
+  const rK = TD.design(noK);
+  ok('engine falls back to kPack = 1.25 / Ku = 0.4 when the caller omits them',
+    rK.ok === true && isFinite(rK.summary.fillPct) && isFinite(rK.summary.AwReq) &&
+    rK.inputs.kPack === 1.25 && rK.inputs.kuMax === 0.4,
+    'fill=' + rK.summary.fillPct + ' kPack=' + rK.inputs.kPack + ' Ku=' + rK.inputs.kuMax);
+  const rK2 = TD.design(Object.assign({}, noK, { kPack: 1.6, kuMax: 0.35 }));
+  ok('explicit kPack / Ku still win over the fallback',
+    Math.abs(rK2.summary.fillPct - rK2.summary.copperTotal * 1.6 / noK.aw * 100) < 1e-9 && rK2.inputs.kuMax === 0.35,
+    rK2.summary.fillPct.toFixed(2) + '%');
 }
 
 console.log('\n================ RESULT ================');

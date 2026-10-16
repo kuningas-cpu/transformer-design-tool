@@ -628,6 +628,10 @@ var TD = (function () {
     function numOr(v, dflt) { var x = parseFloat(v); return (isFinite(x) && x > 0) ? x : dflt; }
     var ripplePct = numOr(I.ripplePct, 1);
     var esrOhm = numOr(I.esrOhm, 0.01);
+    /* 兜底：kPack / kuMax 是"窗口校核"的两个必需系数，缺了会让填充率变 NaN（脚本/CSV 驱动引擎时最容易踩）。
+       界面里本来就有默认值 1.25 / 0.4，这里只做防御性归一，不改变界面行为。 */
+    if (!(numOr(I.kPack, 0) > 0)) I.kPack = 1.25;
+    if (!(numOr(I.kuMax, 0) > 0)) I.kuMax = 0.4;
     var rdsOnMOhm = numOr(I.rdsOnMOhm, 10);
     var vfBody = numOr(I.vfBody, 0.8);
     var tDeadNs = (isFinite(parseFloat(I.tDeadNs)) && parseFloat(I.tDeadNs) >= 0) ? parseFloat(I.tDeadNs) : 200;
