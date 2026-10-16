@@ -1,29 +1,48 @@
-# 变压器快速设计 / 校核工具 · 归档（v2 最终版）
+# 变压器快速设计 / 校核工具 · 归档（v2 基准 + v3 并行分支）
 
-- 归档日期：2026-10-15
-- 状态：**最终版 v2**。本目录内文件均为当前有效版本；被取代的旧版（v1）放在 `deprecated_do_not_use/`，仅供追溯，禁止使用。
-- 工具本体：`transformer_design_tool_v2.html`（单文件，双击用浏览器打开；无外部依赖、无需联网）
+- 归档日期：2026-10-15（最后更新 2026-10-16）
+- 目录结构（**v2 与 v3 已分开放，根目录只保留索引、推送脚本与共用资料**）：
 
-## 文件清单
+```
+transformer_tool_archive/
+├─ README.md                    ← 本文件：索引 + 差异说明 + 验证清单
+├─ push_via_api.mjs             ← 推送到 GitHub 的脚本（用 git ls-tree -r，自动含子目录）
+├─ v2/                          ← ★ 已验证基准（674 项检查全过）
+│   ├─ transformer_design_tool_v2.html     工具本体（单文件，双击即用）
+│   ├─ transformer_design_tool_v2.xlsx     Excel 版（同一套公式）
+│   ├─ verify_transformer_tool_v2.mjs      引擎回归（674 项）
+│   ├─ verify_visibility_browser.mjs       真浏览器回归（114 项）
+│   ├─ make_excel_from_v2_engine.py        Excel 生成/比对
+│   ├─ transformer_design_tool_v2_notes.md 设计说明（§13 正激匝数、§14 你实板优化、§15 与 v3 的差异）
+│   ├─ board_DMK-DCDC-074_schematic_review.md   你的 75 W/19 V 板原理图复核
+│   ├─ supplier_spec_EPC19_review.md            天胜 EPC19 承认书核算
+│   ├─ supplier_spec_03-56319_review.md         鼎铖 DCE 同板双变核算
+│   ├─ parameter_reference.md / core_data_without_datasheet.md   参数与磁芯资料
+│   └─ pdf_text_extract.mjs                     承认书 PDF 文本提取
+├─ v3/                          ← 你的 v3 分支
+│   ├─ transformer_design_tool_v3.html     改好文件名与页内标题的 v3（引擎与 final14 一致）
+│   ├─ history/                            生成过程：final10 … final14 五个中间版本
+│   └─ patches/                            生成 v3 的 4 个补丁脚本（final10→14 的来龙去脉）
+├─ reference/                   ← 设计公式参考（v2/v3 共用，未改动）
+├─ deprecated_do_not_use/       ← 旧版 v1（含 4.44 系数等已确认错误），仅追溯，禁止使用
+└─ _scratch/                    ← 临时草稿/比对产物（已 gitignore，可随时删）
+```
 
-| 文件 | 说明 |
-|---|---|
-| `transformer_design_tool_v2.html` | 工具本体：输入 + 结果 + 校核清单 + 判决 + 电压扫描 + 设计步骤 + 磁芯对比 + 公式表，支持 CSV 导出 |
-| `transformer_design_tool_v3.html` | **用户自己的 v3 分支**（= 原 `transformer_design_tool_v3_final14.html`，仅改文件名与页内标题/报告名，引擎未动）：多出反激 / Buck 型副边的 **CCM·BCM·DCM 模式选择**（含 DCM 专用公式）。与 v2 的逐项差异与判据见 `transformer_design_tool_v2_notes.md` **§15**；v2 为已验证基准（672 项检查全过），v3 作为并行分支保留 |
-| `verify_transformer_tool_v2.mjs` | 验证脚本：**668 项检查**（结构/首次渲染/物理不变量/手算对照/模糊测试/校核模式/输出级/LLC 谐振腔/电容复位/复位电容窗口/两组实板实测对账/峰值÷Vin 健康度判据/修正后的峰值下限/复位环形解与 C_res·Lm 双反推/驼峰宽度 Ω_回落 与复位匹配度/复位电流磁密/读数口径提醒/**器件选型建议与损耗发热账本**（开关管·整流·续流·复位电容·复位绕组·RCD·各项损耗与实测效率对照）/辅助绕组电压/动态显示/面板顺序/续流管口径/按拓扑生成文字/开关管应力公式/热阻口径/漏感分配口径/两家供应商交叉验证/**240 W 单端正激算例与 D_max·ΔB·耐压档三口径**） |
-| `verify_visibility_browser.mjs` | 真浏览器回归：用无头 Edge/Chrome 打开工具，按 8 组「输入类型 × 拓扑 × 整流器件 × 耐压档」场景核对**实际被隐藏的输入项、面板顺序、整流器件选项措辞、公式表是否只列当前拓扑、Vds,pk 步骤行、热阻提示、复位电容窗口结论**（114 项检查；本机没有 Chromium 内核浏览器时自动跳过） |
-| `transformer_design_tool_v2_notes.md` | 设计说明：公式与约定、与 v1 的差异清单、适用边界、验证清单、EPC19 核算记录 |
-| `supplier_spec_EPC19_review.md` | 重庆天胜 EPC19（TST1724）承认书参数提取与核算记录 |
-| `supplier_spec_03-56319_review.md` | **第二家供应商（中山鼎铖 DCE）同一板两块变规格对比 + 交叉验证 + UC3843 辅助供电核算** |
-| `pdf_text_extract.mjs` | 承认书 PDF 文本提取小工具（CID 字体 ToUnicode 解码）：`node pdf_text_extract.mjs <文件.pdf>` |
-| `reference/` | 设计公式参考文档（原工作区副本，未改动） |
-| `deprecated_do_not_use/` | 旧版工具与生成脚本（含 4.44 系数等已确认错误），禁止用于正式设计 |
+## v2 与 v3 怎么选
 
-对应的供应商承认书 PDF 仍留在原工作区：`../2026-9-9 EPC19 1号主变压器(1).pdf`
+| | `v2/transformer_design_tool_v2.html` | `v3/transformer_design_tool_v3.html` |
+|---|---|---|
+| 定位 | **已验证基准**：674 项引擎检查 + 114 项真浏览器检查全过 | 你的并行分支：多出 **CCM·BCM·DCM 模式选择**（反激与 Buck 型副边，含 DCM 专用公式） |
+| 复位电容上限 | 两层判据（最优点 Ω=π / 物理上限，逐点给 Ω、Ω_回落、匹配度、开通损耗） | 把两层合并成一个值 → 推荐值只有 v2 的 1/4、复位峰值约 2 倍；会把你实测能工作的 3.2 nF 判成超限 |
+| 漏感尖峰 | 用折算到原边的负载电流（关断瞬间漏感里流的是全部原边电流） | 只取励磁电流 → ΔV 低估约 30 倍 |
+| 正激整数匝 | 守 D(Vin_min) ≤ 输入 D_max | 仍会顶破 D_max（240 W 例：0.459 > 0.45） |
+| 验证状态 | 674 / 114 / Excel 19-19 全过 | 同一套测试 620 通过 / 46 失败（详见 notes §15） |
 
-## 怎么用（三步）
+**结论**：选型、校核、写报告用 v2；只是想用"模式选择"功能时用 v3，两者数据不要混着抄。
 
-1. 打开 `transformer_design_tool_v2.html`。
+## 怎么办（三步）
+
+1. 打开 `v2/transformer_design_tool_v2.html`。
 2. 选拓扑，填 Vin 范围 / Vout / Iout / Fs；磁芯从预设里选，然后**按数据手册覆盖 Ae / le / Aw / MLT**。
 3. 看右侧「计算结果 + 校核清单 + 结论」；下方是输入电压扫描、设计步骤（可手工复核）、磁芯对比、拓扑公式。
    - 评审供应商承认书时：勾开「校核模式」，填供应商给出的 Np / Ns、实测 AL、线径与 DCR 上限。
@@ -47,18 +66,30 @@
 
 ## 复现验证
 
+全部在 `v2/` 目录里跑（验证脚本按"脚本自身所在目录"解析工具文件，所以移动/改名整个 `v2/` 后依然可用）：
+
 ```
-node verify_transformer_tool_v2.mjs              # 647 项检查，全通过表示归档件完整可运行
+cd v2
+node verify_transformer_tool_v2.mjs              # 674 项检查，全通过表示归档件完整可运行
 node verify_transformer_tool_v2.mjs --diag       # 额外打印默认工况逐项结果与 EPC19 核算明细
 node verify_visibility_browser.mjs               # 真浏览器（无头 Edge/Chrome）核对输入项的动态显示/隐藏
 python make_excel_from_v2_engine.py              # 由同一套公式生成 transformer_design_tool_v2.xlsx
-python make_excel_from_v2_engine.py --verify _dump.json   # 与引擎逐格比对（反激分支 19/19）
+node verify_transformer_tool_v2.mjs --dump ..\_scratch\_dump.json flyback
+python make_excel_from_v2_engine.py --verify ..\_scratch\_dump.json   # 与引擎逐格比对（反激分支 19/19）
+```
+
+推送（仓库根目录，需要本地代理 + GitHub 令牌）：
+
+```
+cd ..
+$env:HTTPS_PROXY="http://127.0.0.1:7890"; $env:NODE_USE_ENV_PROXY="1"
+node push_via_api.mjs kuningas-cpu transformer-design-tool --parent-from-remote
 ```
 
 ## 后续可做 —— 完成情况（2026-10-15 更新）
 
 1. **Excel / CSV 版本：已完成（附验证边界）**
-   `make_excel_from_v2_engine.py` 由同一套公式生成 `transformer_design_tool_v2.xlsx`（输入 / 计算 / 校核 / 磁芯库 / 材质 / 说明 六张表 + 活体自检区）。
+   `v2/make_excel_from_v2_engine.py` 由同一套公式生成 `v2/transformer_design_tool_v2.xlsx`（输入 / 计算 / 校核 / 磁芯库 / 材质 / 说明 六张表 + 活体自检区）。
    用 `formulas` 公式求值器与引擎逐格比对：**反激分支 19/19 项一致**；正激/推挽/半桥/全桥/LLC 分支结构相同但仍有 3~4 处偏差未定位（励磁电感单位、桥式原边有效值电流）。
    → **在非反激拓扑下请以网页版为准**，Excel 版在非反激拓扑下视为需人工复核的草稿（该提示已写入工作簿"说明"表）。
    CSV：网页版"导出 CSV"按钮输出的即为 v2 引擎结果（含校核清单与电压扫描）。
@@ -748,18 +779,35 @@ marginMm / rdsOnMOhm / vfBody / cossP / llcK / tDeadNs / kPack / kuMax`），缺
 **验证**：**674 项检查 0 失败**，真浏览器 114 项全过，Excel 反激分支 19/19。
 
 
+### 第二十六轮：目录重整 —— v2 与 v3 各自独立归档（2026-10-16）
+
+用户反馈"现在太乱了"，于是把根目录拆成两个独立版本目录，根目录只留索引、推送脚本与共用资料：
+
+```
+移动（git mv，保留历史）：12 个 v2 相关文件 → v2/     ；transformer_design_tool_v3.html → v3/
+移动（本地文件）        ：v3_final10..14.html → v3/history/（5 个中间版本）
+                          deepseek_python_*.py → v3/patches/（生成 v3 的 4 个补丁脚本）
+                          临时产物（_b19.json / _board.json / _dump.json / _ui_syntax_check.js / *.xlsx.tmp）→ _scratch/（.gitignore）
+```
+
+搬完在新位置重跑全部验证：**674 项引擎检查 + 114 项真浏览器检查全过，Excel 反激分支 19/19**。
+两个验证脚本以"脚本自身所在目录"解析工具文件，所以 `v2/`、`v3/` 整体移动/改名后仍可直接运行（脚本与工具必须同目录）。
+`push_via_api.mjs` 用 `git ls-tree -r` 枚举文件，子目录自动带上，不用改。
+
+
 ## 归档完整性
 
-归档整理于 2026-10-15（最后一轮更新 2026-10-16），并在归档目录内重新运行验证脚本确认可用：**668 项检查全部通过**
-（真浏览器回归 `verify_visibility_browser.mjs` 另 114 项通过；Excel 反激分支 19/19 逐格一致）。
-校验和（SHA-256，用于日后确认归档件未被改动）：
+归档整理于 2026-10-15（最后一轮更新 2026-10-16，本轮把 v2 / v3 拆成两个子目录），
+并在新目录结构下重新跑过验证：**674 项引擎检查 + 114 项真浏览器检查全部通过，Excel 反激分支 19/19 逐格一致**。
+校验和（SHA-256，用于日后确认归档件未被改动；**文件内容不变，仅位置移动到子目录**）：
 
 | 文件 | SHA-256 |
 |---|---|
-| `transformer_design_tool_v2.html` | `56DA0AC7D0391624F6BFA11DE19FC5E127F1C7C67DA1B47E26E504B13E46182E` |
-| `verify_transformer_tool_v2.mjs` | `99BB2ACB9242F3FADB0D6128B75054B74170FB16DF16BA4E5AF1600B15EC7E41` |
-| `verify_visibility_browser.mjs` | `2C161B1447AFD47884F990C95D4045A0B119A57FEB1FF7EF7B0D3CB62D69331B` |
-| `transformer_design_tool_v3.html` | `EAD1178F7C157D4C0AD7B0622F5D88D9A70CB29193ED2EA4C33BFE2BCF8B4ABD` |
-| `supplier_spec_EPC19_review.md` | `3B12F62F67648E77FD4A4CE7DD7401B7E8FF547A844426CE10DAE0B7B84414E6` |
+| `v2/transformer_design_tool_v2.html` | `56DA0AC7D0391624F6BFA11DE19FC5E127F1C7C67DA1B47E26E504B13E46182E` |
+| `v2/verify_transformer_tool_v2.mjs` | `99BB2ACB9242F3FADB0D6128B75054B74170FB16DF16BA4E5AF1600B15EC7E41` |
+| `v2/verify_visibility_browser.mjs` | `2C161B1447AFD47884F990C95D4045A0B119A57FEB1FF7EF7B0D3CB62D69331B` |
+| `v3/transformer_design_tool_v3.html` | `EAD1178F7C157D4C0AD7B0622F5D88D9A70CB29193ED2EA4C33BFE2BCF8B4ABD` |
+| `v2/supplier_spec_EPC19_review.md` | `3B12F62F67648E77FD4A4CE7DD7401B7E8FF547A844426CE10DAE0B7B84414E6` |
 
-`verify_transformer_tool_v2.mjs` 以脚本自身位置解析工具文件路径，因此归档目录整体移动或改名后仍可直接运行。
+两个验证脚本都以**脚本自身所在目录**解析工具文件路径，所以把 `v2/`、`v3/` 整体移动或改名后仍可直接运行
+（只要"脚本 + 工具本体"待在同一个目录里）。

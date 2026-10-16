@@ -8,3 +8,6 @@ desktop.ini
 *.xlsx.tmp
 _*.json
 _ui_syntax_check.js
+
+# 临时/草稿区（脚本产物、比对用的 JSON dump 等）
+_scratch/
