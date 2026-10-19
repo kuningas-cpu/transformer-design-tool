@@ -2136,6 +2136,40 @@ header('39 vendor reference designs (same duty basis)');
   ok('ACF (DN05119/D): the full-primary 24T/4T = 6:1 request is correctly rejected by the 600 V clamp hard limit',
     dnFull.summary.dTopoAllow < 0.50 && dnFull.warns.some((w) => /硬上限/.test(w)),
     'D_limit=' + dnFull.summary.dTopoAllow.toFixed(3));
+  /* 中心抽头 / 半桥 ACF：Np 填 24T 总匝数，工具内部用 Nph=12、n_eff=3，Lm,half=30µH */
+  const ct = TD.design(baseInputs({ topology: 'Active Clamp Flyback', acfMode: 'ct',
+    vinMin: 110, vinMax: 375, vout: 20, iout: 3.25, fs: 250, vf: 0.5, eta: 0.94,
+    dutyMax: 0.36, vdsRated: 600, lkUh: 4.0, cossP: 200, tDeadNs: 100,
+    ae: 64, le: 55, aw: 60, mlt: 55, secRect: 'ct', alNh: 208.3333, npGiven: 24, nsGiven: 4 }));
+  ok('ACF center-tapped: Np=24 total → Nph=12, n_eff=3, n_full=6',
+    ct.ok && ct.summary.acfCt && ct.summary.Np === 24 && ct.summary.Nph === 12 &&
+    Math.abs(ct.summary.n - 3) < 0.02 && Math.abs(ct.summary.nFull - 6) < 0.02,
+    JSON.stringify({ Np: ct.summary.Np, Nph: ct.summary.Nph, n: ct.summary.n, nFull: ct.summary.nFull }));
+  ok('ACF center-tapped: Lm,half=30 µH and Lm,full=120 µH for the 750317295',
+    Math.abs(ct.summary.LmUH - 30) < 0.1 && Math.abs(ct.summary.LmFullUH - 120) < 0.1,
+    ct.summary.LmUH.toFixed(2) + ' / ' + ct.summary.LmFullUH.toFixed(1));
+  ok('ACF center-tapped: flux uses Nph (not the 24T full primary)',
+    Math.abs(ct.points.vinMin.Bpk - (110 * ct.points.vinMin.D / (12 * 64e-6 * 250e3))) < 1e-6 &&
+    ct.summary.Bpk >= ct.points.vinMin.Bpk - 1e-9,
+    ct.points.vinMin.Bpk.toFixed(4) + ' T');
+  ok('ACF center-tapped: 600 V switches pass the per-switch clamp check',
+    ct.summary.vdsTopoPeak <= 510 && ct.checks.some((c) => /ACF 每只开关耐压/.test(c.name) && c.pass === true),
+    ct.summary.vdsTopoPeak.toFixed(1) + ' V');
+  const ctRows = TD.selectionGuide(ct);
+  ok('ACF center-tapped: selection guide offers the 600 V switch class',
+    ctRows.some((x) => /开关管 Vds 耐压/.test(x.item) && /600 V 档/.test(x.value)),
+    (ctRows.find((x) => /开关管 Vds 耐压/.test(x.item)) || {}).value);
+  const ctAuto = TD.design(baseInputs({ topology: 'Active Clamp Flyback', acfMode: 'ct',
+    vinMin: 110, vinMax: 375, vout: 20, iout: 3.25, fs: 250, vf: 0.5, eta: 0.94,
+    dutyMax: 0.36, vdsRated: 600, lkUh: 4.0, cossP: 200, tDeadNs: 100,
+    ae: 64, le: 55, aw: 60, mlt: 55, secRect: 'ct', npGiven: 0, nsGiven: 0, alNh: 0 }));
+  ok('ACF center-tapped auto: Np_total is even and Nph=Np/2, nFull=2·n_eff',
+    ctAuto.ok && ctAuto.summary.Np % 2 === 0 && ctAuto.summary.Nph === ctAuto.summary.Np / 2 &&
+    Math.abs(ctAuto.summary.nFull - 2 * ctAuto.summary.n) < 1e-9,
+    JSON.stringify({ Np: ctAuto.summary.Np, Nph: ctAuto.summary.Nph, n: ctAuto.summary.n, nFull: ctAuto.summary.nFull }));
+  ok('ACF center-tapped auto: n_eff lands within 15% of the target',
+    Math.abs(ctAuto.summary.n / ctAuto.summary.nTarget - 1) < 0.15,
+    ctAuto.summary.n.toFixed(3) + ' vs ' + ctAuto.summary.nTarget.toFixed(3));
 }
 
 /* ---------------- 40. Buck 型副边 DCM：L / Ipk / Irms / Bpk / Bac 同一套模型 ---------------- */

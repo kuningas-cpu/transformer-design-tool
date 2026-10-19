@@ -21,8 +21,8 @@ transformer_tool_archive/
 │   └─ pdf_text_extract.mjs                     承认书 PDF 文本提取
 ├─ v3/                          ← 你的 v3 分支
 │   ├─ transformer_design_tool_v3.html     ★ 主开发线（V2 模型 + 占空比三层 + CCM·BCM·DCM 模式选择）
-│   ├─ verify_transformer_tool_v3.mjs      引擎回归（761 项，全过）
-│   ├─ verify_visibility_browser_v3.mjs    真浏览器回归（115 项，全过）
+│   ├─ verify_transformer_tool_v3.mjs      引擎回归（768 项，全过）
+│   ├─ verify_visibility_browser_v3.mjs    真浏览器回归（127 项，全过）
 │   ├─ history/                    生成过程：final10 … final14 五个中间版本
 │   └─ patches/                    生成 v3 的 4 个补丁脚本（final10→14 的来龙去脉）
 ├─ reference/                   ← 设计公式参考（v2/v3 共用，未改动）
@@ -42,7 +42,7 @@ transformer_tool_archive/
 | 漏感尖峰电流 | 折算到原边的负载电流 | **已对齐**（原先只取励磁电流，低估 1~2 个数量级） |
 | 正激整数匝 | Ns 守 ΔB、Np 守 D_max | **已对齐** |
 | 输出电感纹波口径 | 绝对 ΔI_L 输入 | 纹波比 K（buckMode/buckRippleK）—— V3 自己的口径，保留 |
-| 验证状态 | 690 项引擎 + 114 项浏览器 + Excel 19/19 全过 | **761 项引擎 + 115 项浏览器全过**（`v3/verify_transformer_tool_v3.mjs`、`v3/verify_visibility_browser_v3.mjs`） |
+| 验证状态 | 690 项引擎 + 114 项浏览器 + Excel 19/19 全过 | **768 项引擎 + 127 项浏览器全过**（`v3/verify_transformer_tool_v3.mjs`、`v3/verify_visibility_browser_v3.mjs`） |
 
 **怎么用**：日常设计与校核都用 V3；V2 只作为"已验证基线"用于对照（两者在同一工况下的差异见 notes §15/§17）。
 共用文档（设计说明 `transformer_design_tool_v2_notes.md`、参数速查、两家供应商承认书核算）仍在 `v2/` 下，V3 沿用同一套模型说明。
@@ -970,7 +970,9 @@ PDF：https://www.onsemi.cn/download/design-notes/pdf/dn05119.pdf
 - **LLC Q 提示**：工具内增加 Q 取值口径说明；自动 Q=0.9·Q_max 偏激进时会给出 warning，建议用 0.2~0.3 复现厂商板余量。
 - **参考文件**：`refs/` 归档 15 份 PDF（含新增 ON Semi DN05119/D 与 Würth 750317295），并补 `refs/README.md` 来源表与对账结论。
 - **ACF 第二参考的匝比口径**：750317295 是 24T 中心抽头（12T+12T），20V 副边 4T；半桥 ACF 每半 12T → 有效 n=3，全初级 24T → 数据表 6:1。工具在 110~375VDC/20V/3.25A/600V 管下给 n≈3.018、Vds≈500.6V；按 6:1 会被 ACF 硬限正确拒绝（D≤0.489、n≤5.14）。
-- **验证**：761 项引擎检查 + 115 项真浏览器检查全过。
+- **ACF 新增中心抽头 / 半桥子模式**：`acfMode=ct`；Np 填 4-6 总匝数，内部用 `Nph=Np/2`、`n_eff=Nph/Ns`，磁通/Lm/ZVS 用 Nph，窗口/铜面积用 Np_total。DN05119 + 750317295 实测输入（Np=24、Ns=4、Lm,full=120µH、Lk=4µH、Fs=250kHz、600V 管）给：Nph=12、n_eff=3、n_full=6、Lm,half=30µH、Bpk=0.168T、每管 Vds≈436.5V、ZVS 3.52A，全部通过。
+- **审计模式口径**：供应商给定 Np 低于 `ΔB_target` 对应匝数、但实际 `Bpk ≤ Bsat·降额` 时，只提示"磁损会高于目标"，不再误判为饱和失败；饱和硬限仍由实际 Bpk 判定。
+- **验证**：768 项引擎检查 + 127 项真浏览器检查全过。
 
 
 
@@ -983,12 +985,12 @@ PDF：https://www.onsemi.cn/download/design-notes/pdf/dn05119.pdf
 | 文件 | SHA-256 |
 |---|---|
 | `v2/transformer_design_tool_v2.html` | `53B5F4966F669C464BBB293169049A2BC10109A825E76D0084AB6B30310144DB` |
-| `v2/transformer_design_tool_v2_notes.md` | `C3A1B1EC144EA1243DC912D0C5182959EDD993EECFF4E6C084B007B5DDDCF29E` |
+| `v2/transformer_design_tool_v2_notes.md` | `1CF23462D333512E9FDE639653B5D3B83F03334E80F1CC09D19A1A3E0466C6A4` |
 | `v2/verify_transformer_tool_v2.mjs` | `DADAC7EF0A571161FA2AE044C879D59D1747FE3135902E8606A2A7EFC312FF70` |
 | `v2/verify_visibility_browser.mjs` | `2C161B1447AFD47884F990C95D4045A0B119A57FEB1FF7EF7B0D3CB62D69331B` |
-| `v3/transformer_design_tool_v3.html` | `FB235B19B4A0B2C2CC547D45E07714B9272CD656DF7A0BEC616D41228AEEAF26` |
-| `v3/verify_transformer_tool_v3.mjs` | `FAE2FDCDB950D906245F02E7A914A7E8456609C92B52CF73C414C046AC897CFE` |
-| `v3/verify_visibility_browser_v3.mjs` | `A75D2D901A923117E5725DADF37FEDBC44595528AB27BC646C41F680E0ED1261` |
+| `v3/transformer_design_tool_v3.html` | `A1F0E479F1809DBD7007F93660A7C7F03627371722FA8DCBAD859C4B7A96E109` |
+| `v3/verify_transformer_tool_v3.mjs` | `6004F2BC4B1297C8954A5C67A1C66905223C5D35D3A39E5A79852EA662C1AF05` |
+| `v3/verify_visibility_browser_v3.mjs` | `0727E930E07F3E51CC75C15CD90D29DD7301C04A1A592A5A3FD812E3E2E26D8E` |
 | `v2/supplier_spec_EPC19_review.md` | `3B12F62F67648E77FD4A4CE7DD7401B7E8FF547A844426CE10DAE0B7B84414E6` |
 
 两个验证脚本都以**脚本自身所在目录**解析工具文件路径，所以把 `v2/`、`v3/` 整体移动或改名后仍可直接运行

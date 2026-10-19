@@ -135,6 +135,13 @@ const SCENARIOS = [
     rectSelect: { has: ['交替导通'], notHas: ['整流管 + 续流管'], sr2Hidden: true, hintHas: ['LLC：副边整流管'] }
   },
   {
+    s: 'dc,Active%20Clamp%20Flyback,diode,cap,acfMode=ct',
+    title: 'ACF 中心抽头：acfMode 选择与 Nph 口径提示出现',
+    topoLabel: '有源钳位反激 / ACF',
+    shown: ['acfMode', 'vinMin', 'vinMax', 'rippleK', 'dutyMax', 'cossP', 'tDeadNs'],
+    hidden: [].concat(AC_ONLY, ['pfcBus'], BUCK_ONLY, ['secRect', 'crRated', 'llcFr', 'llcK', 'llcQ', 'vinNom'], FWD_RESET)
+  },
+  {
     s: 'dc,Push-Pull,sr2,cap', title: '推挽 + 同步整流：中心抽头选择与 SR 参数出现', topoLabel: '推挽 / Push-Pull',
     shown: ['secRect', 'rdsOnMOhm', 'vfBody', 'tDeadNs'].concat(BUCK_ONLY),
     hidden: ['rippleK', 'resetMode', 'vinNom'].concat(AC_ONLY)
@@ -178,6 +185,11 @@ SCENARIOS.forEach((sc) => {
   const ALL_LABELS = ['反激 / Flyback', '有源钳位反激 / ACF', '单端正激 / Forward', '推挽 / Push-Pull', '半桥 / Half-Bridge', '全桥 / Full-Bridge', 'LLC 谐振 / LLC'];
   const scope = hintText(dom, 'inputScope');
   check('面板顶部提示当前拓扑要填什么', scope.indexOf('当前拓扑：' + sc.topoLabel) >= 0 && scope.length > 60, scope.slice(0, 100));
+  if (sc.s.indexOf('acfMode=ct') >= 0) {
+    const acfHintHidden = /data-show="[^"]*acfMode:ct"[^>]*style="display: none/.test(dom);
+    check('ACF 中心抽头提示可见（Nph = Np/2 / 两管应力口径）',
+      dom.indexOf('Nph = Np/2') >= 0 && !acfHintHidden);
+  }
   if (/LLC/.test(sc.topoLabel)) {
     check('LLC 输入面板给出 Q 取值口径（自动 0.9·Q_max vs 厂商 0.2~0.3）',
       dom.indexOf('Q 的取值口径') >= 0 && dom.indexOf('0.2~0.3') >= 0);

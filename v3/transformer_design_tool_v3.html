@@ -104,6 +104,11 @@
       <div class="hint" id="rectHint" style="margin-top:10px;">次级整流器件会随拓扑换措辞：正激/推挽/桥式是 Buck 型副边，整流管与续流管都要算；反激副边只有一只整流管（关断期导通），没有续流管。</div>
       <h3>拓扑工作点 / Operating point</h3>
       <div class="two-col">
+        <div class="field" data-show="topo:Active Clamp Flyback"><label for="acfMode">ACF 结构 / Structure</label>
+          <select id="acfMode">
+            <option value="single">单管有源钳位（单初级 Np）</option>
+            <option value="ct">中心抽头 / 半桥 ACF（Np 为两半总匝数）</option>
+          </select></div>
 <div class="field"><label for="dutyMax">设计占空比上限 D_design <span class="unit">(工程默认值，可改；超出只提示确认裕量)</span></label><input id="dutyMax" type="number" value="0.45" step="0.01" min="0.05" max="0.95"/></div>
 <div class="field"><label for="dCtrlMax">控制器允许占空比上限 D_controller <span class="unit">(按芯片手册填；推挽/桥式由死区时间自动算上限)</span></label><input id="dCtrlMax" type="number" value="0.95" step="0.01" min="0.05" max="1"/></div>
         <div class="field" data-show="topo:Flyback,Active Clamp Flyback"><label for="vorTarget">目标反射电压 Vor <span class="unit">(V，0=按匝比反推)</span></label><input id="vorTarget" type="number" value="0" step="1" min="0"/></div>
@@ -128,6 +133,7 @@
         <div class="field"><label for="bsatDerate">Bsat 降额系数</label><input id="bsatDerate" type="number" value="0.8" step="0.05" min="0.3" max="1"/></div>
         <div class="field"><label for="acFactor">高频电阻系数 F_R</label><input id="acFactor" type="number" value="1.2" step="0.05" min="1" max="3"/></div>
       </div>
+      <div class="hint" data-show="topo:Active Clamp Flyback&acfMode:ct">中心抽头 / 半桥 ACF：Np 填 4-6 总匝数（如 24T），工具内部用 Nph = Np/2、n_eff = Nph/Ns 计算；磁通用 Nph，两管各承受 Vin + V_clamp,half；数据表的全初级匝比 Np/Ns 会同时显示，避免把 6:1 当成每半的有效匝比。</div>
       <h3>磁芯 / Core</h3>
       <div class="two-col">
         <div class="field"><label for="corePreset">磁芯预设 *</label><select id="corePreset"></select></div>
@@ -551,9 +557,10 @@ var TD = (function () {
   }
   function operatingPoint(T, p) {
     var D = dutyForVin(T, p.n, p.Vo, p.Vin);
+    var NpFlux = p.NpFlux || p.Np;
     var o = { Vin: p.Vin, D: D, n: p.n };
     o.Vt = voltSeconds(T, p.Vin, D, p.Fs);
-    o.dBpp = o.Vt / (p.Np * p.Ae);
+    o.dBpp = o.Vt / (NpFlux * p.Ae);
     o.Bpk = T.bipolar ? o.dBpp / 2 : o.dBpp;
     o.dIm = p.Lm > 0 ? o.Vt / p.Lm : 0;
     o.CCM = true;
@@ -595,8 +602,8 @@ var TD = (function () {
       }
       o.IpkPri = Ipk; o.Ivalley = Iv; o.dIpri = Ipk - Iv;
       o.dIripple = o.DCM ? (Ipk - Iv) : dI;  /* DCM 的纹波是 0→Ipk，不是 CCM 的 Vin·D/(Lp·Fs) */
-      o.Bpk = p.Lp * Ipk / (p.Np * p.Ae);
-      o.dBpp = p.Lp * (Ipk - Iv) / (p.Np * p.Ae);
+      o.Bpk = p.Lp * Ipk / (NpFlux * p.Ae);
+      o.dBpp = p.Lp * (Ipk - Iv) / (NpFlux * p.Ae);
       o.PcoreDensity = null;
     } else if (T.kind === 'forward') {
       var qd = p.buckDcm ? buckDcmPoint(T, p.Vin, p.n, p.Vo, p.Iout, p.Fs, p.LoutH, 0) : null;
@@ -604,7 +611,7 @@ var TD = (function () {
         /* DCM：副边电流从 0 升到 Ipk 再回零；原边只看到导通段 D 内的反射电流 + 励磁三角波 */
         o.D = qd.D;
         o.Vt = voltSeconds(T, p.Vin, qd.D, p.Fs);
-        o.dBpp = o.Vt / (p.Np * p.Ae);
+        o.dBpp = o.Vt / (NpFlux * p.Ae);
         o.Bpk = o.dBpp;
         o.dIm = p.Lm > 0 ? o.Vt / p.Lm : 0;
         o.IsPkSec = qd.Ipk; o.IrmsSec = qd.Irms; o.IavgSec = p.Iout;
@@ -633,7 +640,7 @@ var TD = (function () {
         var dutyPrid = ppd ? qb.D : 2 * qb.D;
         o.D = qb.D;
         o.Vt = voltSeconds(T, p.Vin, qb.D, p.Fs);
-        o.dBpp = o.Vt / (p.Np * p.Ae);
+        o.dBpp = o.Vt / (NpFlux * p.Ae);
         o.Bpk = o.dBpp / 2;
         o.dIm = p.Lm > 0 ? o.Vt / p.Lm : 0;
         o.IsPkSec = qb.Ipk; o.IrmsSec = qb.Irms; o.IavgSec = p.Iout;
@@ -675,7 +682,7 @@ var TD = (function () {
       out.push(operatingPoint(T, {
         Vin: s.vinMin + (s.vinMax - s.vinMin) * f, n: s.n, Vo: s.Vo, VinNom: s.VinNom,
         Iout: s.Iout, Pin: s.Pin, Fs: s.Fs, Lp: s.Lp, Lm: s.Lm, Np: s.Np, Ns: s.Ns,
-        Ae: s.Ae, dIL: s.dIL, nSecWind: s.nSecWind, buckDcm: s.buckDcm, LoutH: s.LoutH
+        Ae: s.Ae, dIL: s.dIL, nSecWind: s.nSecWind, NpFlux: s.NpFlux || s.Np, buckDcm: s.buckDcm, LoutH: s.LoutH
       }));
     }
     return out;
@@ -711,7 +718,10 @@ var TD = (function () {
   }
   function buildWindings(T, c) {
     var w = [];
-    if (T.kind === 'bipolar' && T.fluxV === 2) {
+    if (c.ct) {
+      /* 中心抽头 ACF：两个 Nph 半绕组，每个只在本半周期导通；IrmsPri 是单个半绕组的有效值 */
+      w.push({ name: '原边半绕组 ×2', N: c.Np / 2, count: 2, Irms: c.IrmsPri, area: c.Aprim });
+    } else if (T.kind === 'bipolar' && T.fluxV === 2) {
       w.push({ name: '原边半绕组 ×2', N: c.Np / 2, count: 2, Irms: c.IrmsPri, area: c.Aprim });
     } else {
       w.push({ name: '原边', N: c.Np, count: 1, Irms: c.IrmsPri, area: c.Aprim });
@@ -734,6 +744,8 @@ var TD = (function () {
   function design(I) {
     var errs = [], warns = [], steps = [], checks = [], self = [], sweep = [];
     var T = TOPOS[I.topology] || TOPOS['Flyback'];
+    /* 中心抽头 / 半桥 ACF：Np 在输入里代表 4-6 总匝数，内部用 Nph=Np/2 作为有效初级 */
+    var acfCt = (I.topology === 'Active Clamp Flyback' && I.acfMode === 'ct');
     I = Object.assign({}, I);          /* 交流输入模式会覆盖 Vin_min/Vin_max，避免改动调用方对象 */
     var Po = I.vout * I.iout;
     var Vo = I.vout + I.vf;
@@ -962,8 +974,11 @@ var TD = (function () {
     var nTarget;
     if (T.kind === 'flyback') {
       nTarget = I.vinMin * dMax / ((1 - dMax) * Vo);
-      steps.push({ t: '变比 n = Np/Ns', f: 'Vo = Vin_min·D_max/((1-D_max)·n)  →  n = Vin_min·D_max/((1-D_max)·Vo)',
-        s: I.vinMin + '×' + dMax + ' / (' + (1 - dMax).toFixed(3) + '×' + Vo.toFixed(2) + ') = ' + nTarget.toFixed(4) });
+      steps.push({ t: acfCt ? '有效变比 n_eff = Nph/Ns（中心抽头 ACF）' : '变比 n = Np/Ns',
+        f: acfCt ? 'Nph = Np_total/2；Vo = Vin_min·D_max/((1-D_max)·n_eff)  →  n_eff = Vin_min·D_max/((1-D_max)·Vo)'
+                 : 'Vo = Vin_min·D_max/((1-D_max)·n)  →  n = Vin_min·D_max/((1-D_max)·Vo)',
+        s: I.vinMin + '×' + dMax + ' / (' + (1 - dMax).toFixed(3) + '×' + Vo.toFixed(2) + ') = ' + nTarget.toFixed(4) +
+          (acfCt ? '（这是每半 12T 对副边的有效匝比；数据表的全初级匝比 = 2×n_eff）' : '') });
       /* 若用户填了目标反射电压 Vor：它与 D_max 是两个**独立的上限**，必须同时满足：
            D(Vin_min) = n·Vo/(Vin_min+n·Vo) ≤ D_max   ⟺  n ≤ nDuty
            V_or = n·Vo ≤ Vor_target                    ⟺  n ≤ nVor
@@ -1105,21 +1120,24 @@ var TD = (function () {
     }
     steps.push({ t: '伏秒积（标准式 ΔB = V·t/(Np·Ae)）', f: 'V·t = k_v·Vin·D/Fs',
       s: 'Vin_min: ' + (vtMin * 1e6).toFixed(2) + ' V·µs ;  Vin_max: ' + (vtMax * 1e6).toFixed(2) + ' V·µs' + (relErr(vtMin, vtMax) < 1e-9 ? '（变比固定→与输入电压无关）' : '') });
-    steps.push({ t: '按目标磁通摆幅定 Np 下限', f: 'Np ≥ V·t_worst/(Ae·ΔB_target)',
+    steps.push({ t: acfCt ? '按目标磁通摆幅定每半 Nph 下限' : '按目标磁通摆幅定 Np 下限', f: acfCt ? 'Nph ≥ V·t_worst/(Ae·ΔB_target)' : 'Np ≥ V·t_worst/(Ae·ΔB_target)',
       s: (vtWorst * 1e6).toFixed(2) + ' / (' + I.ae + ' × ' + I.deltaBTarget + ') → ≥ ' + npMinFlux + ' 匝' });
     var npMinSat = 0;
     if (T.kind === 'flyback') {
       npMinSat = Math.ceil(Lp * IpkD / (Ae * BsatAllow) - 1e-9);
-      steps.push({ t: '按不饱和定 Np 下限', f: 'Bpk = Lp·Ipk/(Np·Ae) ≤ Bsat·k_der  →  Np ≥ Lp·Ipk/(Ae·Bsat·k_der)',
+      steps.push({ t: acfCt ? '按不饱和定每半 Nph 下限' : '按不饱和定 Np 下限', f: acfCt ? 'Bpk = Lp,half·Ipk/(Nph·Ae) ≤ Bsat·k_der  →  Nph ≥ Lp,half·Ipk/(Ae·Bsat·k_der)' : 'Bpk = Lp·Ipk/(Np·Ae) ≤ Bsat·k_der  →  Np ≥ Lp·Ipk/(Ae·Bsat·k_der)',
         s: '(' + (Lp * 1e6).toFixed(2) + 'µH × ' + IpkD.toFixed(3) + 'A) / (' + I.ae + 'mm² × ' + BsatAllow.toFixed(3) + 'T) → ≥ ' + npMinSat + ' 匝' });
     }
     /* 校核模式：匝数由用户（供应商规格书）给定，工具只做校核，不自行解算 */
     var NpGiven = (I.npGiven > 0 && I.nsGiven > 0);
+    var NpGivenTotal = NpGiven ? Math.max(1, Math.round(I.npGiven)) : 0;
     var Np, npALscan = 0;
     if (NpGiven) {
-      Np = Math.max(1, Math.round(I.npGiven));
-      steps.push({ t: '匝数（校核模式：采用给定匝数）', f: 'Np/Ns 由规格书给定，不再解算',
-        s: 'Np = ' + Np + ' 匝；工具解算的最小匝数：磁通 ≥ ' + npMinFlux + ' 匝' + (T.kind === 'flyback' ? '，不饱和 ≥ ' + npMinSat + ' 匝' : '') });
+      Np = acfCt ? Math.max(1, Math.round(NpGivenTotal / 2)) : NpGivenTotal;
+      steps.push({ t: '匝数（校核模式：采用给定匝数）', f: acfCt ? 'Np_total / Ns 由规格书给定；Nph = Np_total/2，n_eff = Nph/Ns' : 'Np/Ns 由规格书给定，不再解算',
+        s: (acfCt ? 'Np_total = ' + (2 * Np) + ' 匝（Nph = ' + Np + ' 匝）' : 'Np = ' + Np + ' 匝') +
+          '；工具解算的最小匝数：磁通 ≥ ' + npMinFlux + ' 匝' + (T.kind === 'flyback' ? '，不饱和 ≥ ' + npMinSat + ' 匝' : '') +
+          (acfCt ? '（磁通/饱和限值按每半 Nph 计）' : '') });
       if (T.kind === 'flyback') {
         if (I.alNh > 0) {
           Lp = I.alNh * 1e-9 * Np * Np;
@@ -1190,6 +1208,19 @@ var TD = (function () {
       return best;
     })();
     var Ns = pick.Ns, nAch = pick.n;
+    /* Np 在内部始终是"有效初级匝数"：中心抽头 ACF 时为 Nph，其它拓扑为完整 Np。
+       NpTotal 只用于窗口/铜面积/显示；nFull 是数据表常见的全初级匝比。 */
+    var NpTotal = acfCt ? 2 * Np : Np;
+    var nFull = acfCt ? 2 * nAch : nAch;
+    if (acfCt) {
+      if (NpGivenTotal > 0 && (NpGivenTotal % 2) !== 0) {
+        warns.push('中心抽头 ACF：给定 Np_total = ' + NpGivenTotal + ' 为奇数，已按 Nph = ' +
+          Math.round(NpGivenTotal / 2) + ' 取整为 Np_total = ' + NpTotal + '；请确认两半匝数确实相等。');
+      }
+      steps.push({ t: '中心抽头 ACF 的匝比口径', f: 'Nph = Np_total/2 ; n_eff = Nph/Ns ; n_full = Np_total/Ns = 2·n_eff',
+        s: 'Np_total = ' + NpTotal + ' 匝（Nph = ' + Np + ' 匝）, Ns = ' + Ns + ' 匝 → n_eff = ' + nAch.toFixed(4) +
+          '，全初级 n_full = ' + nFull.toFixed(4) + '。磁通、Lm、每管应力都用 Nph/n_eff；窗口/铜面积用 Np_total。' });
+    }
     /* DCM 的输出电感要在算原边电流之前就定下来：否则 operatingPoint 仍在用 CCM 的
        dIL = K·Iout，峰值/有效值/损耗会与输出级各算一套。这里先按统一 DCM 式定 L，
        再用同一个 L 在 Vin_min / Vin_max 反解 D、Ipk、D2，后续全部共用这一组数。 */
@@ -1604,11 +1635,11 @@ var TD = (function () {
               + (vdsClassNeed ? '；本工况最小可行的标准耐压档 = ' + vdsClassNeed + ' V' : '；本工况到 1000 V 档仍不可行（Vin_max 太高或漏感太大）')
             : '填了开关管耐压后，这里会给出满足它的 C_res 下限、复位允许的上限，以及两者是否矛盾') });
     }
-    var common = { n: nAch, Vo: Vo, VinNom: I.vinNom > 0 ? I.vinNom : (I.vinMin + I.vinMax) / 2, Iout: I.iout, Pin: Pin, Fs: Fs, Lp: Lp, Lm: Lm, Np: Np, Ns: Ns, Ae: Ae, dIL: dILBuck, nSecWind: nSecWind,
+    var common = { n: nAch, Vo: Vo, VinNom: I.vinNom > 0 ? I.vinNom : (I.vinMin + I.vinMax) / 2, Iout: I.iout, Pin: Pin, Fs: Fs, Lp: Lp, Lm: Lm, Np: NpTotal, NpFlux: acfCt ? Np : NpTotal, Ns: Ns, Ae: Ae, dIL: dILBuck, nSecWind: nSecWind,
       buckDcm: !!buckDcmDesign, LoutH: buckDcmDesign ? buckDcmDesign.LoutH : 0 };
     function pt(Vin) { var q = {}; for (var key in common) q[key] = common[key]; q.Vin = Vin; return operatingPoint(T, q); }
     var pts = { vinMin: pt(I.vinMin), vinMax: pt(I.vinMax) };
-    sweep = buildSweep(T, { nin: 9, vinMin: I.vinMin, vinMax: I.vinMax, n: common.n, Vo: Vo, VinNom: common.VinNom, Iout: I.iout, Pin: Pin, Fs: Fs, Lp: Lp, Lm: Lm, Np: Np, Ns: Ns, Ae: Ae, dIL: dILBuck, nSecWind: nSecWind,
+    sweep = buildSweep(T, { nin: 9, vinMin: I.vinMin, vinMax: I.vinMax, n: common.n, Vo: Vo, VinNom: common.VinNom, Iout: I.iout, Pin: Pin, Fs: Fs, Lp: Lp, Lm: Lm, Np: NpTotal, NpFlux: common.NpFlux, Ns: Ns, Ae: Ae, dIL: dILBuck, nSecWind: nSecWind,
       buckDcm: common.buckDcm, LoutH: common.LoutH });
     var maxBpk = Math.max(pts.vinMin.Bpk, pts.vinMax.Bpk);
     var maxDB = Math.max(pts.vinMin.dBpp, pts.vinMax.dBpp);
@@ -1644,7 +1675,7 @@ var TD = (function () {
           (dNeedMin <= dTopoAllow + 1e-9 ? '（满足）' : '（**超限：复位走不完全，磁通逐周期累积**）') +
           '。设计裕量上限 D_design = ' + dDesignIn + ' 是工程默认值、可改，超出只提示确认裕量。' });
     }
-    var copperPrimary = Np * Aprim;
+    var copperPrimary = NpTotal * Aprim;
     var copperReset = resetTurns * Aprim;
     var copperSecondary = Ns * Asec * nSecWind;
     var copperTotal = copperPrimary + copperSecondary + copperReset;
@@ -1665,7 +1696,7 @@ var TD = (function () {
     steps.push({ t: '窗口填充校核（一次+二次共享窗口）', f: 'fill = (Np·A_cuP + Ns·A_cuS·n_sec + N_reset·A_cuP)·k_pack/Aw',
       s: '铜面积 ' + copperTotal.toFixed(2) + ' mm² × ' + I.kPack + ' / 有效窗口 ' + awEff.toFixed(1) + ' mm² = ' + fillPct.toFixed(1) + '%' +
          (resetTurns ? '（含复位绕组 ' + resetTurns + ' 匝）' : '') + awNote + ' ; 满足 Ku=' + (I.kuMax * 100).toFixed(0) + '% 需 Aw ≥ ' + AwReq.toFixed(1) + ' mm²' });
-    var windings = buildWindings(T, { Np: Np, Ns: Ns, nSecWind: nSecWind, Aprim: Aprim, Asec: Asec, IrmsPri: maxIrmsPri, IrmsSec: maxIrmsSec, resetTurns: resetTurns, dIm: Math.max(pts.vinMin.dIm, pts.vinMax.dIm), D: dMax, mlt: I.mlt, acFactor: I.acFactor });
+    var windings = buildWindings(T, { Np: NpTotal, ct: acfCt, Ns: Ns, nSecWind: nSecWind, Aprim: Aprim, Asec: Asec, IrmsPri: maxIrmsPri, IrmsSec: maxIrmsSec, resetTurns: resetTurns, dIm: Math.max(pts.vinMin.dIm, pts.vinMax.dIm), D: dMax, mlt: I.mlt, acFactor: I.acFactor });
     var ALreq = 0, gapMm = 0;
     if (T.kind === 'flyback') {
       ALreq = Lp / (Np * Np);
@@ -2122,8 +2153,16 @@ var TD = (function () {
     addCheck('温升 ΔT', loss.dT, 'K', I.dtTarget, 'K', loss.dT <= I.dtTarget, 0.85);
     addCheck('股线直径 vs 趋肤深度', Math.max(wireP.dia, wireS.dia), 'mm', 3 * skin, 'mm', Math.max(wireP.dia, wireS.dia) <= 3 * skin, 0.5);
     if (NpGiven) {
-      addCheck('给定 Np ≥ 磁通要求的最小匝数', Np, '匝', npMinFlux, '匝', Np >= npMinFlux - 1e-9, 1.05);
-      if (T.kind === 'flyback') addCheck('给定 Np ≥ 不饱和要求的最小匝数', Np, '匝', npMinSat, '匝', Np >= npMinSat - 1e-9, 1.05);
+      /* 校核模式：Np 是供应商给定值。ΔB_target 是设计目标，不是饱和硬限；
+         低于目标只提示磁损，真正的硬限是实际 Bpk ≤ Bsat·降额。 */
+      addCheck(acfCt ? '给定 Nph 的 ΔB 目标（低于只提示磁损）' : '给定 Np 的 ΔB 目标（低于只提示磁损）',
+        Np, '匝', npMinFlux, '匝', Np >= npMinFlux - 1e-9 || maxBpk <= BsatAllow, 1.05);
+      if (T.kind === 'flyback') addCheck('给定 Np 的不饱和校核（实际 Bpk）', maxBpk, 'T', BsatAllow, 'T', maxBpk <= BsatAllow, 0.95);
+      if (Np < npMinFlux - 1e-9 && maxBpk <= BsatAllow) {
+        warns.push((acfCt ? '中心抽头 ACF：' : '') + '给定 ' + (acfCt ? 'Nph' : 'Np') + ' = ' + Np +
+          ' 匝低于 ΔB_target 对应的最小 ' + npMinFlux + ' 匝，但实际 Bpk = ' + maxBpk.toFixed(3) +
+          ' T ≤ Bsat·降额 = ' + BsatAllow.toFixed(3) + ' T；磁损会高于目标，不是饱和失败。');
+      }
     }
     /* DCR 校核用"最坏 MLT"（默认 +20%），因为实际 MLT 随绕层变化（内层小、外层大） */
     var mltWorst = 1 + mltTol / 100;
@@ -2170,11 +2209,12 @@ var TD = (function () {
       steps.push({ t: '有源钳位反激（ACF）钳位与软开关',
         f: 'V_clamp = Vin·D/(1−D)（钳位电容稳态电压）；主管承压 = Vin + V_clamp；ZVS：I_Lm,pk ≥ 2·Coss·V_clamp/t_dead',
         s: 'Vin ' + I.vinMin + '~' + I.vinMax + ' V → V_clamp = ' + vClampAcfMin.toFixed(0) + '~' + vClampAcfMax.toFixed(0) +
-          ' V，主管承压 ≈ ' + vdsAcf.toFixed(0) + ' V（ACF 的漏感能量进钳位电容，所以 Vds 不叠漏感尖峰）；' +
+          ' V，主管承压 ≈ ' + vdsAcf.toFixed(0) + ' V（ACF 的漏感能量进钳位电容，所以 Vds 不叠漏感尖峰）' +
+          (acfCt ? '；以上是**每半绕组/每只开关**口径，全初级钳位电压 = 2×V_clamp ≈ ' + (2 * vClampAcfWorst).toFixed(0) + ' V' : '') + '；' +
           '钳位电容耐压建议 ≥ ' + (vClampAcfWorst / 0.8).toFixed(0) + ' V；主开关耐压建议 ≥ ' + (vdsAcf / 0.85).toFixed(0) + ' V；' +
           '无载 ZVS：可用励磁半幅 I_Lm,pk = ' + iLmPkAcf.toFixed(2) + ' A vs 需要 ' + iZvsNeedAcf.toFixed(2) + ' A' });
       if (vdsRated > 0) {
-        addCheck('ACF 主开关耐压：Vin_max + V_clamp ≤ 0.85×耐压', vdsAcf, 'V', vdsRated * 0.85, 'V', vdsAcf <= vdsRated * 0.85, 0.95);
+        addCheck(acfCt ? 'ACF 每只开关耐压：Vin_max + V_clamp,half ≤ 0.85×耐压' : 'ACF 主开关耐压：Vin_max + V_clamp ≤ 0.85×耐压', vdsAcf, 'V', vdsRated * 0.85, 'V', vdsAcf <= vdsRated * 0.85, 0.95);
       } else {
         addCheck('ACF 主开关承压 = Vin_max + V_clamp（填开关管耐压后可判定）', vdsAcf, 'V', '', '', true, 1e9);
       }
@@ -2189,8 +2229,9 @@ var TD = (function () {
         var lmZvsMaxUh = (I.vinMin * Math.max(dNeedMin, 0.02)) / (2 * Fs * iZvsNeedAcf) * 1e6;
         warns.push('ACF 软开关不足：无载时励磁电流半幅只有 ' + iLmPkAcf.toFixed(2) + ' A，要在 ' + tDeadNs +
           ' ns 内把节点摆过 ' + vClampAcfWorst.toFixed(0) + ' V 需要 ' + iZvsNeedAcf.toFixed(2) +
-          ' A → **为满足 ZVS，Lm 需 ≤ ' + lmZvsMaxUh.toFixed(0) + ' µH**（当前 ' + (Lm * 1e6).toFixed(0) +
-          ' µH）；或缩短死区/加大换流电流。TI UCC28780EVM-002（45 W/20 V）就是靠把 Lm 做到 115 µH 满足 ZVS 的。');
+          ' A → **为满足 ZVS，Lm' + (acfCt ? ',half' : '') + ' 需 ≤ ' + lmZvsMaxUh.toFixed(0) + ' µH**（当前 ' + (Lm * 1e6).toFixed(0) +
+          ' µH' + (acfCt ? '，对应全初级 ' + (4 * Lm * 1e6).toFixed(0) + ' µH' : '') +
+          '）；或缩短死区/加大换流电流。TI UCC28780EVM-002（45 W/20 V）就是靠把 Lm 做到 115 µH 满足 ZVS 的。');
       }
     }
     if (T.kind === 'flyback') addCheck('所需气隙 l_g', gapMm, 'mm', 2.0, 'mm', gapMm <= 2.0, 0.75);
@@ -2348,9 +2389,12 @@ var TD = (function () {
     self.forEach(function (s) { s.pass = s.err < 1e-6; });
     var summary = {
       topology: I.topology, topologyLabel: T.label, Po: Po, Pin: Pin, Vo: Vo,
-      nTarget: nTarget, n: nAch, Np: Np, Ns: Ns, LpUH: Lp * 1e6, LsUH: Lp * 1e6 / (nAch * nAch), LmUH: Lm * 1e6,
+      nTarget: nTarget, n: nAch, nFull: nFull, acfCt: acfCt,
+      Np: NpTotal, Nph: acfCt ? Np : null, Ns: Ns,
+      LpUH: Lp * 1e6, LsUH: Lp * 1e6 / (nAch * nAch), LmUH: Lm * 1e6, LmFullUH: acfCt ? 4 * Lm * 1e6 : Lm * 1e6,
       ALreqNh: ALreq * 1e9, gapMm: gapMm, ALusedNh: ALauto * 1e9,
       vorActual: (T.kind === 'flyback') ? (nAch * Vo) : null,
+      vorFull: (T.kind === 'flyback' && acfCt) ? (nFull * Vo) : null,
       IpkPri: maxIpkPri, IsPkSec: maxIsPk, IrmsPri: maxIrmsPri, IrmsSec: maxIrmsSec,
       IpkPriMin: pts.vinMin.IpkPri, IpkPriMax: pts.vinMax.IpkPri,
       dBpp: maxDB, Bpk: maxBpk, BsatAllow: BsatAllow, Bsat: I.bsat100, derate: I.bsatDerate,
@@ -2688,7 +2732,7 @@ var TD = (function () {
 /* ================= UI ================= */
 (function () {
   'use strict';
-  var IDS = ['topology','fs','vinMin','vinMax','vout','iout','vf','eta','vinNom','secRect','dutyMax','dCtrlMax','rippleK','fbMode','fbDutyD','vorTarget','buckMode','buckRippleK','buckDcmD',
+  var IDS = ['topology','acfMode','fs','vinMin','vinMax','vout','iout','vf','eta','vinNom','secRect','dutyMax','dCtrlMax','rippleK','fbMode','fbDutyD','vorTarget','buckMode','buckRippleK','buckDcmD',
     'auditMode','npGiven','nsGiven','dcrLimitP','dcrLimitS',
     'resetMode','cresNf','vdsRated','vdsMeasPk','vdsMeasVin','lkSplitPct','nlGiven','lmGiven','naux',
     'alLibNh',
@@ -2764,6 +2808,7 @@ var TD = (function () {
     var parSo = parseInt($('parS').value, 10) || 1;
     return {
       topology: $('topology').value,
+      acfMode: $('acfMode') ? String($('acfMode').value) : 'single',
       fs: num('fs', 100),
       vinMin: num('vinMin', 9), vinMax: num('vinMax', 36),
       vout: num('vout', 12), iout: num('iout', 2), vf: num('vf', 0.5), eta: num('eta', 0.9),
@@ -2812,9 +2857,11 @@ var TD = (function () {
     var s = r.summary;
     var items = [
       ['输出功率 Po / 输入功率 Pin', fmt(s.Po, 2) + ' W / ' + fmt(s.Pin, 2) + ' W'],
-      ['变比 n = Np/Ns（目标 → 实际）', fmt(s.nTarget, 4) + ' → ' + fmt(s.n, 4)],
+      [s.acfCt ? '有效变比 n_eff = Nph/Ns（全初级 n_full）' : '变比 n = Np/Ns（目标 → 实际）',
+        s.acfCt ? (fmt(s.nTarget, 4) + ' → ' + fmt(s.n, 4) + '（n_full = ' + fmt(s.nFull, 4) + '）')
+                : (fmt(s.nTarget, 4) + ' → ' + fmt(s.n, 4))],
       ['反射电压 Vor（实际 = n·(Vout+Vf)）', s.vorActual != null ? (fmt(s.vorActual, 1) + ' V') : '—'],
-      ['匝数 Np / Ns（整数）', s.Np + ' 匝 / ' + s.Ns + ' 匝'],
+      ['匝数 Np / Ns（整数）', s.acfCt ? (s.Np + ' 匝（Nph = ' + s.Nph + '）/ ' + s.Ns + ' 匝') : (s.Np + ' 匝 / ' + s.Ns + ' 匝')],
       ['Vin_min 所需占空比 D', fmt(s.dNeedMin, 4) + '（设计点 D_max=' + fmt(s.dDesign, 3) + '）'],
       ['Vin_max 所需占空比 D', fmt(s.dNeedMax, 4)],
       ['原边峰值电流 Ipk（最恶劣）', fmt(s.IpkPri, 2) + ' A'],
@@ -2823,13 +2870,16 @@ var TD = (function () {
       ['副边有效值电流 I_rms', fmt(s.IrmsSec, 2) + ' A'],
       ['磁通摆幅 ΔB_pp / 峰值 Bpk', fmt(s.dBpp, 3) + ' T / ' + fmt(s.Bpk, 3) + ' T'],
       ['允许磁通 Bsat·降额', fmt(s.BsatAllow, 3) + ' T'],
-      ['原边电感 Lp / Lm', fmt(s.LpUH, 2) + ' µH' + (r.T.kind === 'flyback' ? '' : ' / ' + fmt(s.LmUH, 1) + ' µH')],
+      [s.acfCt ? '原边电感 Lm,half / Lm,full' : '原边电感 Lp / Lm',
+        s.acfCt ? (fmt(s.LmUH, 1) + ' µH / ' + fmt(s.LmFullUH, 1) + ' µH')
+                : (fmt(s.LpUH, 2) + ' µH' + (r.T.kind === 'flyback' ? '' : ' / ' + fmt(s.LmUH, 1) + ' µH'))],
       ['次级电感 Ls = Lp/n²', fmt(s.LsUH, 2) + ' µH'],
       ['所需 AL / 气隙', r.T.kind === 'flyback' ? (fmt(s.ALreqNh, 0) + ' nH/N² / ' + fmt(s.gapMm, 3) + ' mm') : (fmt(s.ALusedNh, 0) + ' nH/N²（无气隙）')],
       ['原边线径×股数×并联 / J_p', fmt(s.wirePd, 3) + ' mm ×' + s.wirePstrands + '×' + s.wirePpar + ' / ' + fmt(s.Jpri, 2) + ' A/mm²' + (s.wirePauto ? '（自动）' : '')],
       ['副边线径×股数×并联 / J_s', fmt(s.wireSd, 3) + ' mm ×' + s.wireSstrands + '×' + s.wireSpar + ' / ' + fmt(s.Jsec, 2) + ' A/mm²' + (s.wireSauto ? '（自动）' : '')],
       ['直流电阻 DCR 原边/副边 @25°C（热态）',
         fmt(s.RdcPri25Ohm * 1000, 1) + '/' + fmt(s.RdcSec25Ohm * 1000, 1) + ' mΩ（' + fmt(s.RdcPriOhm * 1000, 1) + '/' + fmt(s.RdcSecOhm * 1000, 1) + ' mΩ）'
+        + (s.acfCt ? '｜中心抽头：原边为每半绕组（4-6 全初级约 2×）' : '')
         + (r.inputs.parP > 1 || r.inputs.parS > 1 ? '｜注意：这是并联后的值，单绕组规格 = 该值 × 并联数（P×' + r.inputs.parP + ' / S×' + r.inputs.parS + '）' : '')],
       ['窗口填充率（上限 ' + (r.inputs.kuMax * 100).toFixed(0) + '%）', fmt(s.fillPct, 1) + '%  · 需 Aw ≥ ' + fmt(s.AwReq, 1) + ' mm²'],
       ['磁芯损耗 P_core（Pcv=' + fmt(s.Pcv, 1) + ' kW/m³）', fmt(s.Pcore, 3) + ' W'],
@@ -2841,7 +2891,8 @@ var TD = (function () {
     var html = '';
     items.forEach(function (x) { html += kvItem(x[0], x[1]); });
     $('keyParams').innerHTML = html;
-    $('resultSub').textContent = s.topologyLabel + '；已按整数匝数 ' + s.Np + '/' + s.Ns + ' 反算工作点，最恶劣值取 Vin_min 与 Vin_max 的较大者。';
+    $('resultSub').textContent = s.topologyLabel + '；已按整数匝数 ' + s.Np + '/' + s.Ns + ' 反算工作点，最恶劣值取 Vin_min 与 Vin_max 的较大者。' +
+      (s.acfCt ? ' 中心抽头 ACF：Np 为两半总匝数，Nph = Np/2 = ' + s.Nph + '，n_eff = ' + fmt(s.n, 4) + '，n_full = ' + fmt(s.nFull, 4) + '。' : '');
   }
   function renderChecks(r) {
     var html = '<table><thead><tr><th>校核项</th><th class="num">计算值</th><th class="num">限值</th><th>判定</th></tr></thead><tbody>';
@@ -3242,7 +3293,8 @@ var TD = (function () {
       rect: $('rectDevice') ? String($('rectDevice').value) : 'diode',
       resetMode: $('resetMode') ? String($('resetMode').value) : 'cap',
       fbMode: $('fbMode') ? String($('fbMode').value) : 'auto',
-      buckMode: $('buckMode') ? String($('buckMode').value) : 'ccm'
+      buckMode: $('buckMode') ? String($('buckMode').value) : 'ccm',
+      acfMode: $('acfMode') ? String($('acfMode').value) : 'single'
     };
     var alts = String(rule).split('|');
     for (var i = 0; i < alts.length; i++) {
