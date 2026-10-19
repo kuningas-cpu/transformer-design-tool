@@ -359,7 +359,8 @@ const irrelevant = {
   /* ACF 现在用 cossP 做软开关校核，所以不再列入"无关输入" */
   cossP: ['Flyback', 'Forward', 'Push-Pull', 'Half-Bridge', 'Full-Bridge'],
   vinNom: ['Flyback', 'Active Clamp Flyback', 'Forward', 'Push-Pull', 'Half-Bridge', 'Full-Bridge'],
-  secRect: ['Flyback', 'Active Clamp Flyback', 'Forward', 'LLC Resonant']
+  /* LLC 的副边整流结构现在会影响整流管耐压（中心抽头要乘 2），所以不再列为"无关输入" */
+  secRect: ['Flyback', 'Active Clamp Flyback', 'Forward']
 };
 const overrides = {
   'Forward': { vinMin: 48, vinMax: 72, vout: 5, iout: 10 },
@@ -1755,7 +1756,7 @@ header('36 device selection: switch / rectifier / freewheel / reset network / RC
     rows.filter((x) => /NaN|undefined|Infinity/.test(x.value + x.why)).map((x) => x.item).join(', '));
   /* 开关管：环形解 76 V ÷ 0.85 = 90 V ⇒ 100 V 档（并说明简单解更保守） */
   const sw = one('开关管 Vds 耐压');
-  ok('switch voltage class comes from the ring solution (100 V class here)', /100 V 档/.test(sw.value) && /环形解峰值 76 V/.test(sw.why),
+  ok('switch voltage class comes from the ring solution (100 V class here)', /100 V 档/.test(sw.value) && /环形解/.test(sw.why) && /76 V/.test(sw.why),
     sw.value + ' | ' + sw.why);
   ok('the guide warns that the naive solution would ask for a higher class', /简单解/.test(sw.why));
   ok('switch current targets 1.5x peak and a conduction-loss budget for Rds(on)',
@@ -1765,7 +1766,8 @@ header('36 device selection: switch / rectifier / freewheel / reset network / RC
   const vr = one('副边整流二极管 反向电压');
   const vf = one('续流二极管 反向电压');
   ok('rectifier Vr uses the ring-solution reset peak reflected to the secondary (100~150 V class, not 200 V)',
-    /^(100|120|150) V$/.test(vr.value) && /V_res,pk\/n/.test(vr.why), vr.value + ' | ' + vr.why.slice(0, 60));
+    /^(100|120|150) V$/.test(vr.value) && /(V_res,pk|复位峰值)/.test(vr.why) && /\/n \+ Vo|n \+ Vo/.test(vr.why),
+    vr.value + ' | ' + vr.why.slice(0, 80));
   ok('freewheel Vr accounts for Vin_max/n only (100 V class)', /100 V/.test(vf.value), vf.value);
   ok('diode current rows ask for average + surge ratings',
     /AV 3.9 A/.test(one('副边整流二极管 电流').value) && /AV 6.5 A/.test(one('续流二极管 电流').value));
@@ -1986,6 +1988,59 @@ header('37 240 W forward (200/310/400 V -> 24 V/10 A, EE42/PC40, cap reset)');
   const badV = TD.design(Object.assign({}, baseInputs(Object.assign({}, fw240)), { vout: -1 }));
   ok('an explicitly invalid value is still rejected by the validator (defaults must not mask it)',
     badV.ok === false && badV.errs.length > 0);
+}
+
+/* ---------------- 38. 开关管 Vds 与副边整流耐压：按拓扑分别算（用户对账表） ---------------- */
+header('38 switch Vds / rectifier Vr per topology (用户对账表回归)');
+{
+  const base = (o) => baseInputs(Object.assign({ vf: 0.5, eta: 0.9, deltaBTarget: 0.2, bsatDerate: 0.8 }, o));
+  const near = (a, b, tol) => Math.abs(a - b) <= tol;
+  /* 反激：Vin_max + n·Vo + 尖峰（15% 余量） */
+  const fb = TD.design(base({ topology: 'Flyback', vinMin: 36, vinMax: 72, vout: 12, iout: 4, dutyMax: 0.6 }));
+  ok('flyback: Vds = (Vin_max + n·Vo) × 1.15 (not 1.4·Vin_max)',
+    near(fb.summary.vdsTopoPeak, (72 + fb.summary.n * fb.summary.Vo) * 1.15, 0.6),
+    'peak=' + fb.summary.vdsTopoPeak.toFixed(1) + ' (n=' + fb.summary.n.toFixed(2) + '), 1.4·Vin=' + (1.4 * 72));
+  /* 正激 + 复位绕组：Vin·(1+Np/Nr) × 1.15（1:1 时 ≈ 2.3·Vin） */
+  const fwW = TD.design(base({ topology: 'Forward', vinMin: 48, vinMax: 72, vout: 5, iout: 10, resetMode: 'winding' }));
+  ok('forward (winding reset): Vds = Vin_max·(1+Np/Nr) × 1.15',
+    near(fwW.summary.vdsTopoPeak, 72 * (1 + fwW.summary.Np / fwW.summary.resetTurns) * 1.15, 0.6),
+    'peak=' + fwW.summary.vdsTopoPeak.toFixed(1) + ' Nr/Np=' + fwW.summary.resetTurns + '/' + fwW.summary.Np);
+  /* 正激 + 电容复位：仍用环形解 */
+  const fwC = TD.design(base({ topology: 'Forward', vinMin: 18, vinMax: 36, vout: 19, iout: 3.947, fs: 250, resetMode: 'cap', cresNf: 3.2, auditMode: '1', npGiven: 12, nsGiven: 23, ae: 52, le: 32, aw: 38, mlt: 38, alNh: 1146 }));
+  ok('forward (cap reset): Vds still comes from the ring solution',
+    near(fwC.summary.vdsTopoPeak, fwC.summary.capReset.vdsPkRing, 1e-9), fwC.summary.vdsTopoPeak.toFixed(1));
+  /* 推挽：2·Vin × 1.15；半桥/全桥：Vin × 1.15；LLC：Vin × 1.05 */
+  const pp = TD.design(base({ topology: 'Push-Pull', vinMin: 48, vinMax: 72, vout: 12, iout: 10 }));
+  ok('push-pull: Vds = 2·Vin_max × 1.15', near(pp.summary.vdsTopoPeak, 2 * 72 * 1.15, 0.6), pp.summary.vdsTopoPeak.toFixed(1));
+  const hb = TD.design(base({ topology: 'Half-Bridge', vinMin: 380, vinMax: 420, vout: 12, iout: 20 }));
+  ok('half-bridge: Vds = Vin_max × 1.15', near(hb.summary.vdsTopoPeak, 420 * 1.15, 0.6), hb.summary.vdsTopoPeak.toFixed(1));
+  const fbr = TD.design(base({ topology: 'Full-Bridge', vinMin: 380, vinMax: 420, vout: 12, iout: 20 }));
+  ok('full-bridge: Vds = Vin_max × 1.15', near(fbr.summary.vdsTopoPeak, 420 * 1.15, 0.6), fbr.summary.vdsTopoPeak.toFixed(1));
+  const llc = TD.design(base({ topology: 'LLC Resonant', vinMin: 380, vinMax: 420, vinNom: 400, vout: 12, iout: 10 }));
+  ok('LLC (half-bridge): Vds = Vin_max × 1.05', near(llc.summary.vdsTopoPeak, 420 * 1.05, 0.6), llc.summary.vdsTopoPeak.toFixed(1));
+
+  /* 副边整流耐压：中心抽头 2×、单绕组 1×、半桥/LLC 的初级电压只有 Vin/2 */
+  const ppCt = TD.design(base({ topology: 'Push-Pull', vinMin: 48, vinMax: 72, vout: 12, iout: 10, secRect: 'ct' }));
+  ok('push-pull + center tap: rectifier Vr = 2·Vin_max/n + Vo',
+    near(ppCt.summary.vSecOff, 2 * 72 / ppCt.summary.n + ppCt.summary.Vo, 0.6),
+    ppCt.summary.vSecOff.toFixed(1) + ' vs ' + (2 * 72 / ppCt.summary.n + ppCt.summary.Vo).toFixed(1));
+  const fbrCt = TD.design(base({ topology: 'Full-Bridge', vinMin: 380, vinMax: 420, vout: 12, iout: 20, secRect: 'ct' }));
+  ok('full-bridge + center tap: rectifier Vr = 2·Vin_max/n + Vo',
+    near(fbrCt.summary.vSecOff, 2 * 420 / fbrCt.summary.n + fbrCt.summary.Vo, 0.6), fbrCt.summary.vSecOff.toFixed(1));
+  const fbrBr = TD.design(base({ topology: 'Full-Bridge', vinMin: 380, vinMax: 420, vout: 12, iout: 20, secRect: 'bridge' }));
+  ok('full-bridge + single winding: rectifier Vr = Vin_max/n + Vo',
+    near(fbrBr.summary.vSecOff, 420 / fbrBr.summary.n + fbrBr.summary.Vo, 0.6), fbrBr.summary.vSecOff.toFixed(1));
+  const hbCt = TD.design(base({ topology: 'Half-Bridge', vinMin: 380, vinMax: 420, vout: 12, iout: 20, secRect: 'ct' }));
+  ok('half-bridge + center tap: rectifier Vr = Vin_max/n + Vo (primary only sees Vin/2)',
+    near(hbCt.summary.vSecOff, 420 / hbCt.summary.n + hbCt.summary.Vo, 0.6), hbCt.summary.vSecOff.toFixed(1));
+  const fwR = TD.design(base({ topology: 'Forward', vinMin: 48, vinMax: 72, vout: 5, iout: 10, resetMode: 'winding' }));
+  ok('forward (winding reset): rectifier Vr = Vin_max·(Np/Nr)/n + Vo',
+    near(fwR.summary.vSecOff, 72 * (fwR.summary.Np / fwR.summary.resetTurns) / fwR.summary.n + fwR.summary.Vo, 0.6),
+    fwR.summary.vSecOff.toFixed(1));
+  /* 新校核行出现 */
+  ok('the checklist carries the per-topology Vds row and the rectifier-Vr row',
+    fb.checks.some((c) => /开关管 Vds,pk（.*）/.test(c.name)) && fb.checks.some((c) => /副边整流管反向电压需求/.test(c.name)),
+    fb.checks.filter((c) => /Vds,pk|整流管反向/.test(c.name)).map((c) => c.name).join(' | '));
 }
 
 console.log('\n================ RESULT ================');

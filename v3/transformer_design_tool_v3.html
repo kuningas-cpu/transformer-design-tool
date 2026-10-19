@@ -1856,6 +1856,58 @@ var TD = (function () {
                          : ('AL = ' + (tank.ALreqNh).toFixed(0) + ' nH/N²、气隙 ≈ ' + tank.gapMm.toFixed(3) + ' mm（按 Lm/Np² 反推）')) });
     }
 
+    /* ---------- 开关管电压应力 / 副边整流耐压：按拓扑分别算 ----------
+       以前用一个 1.4·Vin_max 盖住所有非电容复位拓扑：反激（Vin+V_or+尖峰）、复位绕组正激（Vin·(1+Np/Nr)）、
+       推挽（2·Vin）都被低估；副边整流更是统一按 0.6·Vin_max/n 估，中心抽头应为 2·Vin/n+Vo。
+       漏感/振铃没有单独模型时给一个明确标注的百分比余量（有实测波形时应替换）。 */
+    var vPriMax = (I.topology === 'Half-Bridge' || T.kind === 'llc') ? 0.5 * I.vinMax : I.vinMax;
+    var secTapK = ((T.kind === 'bipolar' || T.kind === 'llc') && I.secRect === 'ct') ? 2 : 1;
+    if (I.topology === 'Push-Pull') secTapK = 2;                 /* 推挽副边永远是双半绕组 */
+    var vOrFly = nAch * Vo;                                      /* 反激反射电压（含 Vf） */
+    var leakPctTopo = (T.kind === 'llc') ? 5 : 15;               /* 无钳位/实测模型时的漏感+振铃余量（%） */
+    var vdsTopo = 0, vdsTopoSrc = '';
+    if (T.kind === 'flyback') {
+      vdsTopo = (I.vinMax + vOrFly) * (1 + leakPctTopo / 100);
+      vdsTopoSrc = 'Vin_max + n·Vo + 尖峰 ≈ (' + I.vinMax + ' + ' + vOrFly.toFixed(1) + ') × (1+' + leakPctTopo + '%)';
+    } else if (T.kind === 'forward') {
+      if (resetMode === 'cap' && capReset) {
+        vdsTopo = capReset.vdsPkRing;
+        vdsTopoSrc = '电容复位环形解（含漏感）';
+      } else {
+        vdsTopo = I.vinMax * (1 + Np / Math.max(resetTurns, 1)) * (1 + leakPctTopo / 100);
+        vdsTopoSrc = 'Vin_max·(1 + Np/Nr) + 尖峰 ≈ ' + I.vinMax + '×(1+' + Np + '/' + Math.max(resetTurns, 1) + ')×(1+' + leakPctTopo + '%)';
+      }
+    } else if (T.kind === 'bipolar') {
+      var kPp = (I.topology === 'Push-Pull') ? 2 : 1;            /* 推挽关断管承压 2·Vin；半桥/全桥每管 Vin */
+      vdsTopo = I.vinMax * kPp * (1 + leakPctTopo / 100);
+      vdsTopoSrc = (kPp === 2 ? '2·Vin_max' : 'Vin_max') + ' + 尖峰 ≈ ' + I.vinMax + '×' + kPp + '×(1+' + leakPctTopo + '%)';
+    } else {
+      vdsTopo = I.vinMax * (1 + leakPctTopo / 100);
+      vdsTopoSrc = 'Vin_max（半桥 LLC）+ 小尖峰 ≈ ' + I.vinMax + '×(1+' + leakPctTopo + '%)';
+    }
+    if (vdsMeasPk > vdsTopo) {                                   /* 有实测时以实测为准（至少不低于实测） */
+      vdsTopo = vdsMeasPk;
+      vdsTopoSrc = '实测 Vds,pk ' + vdsMeasPk + ' V（@Vin=' + (vdsMeasVin > 0 ? vdsMeasVin : I.vinMax) + ' V）';
+    }
+
+    /* 副边整流管关断时承受的电压 */
+    var vSecOff = 0, vSecOffSrc = '';
+    if (T.kind === 'forward') {
+      var vResetSec = (resetMode === 'cap' && capReset)
+        ? Math.max(capReset.vdsPkRing - I.vinMax, 0)
+        : I.vinMax * (resetTurns > 0 ? Np / resetTurns : 1);
+      vSecOff = vResetSec / Math.max(nAch, 1e-9) + Vo;
+      vSecOffSrc = (resetMode === 'cap' ? '复位峰值(环形解)/n + Vo' : 'Vin_max·(Np/Nr)/n + Vo') + ' ≈ ' +
+        vResetSec.toFixed(0) + '/' + nAch.toFixed(3) + ' + ' + Vo.toFixed(1);
+    } else if (T.kind === 'bipolar' || T.kind === 'llc') {
+      vSecOff = vPriMax * secTapK / Math.max(nAch, 1e-9) + Vo;
+      vSecOffSrc = (secTapK === 2 ? '2×副边半绕组电压 + Vo' : '副边绕组电压 + Vo') + ' ≈ ' +
+        (vPriMax * secTapK).toFixed(0) + '/' + nAch.toFixed(3) + ' + ' + Vo.toFixed(1);
+    } else {
+      vSecOff = I.vinMax / Math.max(nAch, 1e-9) * secTapK + Vo;   /* 反激：关断期 Vin/n + Vo */
+      vSecOffSrc = 'Vin_max/n + Vo';
+    }
+
     var skin = skinDepthMm(Fs, loss.tempC);
     function addCheck(name, value, unit, limit, limitUnit, pass, warnRatio, scope) {
       checks.push({ name: name, value: value, unit: unit, limit: limit, limitUnit: limitUnit,
@@ -1878,6 +1930,19 @@ var TD = (function () {
       true, 1.0);
     /* 目标磁通摆幅是"设计目标"而非物理极限（硬极限是上面的 Bsat 降额），所以只做提示 */
     addCheck('磁通摆幅 ΔB_pp（实际）vs 目标 ΔB_pp', maxDB, 'T', I.deltaBTarget, 'T', true, 1.0);
+    /* 开关管电压应力：电容复位正激另有自己的一组行（环形解/保守上界/实测），这里只覆盖其余拓扑 */
+    if (!(T.kind === 'forward' && resetMode === 'cap')) {
+      if (vdsRated > 0) {
+        addCheck('开关管 Vds,pk（' + vdsTopoSrc.split('≈')[0].trim() + '）≤ 0.85×耐压', vdsTopo, 'V', vdsRated * 0.85, 'V',
+          vdsTopo <= vdsRated * 0.85, 0.95);
+      } else {
+        addCheck('开关管 Vds,pk（' + vdsTopoSrc.split('≈')[0].trim() + '；填耐压后可判定）', vdsTopo, 'V', '', '', true, 1e9);
+      }
+    }
+    /* 副边整流管反向电压需求（无整流管耐压输入，作为选型提示） */
+    if (vSecOff > 0) {
+      addCheck('副边整流管反向电压需求 ×1.2（' + (secTapK === 2 ? '含中心抽头 2×' : '单绕组') + '）', 1.2 * vSecOff, 'V', '', '', true, 1e9);
+    }
     addCheck('窗口填充率', fillPct, '%', I.kuMax * 100, '%', fillPct <= I.kuMax * 100 + 1e-9, 0.9);
     /* J is an experience-based proxy, not a physical limit: the binding constraint is the temperature rise,
        so exceeding the target J only raises a flag (小磁芯散热面积相对更大，J 可以更高). */
@@ -2117,6 +2182,7 @@ var TD = (function () {
       dNeedMin: dNeedMin, dNeedMax: dNeedMax, dDesign: dMax, voutAtDmax: voutAtDmax,
       dAllowed: dAllowed, dTopoAllow: (isFinite(dTopoAllow) ? dTopoAllow : null), dTopoTag: dTopoTag, dTopoSrc: dTopoSrc,
       dCtrlAllow: dCtrlAllow, dCtrlSrc: dCtrlSrc, dDesignLimit: dDesignIn,
+      vdsTopoPeak: vdsTopo, vdsTopoSrc: vdsTopoSrc, vSecOff: vSecOff, vSecOffSrc: vSecOffSrc, secTapK: secTapK,
       Jpri: Jpri, Jsec: Jsec, wirePd: wireP.dia, wireSd: wireS.dia, wirePauto: wireP.auto, wireSauto: wireS.auto,
       wirePstrands: wireP.strands, wireSstrands: wireS.strands, wirePpar: wireP.par, wireSpar: wireS.par,
       Aprim: Aprim, Asec: Asec, Pcore: Pcore, Pcu: loss.Pcu, Ptotal: loss.Ptotal,
@@ -2283,12 +2349,13 @@ var TD = (function () {
     function row(item, spec, value, why) { rows.push({ item: item, spec: spec, value: value, why: why }); }
     /* ---------- 开关管 ---------- */
     /* 优先用环形解（不要被"简单解/解析上界"那种过保守的估计推着去买更高耐压的管子） */
-    var vdsWorst = cr ? (cr.meas && cr.meas.peakAtVinMaxRing ? Math.max(cr.meas.peakAtVinMaxRing, cr.vdsPkRing) : cr.vdsPkRing) : 0;
-    if (!(vdsWorst > 0)) vdsWorst = 1.4 * I.vinMax;      /* 没有复位/钳位模型时的粗估 */
+    /* 按拓扑分别给应力（见 design() 里的 vdsTopo）：反激 Vin+V_or+尖峰、复位绕组正激 Vin(1+Np/Nr)、
+       推挽 2·Vin、半桥/全桥/LLC Vin。电容复位正激仍用环形解。不再用 1.4·Vin 一刀切。 */
+    var vdsWorst = (s.vdsTopoPeak > 0) ? s.vdsTopoPeak : 1.4 * I.vinMax;
     var vdsNeed = vdsWorst / 0.85;
     var vdsClass = pickClass(vdsNeed, VDS_CLASSES_ALL);
     row('开关管 Vds 耐压', 'Vds ≥ 峰值/0.85', (vdsClass ? vdsClass + ' V 档' : '>' + Math.ceil(vdsNeed) + ' V'),
-      '环形解峰值 ' + vdsWorst.toFixed(0) + ' V ÷ 0.85 = ' + vdsNeed.toFixed(0) + ' V' +
+      (s.vdsTopoSrc || '') + ' → 峰值 ' + vdsWorst.toFixed(0) + ' V ÷ 0.85 = ' + vdsNeed.toFixed(0) + ' V' +
       (cr && cr.vdsPk > vdsWorst * 1.2 ? '（另有更保守的"简单解"估计 ' + cr.vdsPk.toFixed(0) + ' V，那相当于复位电流不衰减；实测校准后以环形解为准）' : ''));
     var ipkMos = s.IpkPri * 1.5;
     row('开关管电流', 'Id(脉冲) ≥ 1.5×Ipk，Id(连续) ≥ Irms', Math.ceil(ipkMos) + ' A（峰值 ' + s.IpkPri.toFixed(1) + ' A，有效值 ' + s.IrmsPri.toFixed(1) + ' A）',
@@ -2303,18 +2370,19 @@ var TD = (function () {
       '当前 Fs = ' + I.fs + ' kHz：Qg = 70 nC 时平均栅极电流 ≈ ' + (I.fs * 1000 * 70e-9 * 1e6).toFixed(0) + ' µA 级，注意驱动峰值电流按 Qg/t_r 取');
     /* ---------- 副边整流管 ---------- */
     /* 复位峰值统一用"环形解"口径（和开关管耐压同源），不要再混用更保守的"简单解"，否则副边耐压会被抬高一大档 */
-    var vResPkMax = cr ? Math.max(cr.vdsPkRing - I.vinMax, cr.meas ? cr.meas.vResPk : 0) : 0.6 * I.vinMax;
     if (T.kind === 'forward' || T.kind === 'bipolar') {
       var secTap = (T.kind === 'bipolar' && I.secRect === 'ct');
-      var vSecOff = vResPkMax / Math.max(n, 1e-9) + s.Vo;        /* 整流管关断时承受的副边电压（复位期反射 + 输出） */
-      var vrRect = 1.2 * vSecOff;
+      /* 整流管关断电压按拓扑算：正激=复位峰值/n+Vo（电容复位取环形解，绕组复位取 Vin·Np/Nr）；
+         桥式/推挽=(2×半绕组或 1×绕组电压)+Vo —— 中心抽头必须带 2 倍系数 */
+      var vrRect = 1.2 * s.vSecOff;
       row('副边整流二极管 反向电压', 'Vr ≥ 1.2×耐压需求', (pickClass(vrRect, [20, 30, 40, 45, 60, 80, 100, 120, 150, 200, 250, 300, 400, 600]) || Math.ceil(vrRect)) + ' V',
-        '关断期副边承受 V_res,pk/n + Vo = ' + (vResPkMax / Math.max(n, 1e-9)).toFixed(0) + ' + ' + s.Vo.toFixed(1) + ' = ' + vSecOff.toFixed(0) +
-        ' V，再留 20%（原板用的是 200 V 的 STPR1620CT 共阴双管 = 整流 + 续流，余量比这里更足）');
+        '关断期副边承受 ' + s.vSecOffSrc + ' = ' + s.vSecOff.toFixed(0) +
+        ' V，再留 20%' + (s.secTapK === 2 ? '；**中心抽头/推挽已按 2 倍系数计入**' : '') +
+        '（原板用的是 200 V 的 STPR1620CT 共阴双管 = 整流 + 续流，余量比这里更足）');
       row('副边整流二极管 电流', 'I_F(AV) ≥ Iout，I_FSM ≥ 1.5×Is_pk', 'AV ' + I.iout.toFixed(1) + ' A / 浪涌 ' + (1.5 * s.IsPkSec).toFixed(1) + ' A',
         '平均电流 = Iout；峰值 ' + s.IsPkSec.toFixed(1) + ' A（正激类还要减去续流期电流）');
       if (!secTap) {
-        var vSecOn = I.vinMax / Math.max(n, 1e-9);
+        var vSecOn = ((I.topology === 'Half-Bridge' || T.kind === 'llc') ? 0.5 : 1) * I.vinMax / Math.max(n, 1e-9);
         var vrFree = 1.2 * vSecOn;
         row('续流二极管 反向电压', 'Vr ≥ 1.2×Vin_max/n', (pickClass(vrFree, [20, 30, 40, 45, 60, 80, 100, 120, 150, 200, 250, 300]) || Math.ceil(vrFree)) + ' V',
           '开通期副边承受 Vin_max/n = ' + I.vinMax + '/' + n.toFixed(3) + ' = ' + vSecOn.toFixed(0) + ' V，再留 20%');

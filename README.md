@@ -852,6 +852,28 @@ V3 相对 V2 漂出来的真 bug：
 V2 冻结在最后全绿状态（690 + 114 + Excel 19/19），不再改动。两者差异的完整清单见 notes §17。
 
 
+### 第二十九轮：开关管 Vds / 副边整流耐压改成按拓扑分别算（2026-10-19，V3）
+
+用户给了一张对账表：V3（V2 同）对非电容复位拓扑一律用 `1.4·Vin_max`、整流管一律 `0.6·Vin_max/n + Vo`。
+核对结论：**方向全部正确**，两处要修正/补漏 ——
+
+```
+· 反激："1.4·Vin_max" vs "Vin+n·Vo+尖峰"：是否低估取决于 V_or/Vin_max（>0.4 才低估）
+· 整流管：旧代码是 0.6·Vin_max/n 而不是 Vin_max/n → 中心抽头实际低估 3.3 倍（不是一半）；
+          全桥单绕组、正激复位绕组也各低估 40%（用户表漏了这两条）
+· 半桥/全桥/LLC 的 1.4·Vin 是偏保守（安全但不准），不是"准"
+```
+
+**V3 新模型**：反激 `(Vin+n·Vo)×1.15`；复位绕组正激 `Vin(1+Np/Nr)×1.15`；电容复位正激=环形解；
+推挽 `2Vin×1.15`；半桥/全桥 `Vin×1.15`；LLC `Vin×1.05`；有实测 Vds 时取 max(模型,实测)。
+整流管：电容复位正激=环形复位峰值/n+Vo；复位绕组正激=`Vin(Np/Nr)/n+Vo`；
+推挽/全桥/半桥=`vPri_max×secTapK/n+Vo`（vPri_max=Vin 或 Vin/2，secTapK=2 中心抽头 / 1 单绕组，推挽恒 2）。
+新增两行校核：`开关管 Vds,pk（拓扑模型）≤ 0.85×耐压`、`副边整流管反向电压需求 ×1.2（含中心抽头 2×）`。
+15%（LLC 5%）的漏感余量是明确标注的工程占位值，有实测波形时以实测为准。
+
+**验证**：新增第 38 节（各拓扑 Vds 与整流管 Vr 的手算式断言 + 两行校核存在）→ **704 项引擎检查 + 114 项浏览器检查全过**。
+
+
 ## 归档完整性
 
 归档整理于 2026-10-15（最后一轮更新 2026-10-16，本轮把 v2 / v3 拆成两个子目录），
@@ -863,8 +885,8 @@ V2 冻结在最后全绿状态（690 + 114 + Excel 19/19），不再改动。两
 | `v2/transformer_design_tool_v2.html` | `53B5F4966F669C464BBB293169049A2BC10109A825E76D0084AB6B30310144DB` |
 | `v2/verify_transformer_tool_v2.mjs` | `DADAC7EF0A571161FA2AE044C879D59D1747FE3135902E8606A2A7EFC312FF70` |
 | `v2/verify_visibility_browser.mjs` | `2C161B1447AFD47884F990C95D4045A0B119A57FEB1FF7EF7B0D3CB62D69331B` |
-| `v3/transformer_design_tool_v3.html` | `A0C6EA2507390B405E4B58328507F464D6EADBD89ACEC12DB8F1D692E8693F7F` |
-| `v3/verify_transformer_tool_v3.mjs` | `1B0576166ADCF8A4EEB3C3B1AE4AE478368267B0FE2D00A513DA0C268689B93F` |
+| `v3/transformer_design_tool_v3.html` | `D0CE5F87A8E8452BA462F196864E22D1EF125EBFB884D6509B44AD24376F19FB` |
+| `v3/verify_transformer_tool_v3.mjs` | `DACEE61DEB1F9262A1717C4928B33E7E1F8060214BD8649619877CEB73F52DB3` |
 | `v3/verify_visibility_browser_v3.mjs` | `57B22AFCF21A0E8FA44A4E7BB53A0F4BA027CE522DFFDEFC4C605E045F1BD7CC` |
 | `v2/supplier_spec_EPC19_review.md` | `3B12F62F67648E77FD4A4CE7DD7401B7E8FF547A844426CE10DAE0B7B84414E6` |
 
