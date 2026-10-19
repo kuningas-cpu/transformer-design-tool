@@ -441,8 +441,14 @@ var TD = (function () {
     'Active Clamp Flyback': { kind: 'flyback', gFactor: 1, fluxV: 1,   bipolar: false, dTopoKind: 'acfClamp',     dCtrl: 0.95,      dDesign: 0.60, label: '有源钳位反激 / ACF' },
     'Forward':              { kind: 'forward', gFactor: 1, fluxV: 1,   bipolar: false, dTopoKind: 'forwardReset', dCtrl: 0.95,      dDesign: 0.45, label: '单端正激 / Forward' },
     'Push-Pull':            { kind: 'bipolar', gFactor: 2, fluxV: 2,   bipolar: true,  dTopoKind: 'fixed', dTopoFixed: 0.50, dCtrl: 'deadTime', dDesign: 0.45, label: '推挽 / Push-Pull' },
-    'Half-Bridge':          { kind: 'bipolar', gFactor: 1, fluxV: 0.5, bipolar: true,  dTopoKind: 'fixed', dTopoFixed: 0.50, dCtrl: 'deadTime', dDesign: 0.45, label: '半桥 / Half-Bridge' },
-    'Full-Bridge':          { kind: 'bipolar', gFactor: 2, fluxV: 1,   bipolar: true,  dTopoKind: 'fixed', dTopoFixed: 0.50, dCtrl: 'deadTime', dDesign: 0.45, label: '全桥 / Full-Bridge' },
+    /* gFactor = 一次导通期加在**整个初级**上的电压 / Vin：
+         半桥：初级只看到 Vin/2（电容分压）⇒ g = 0.5；全桥：整绕组看到 ±Vin ⇒ g = 1；
+         推挽：每半绕组 Vin、半绕组 Np/2 匝 ⇒ 折算到 Np 是 2·Vin ⇒ g = 2。
+       以前半桥填 1、全桥填 2（都大了一倍）⇒ 匝比算大 2 倍、磁通摆幅算小 2 倍。
+       参照 Infineon REF_XDP_1000W_GAN_PSFB（360~420 V→12 V/1 kW，350 kHz，实测 Np/Ns = 11.0，
+       D_eff ≈ 0.37 ⇒ n = D_eff·Vin/Vo ≈ 10.6~13）：g=1 才对得上。 */
+    'Half-Bridge':          { kind: 'bipolar', gFactor: 0.5, fluxV: 0.5, bipolar: true,  dTopoKind: 'fixed', dTopoFixed: 0.50, dCtrl: 'deadTime', dDesign: 0.45, label: '半桥 / Half-Bridge' },
+    'Full-Bridge':          { kind: 'bipolar', gFactor: 1, fluxV: 1,   bipolar: true,  dTopoKind: 'fixed', dTopoFixed: 0.50, dCtrl: 'deadTime', dDesign: 0.45, label: '全桥 / Full-Bridge' },
     'LLC Resonant':         { kind: 'llc',     gFactor: 1, fluxV: 0.5, bipolar: true,  dTopoKind: 'fixed', dTopoFixed: 0.50, dCtrl: 0.50,      dDesign: 0.50, label: 'LLC 谐振 / LLC' }
   };
   var AWG_TABLE = [10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44];
@@ -813,6 +819,12 @@ var TD = (function () {
     dMax = Math.min(Math.max(dMax, 0.02), 0.95);
     var dAllowed = dMax;
     var dLimit = dAllowed;   /* 兼容旧代码里的名字 */
+    /* 输出电感纹波口径（正激/桥式）：用"纹波比 K·Iout"，与输出级 L_out 的设计口径**同一套**；
+       反激/LLC 没有 Buck 型输出电感，dIL 只用于负载分量估算，保留原输入（缺省 0.6 A）。
+       （曾经这里用隐藏的 rippleLout=0.6 A：L_out 按 K=0.3 设计出 3 A 纹波，原边峰值却按 0.6 A 算，
+         240 W 例原边峰值低估 10%、铜损低估 ~20%。） */
+    var buckKIn = (I.buckMode === 'bcm') ? 2 : numOr(I.buckRippleK, 0.3);
+    var dILBuck = ((T.kind === 'forward' || T.kind === 'bipolar') ? buckKIn * I.iout : numOr(I.rippleLout, 0.6));
     if (dDesignIn > dCtrlAllow + 1e-9) warns.push('设计占空比上限 D_design = ' + dDesignIn + ' 超过控制器允许值 ' +
       dCtrlAllow.toFixed(4) + '（' + dCtrlSrc + '）→ 已按控制器允许值计算；要按更高占空比设计请先确认控制器确实允许。');
     if (dDesignIn > dTopoAllow + 1e-9) warns.push('设计占空比上限 D_design = ' + dDesignIn + ' 超过拓扑/电路硬上限 ' +
@@ -871,14 +883,27 @@ var TD = (function () {
       nTarget = I.vinMin * dMax / ((1 - dMax) * Vo);
       steps.push({ t: '变比 n = Np/Ns', f: 'Vo = Vin_min·D_max/((1-D_max)·n)  →  n = Vin_min·D_max/((1-D_max)·Vo)',
         s: I.vinMin + '×' + dMax + ' / (' + (1 - dMax).toFixed(3) + '×' + Vo.toFixed(2) + ') = ' + nTarget.toFixed(4) });
-      /* 若用户填了目标反射电压 Vor，覆盖 nTarget（这也意味 D_max 会随 Vor 重新自洽） */
+      /* 若用户填了目标反射电压 Vor：它与 D_max 是两个**独立的上限**，必须同时满足：
+           D(Vin_min) = n·Vo/(Vin_min+n·Vo) ≤ D_max   ⟺  n ≤ nDuty
+           V_or = n·Vo ≤ Vor_target                    ⟺  n ≤ nVor
+         ⇒ n = min(nDuty, nVor)。（曾经直接用 Vor 覆盖 D_max 路线 → D>D_max 也照算，
+         240 W/45 W 这类"两个输入本来就矛盾"的工况会静默产生不自洽的匝数。） */
       var vorT = numOr(I.vorTarget, 0);
-      if (vorT > 0) {
-        nTarget = vorT / Vo;
-        steps.push({ t: '按目标 Vor 反推匝比（覆盖上面的 D_max 路线）',
-          f: 'Vor = n·(Vout+Vf)  →  n = Vor/(Vout+Vf)',
-          s: vorT + ' / ' + Vo.toFixed(2) + ' = ' + nTarget.toFixed(4) +
-             '（对应 Ns ≈ Np/' + nTarget.toFixed(3) + '，实际取整由整数匝数步骤决定）' });
+      var fbModeEarly = (I.fbMode === 'ccm' || I.fbMode === 'bcm' || I.fbMode === 'dcm') ? I.fbMode : 'auto';
+      if (vorT > 0 && fbModeEarly !== 'bcm') {
+        var nDuty = nTarget, nVor = vorT / Vo;
+        nTarget = Math.min(nDuty, nVor);
+        steps.push({ t: '按目标 Vor 与 D_max 双约束取匝比',
+          f: 'n ≤ Vin_min·D_max/((1−D_max)·Vo) 且 n ≤ Vor/(Vout+Vf) ⇒ n = min(两者)',
+          s: 'D_max 路线 n = ' + nDuty.toFixed(4) + '（对应 Vor ≈ ' + (nDuty * Vo).toFixed(1) + ' V）；Vor 路线 n = ' +
+            nVor.toFixed(4) + '（对应 D@Vin_min = ' + (nVor * Vo / (I.vinMin + nVor * Vo)).toFixed(4) + '） ⇒ **取 ' +
+            nTarget.toFixed(4) + '**（' + (nDuty <= nVor ? 'D_max 更严' : 'Vor 更严') + '）' });
+        if (Math.abs(nDuty - nVor) / Math.max(nDuty, nVor) > 0.05) {
+          warns.push('输入自相矛盾：D_max = ' + dMax + ' 反推 Vor ≈ ' + (nDuty * Vo).toFixed(1) +
+            ' V，而你填的目标 Vor = ' + vorT + ' V（差 ' + (Math.abs(nDuty * Vo - vorT) / vorT * 100).toFixed(0) +
+            '%）。已按更严的匝比 ' + nTarget.toFixed(4) + ' 计算；若确实要 Vor = ' + vorT + ' V，请把 D_max 改成 ≈ ' +
+            (nVor * Vo / (I.vinMin + nVor * Vo)).toFixed(3) + '。');
+        }
       }
     } else if (T.kind === 'forward') {
       nTarget = I.vinMin * dMax / Vo;
@@ -1135,12 +1160,8 @@ var TD = (function () {
       var lkTotalH = lkUh * 1e-6;
       var lkH = lkTotalH * lkSplitF;
       var iMagPk = dReset * I.vinMin / (Lm * Fs);            /* 励磁电流峰值（关断瞬间） */
-      /* 原边设计电流用的输出电感纹波口径要与输出级一致：
-         本版界面用"纹波比 K"（buckRippleK，BCM 时 K = 2）而不是绝对 ΔI_L，
-         所以这里也按 K·Iout 取（否则会依赖一个界面上已经不存在的隐藏常量）。 */
-      var buckKIn = (I.buckMode === 'bcm') ? 2 : numOr(I.buckRippleK, 0.3);
-      var dILForPri = (T.kind === 'forward' || T.kind === 'bipolar') ? buckKIn * I.iout : numOr(I.rippleLout, 0.6);
-      var iDesignPri = Math.max((I.iout + dILForPri / 2) / Math.max(nAch, 1e-9), 1e-9);
+      /* 原边设计电流用的输出电感纹波口径与输出级一致（见上面的 dILBuck 说明） */
+      var iDesignPri = Math.max((I.iout + dILBuck / 2) / Math.max(nAch, 1e-9), 1e-9);
       /* 关断瞬间漏感里流的是"全部原边电流"（负载折算分量 + 励磁分量）：
          反激/LLC：原边没有副边通路 → 全部能量必须由钳位/复位网络吸收 ⇒ iDesignPri + iMagPk
          正激/推挽/半桥/全桥：副边续流回路分担负载电流，只有"折算到原边"的那部分漏感能量进复位电容
@@ -1481,10 +1502,10 @@ var TD = (function () {
               + (vdsClassNeed ? '；本工况最小可行的标准耐压档 = ' + vdsClassNeed + ' V' : '；本工况到 1000 V 档仍不可行（Vin_max 太高或漏感太大）')
             : '填了开关管耐压后，这里会给出满足它的 C_res 下限、复位允许的上限，以及两者是否矛盾') });
     }
-    var common = { n: nAch, Vo: Vo, VinNom: I.vinNom > 0 ? I.vinNom : (I.vinMin + I.vinMax) / 2, Iout: I.iout, Pin: Pin, Fs: Fs, Lp: Lp, Lm: Lm, Np: Np, Ns: Ns, Ae: Ae, dIL: I.rippleLout, nSecWind: nSecWind };
+    var common = { n: nAch, Vo: Vo, VinNom: I.vinNom > 0 ? I.vinNom : (I.vinMin + I.vinMax) / 2, Iout: I.iout, Pin: Pin, Fs: Fs, Lp: Lp, Lm: Lm, Np: Np, Ns: Ns, Ae: Ae, dIL: dILBuck, nSecWind: nSecWind };
     function pt(Vin) { var q = {}; for (var key in common) q[key] = common[key]; q.Vin = Vin; return operatingPoint(T, q); }
     var pts = { vinMin: pt(I.vinMin), vinMax: pt(I.vinMax) };
-    sweep = buildSweep(T, { nin: 9, vinMin: I.vinMin, vinMax: I.vinMax, n: common.n, Vo: Vo, VinNom: common.VinNom, Iout: I.iout, Pin: Pin, Fs: Fs, Lp: Lp, Lm: Lm, Np: Np, Ns: Ns, Ae: Ae, dIL: I.rippleLout, nSecWind: nSecWind });
+    sweep = buildSweep(T, { nin: 9, vinMin: I.vinMin, vinMax: I.vinMax, n: common.n, Vo: Vo, VinNom: common.VinNom, Iout: I.iout, Pin: Pin, Fs: Fs, Lp: Lp, Lm: Lm, Np: Np, Ns: Ns, Ae: Ae, dIL: dILBuck, nSecWind: nSecWind });
     var maxBpk = Math.max(pts.vinMin.Bpk, pts.vinMax.Bpk);
     var maxDB = Math.max(pts.vinMin.dBpp, pts.vinMax.dBpp);
     var maxIpkPri = Math.max(pts.vinMin.IpkPri, pts.vinMax.IpkPri);
@@ -1930,6 +1951,22 @@ var TD = (function () {
       true, 1.0);
     /* 目标磁通摆幅是"设计目标"而非物理极限（硬极限是上面的 Bsat 降额），所以只做提示 */
     addCheck('磁通摆幅 ΔB_pp（实际）vs 目标 ΔB_pp', maxDB, 'T', I.deltaBTarget, 'T', true, 1.0);
+    /* 厂商口径的最恶劣 V·t（Vin_max 处把占空比打满 D_max）：
+       ON Semi EVBUM2133-D（NCP1216A 单端正激）就是用 Np = Vin_max·D_max/(Bmax·f·Ae) 定匝数的（其 eq.4），
+       而本工具的稳态 ΔB 目标用的是实际工作点的 V·t = n·Vo/Fs（小得多）。
+       两者在稳态都安全，但启动/负载阶跃时若控制器把 D 打满，磁通会按 Vin_max·D_max 走 → 用这一行给出瞬态裕量。 */
+    if ((T.kind === 'forward' || T.kind === 'bipolar') && Np > 0) {
+      var vtWorstCase = T.fluxV * I.vinMax * dMax / Fs;
+      var bWorstCase = vtWorstCase / (Np * Ae);
+      var npForWorst = Math.ceil(vtWorstCase / (Ae * BsatAllow) - 1e-9);
+      addCheck('瞬态磁通裕量：Bpk(@Vin_max·D_max) ≤ Bsat·降额', bWorstCase, 'T', BsatAllow, 'T', true, 1.0);
+      if (bWorstCase > BsatAllow * 0.9) {
+        warns.push('瞬态磁通裕量偏小：若控制器在 Vin_max 处把占空比打到 D_max（启动/负载阶跃），Bpk = Vin_max·D_max/(Np·Ae·Fs) = ' +
+          bWorstCase.toFixed(3) + ' T（降额限 ' + BsatAllow.toFixed(3) + ' T）。厂商做法（ON Semi EVBUM2133-D eq.4）会取 Np ≥ ' +
+          npForWorst + ' 匝（当前 ' + Np + ' 匝）；或者用软启动/逐周期限流把 Vin_max 处的占空比压在 ' +
+          (BsatAllow * Np * Ae * Fs / (T.fluxV * I.vinMax)).toFixed(3) + ' 以内。');
+      }
+    }
     /* 开关管电压应力：电容复位正激另有自己的一组行（环形解/保守上界/实测），这里只覆盖其余拓扑 */
     if (!(T.kind === 'forward' && resetMode === 'cap')) {
       if (vdsRated > 0) {

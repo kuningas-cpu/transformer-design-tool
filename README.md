@@ -874,6 +874,60 @@ V2 冻结在最后全绿状态（690 + 114 + Excel 19/19），不再改动。两
 **验证**：新增第 38 节（各拓扑 Vds 与整流管 Vr 的手算式断言 + 两行校核存在）→ **704 项引擎检查 + 114 项浏览器检查全过**。
 
 
+### 第三十轮：工程验收（实板 + 手算逐项对账）→ 修掉两个真问题（2026-10-19，V3）
+
+不引用引擎公式，按定义重算四类真实工程并与工具输出比对：
+
+```
+实板 TST1724（12T/23T, AL=1146, 250 kHz, 18~36V→19V/3.947A, C_res=3.2nF）：n/Lm/D/Ipk/Irms/Bpk/辅助绕组/环形 Vds 全部 ≤0.02%
+   ↳ 环形解 @24V = 61.5V vs 实测 57.2V（+7.5%，模型误差内）
+45W 反激（100~375V, 24V/1.88A, 65kHz, PQ2020, D_max=0.45, Vor=100V）：修完双约束后 n/D/Lp/Ipk/Bpk 全部 ≤0.1%
+240W 正激（200~400V, 24V/10A, 100kHz, EE42）：Np/Ns/Bpk/Ipk/D≤0.45/C_res 全部 ≤0.001%
+DCM 反激（fbDutyD=0.35）：Lp=Vin²D²/(2PinFs)、Ipk=Vin·D/(LpFs) 0.00%
+BCM 反激：D=Vor/(Vin+Vor)、Ipk=2Pin/(Vin·D) 1.0%（整数匝）
+```
+
+**修掉的两个真问题**
+
+| # | 现象 | 根因 | 修法 |
+|---|---|---|---|
+| 1 | 240 W 正激原边峰值 3.19 A vs 手算 3.55 A（低 10%），铜损/温升/开关电流跟着偏低 | L_out 按 `K·Iout`（3 A 纹波）设计，原边电流却用已删的隐藏常量 `rippleLout=0.6 A` | 统一 `dILBuck=K·Iout`（BCM=2·Iout）喂给 buildSweep 与 iDesignPri |
+| 2 | `Vor=100 V` + `D_max=0.45` 时用 Vor 覆盖 D_max → 实际 D=0.4687>0.45（匝数与 Lp 不自洽） | `vorTarget` 直接覆盖 `nTarget` | `n=min(n_duty,n_vor)`；差>5% 时告警并给出 D_max 应改成多少 |
+
+**验证**：**707 项引擎检查 + 114 项真浏览器检查全过**（新增：原边电流与 L_out 同口径、Vor/D_max 双约束与冲突告警）。
+已核对无问题的：RCD 量级（½LkIpk²Fs / nF·kΩ·W）、填充率（含并联与挡墙）、温升=P·Rth、反激/ Buck 型输出电容、
+CCM/DCM/BCM 判据、LLC 变比与 FHA/ZVS。仍未校准的：损耗绝对值、漏感百分比余量、输出级选型余量（等实测效率/温升）。
+
+
+### 第三十一轮：厂商参考设计对账 → 修掉桥式匝比 2 倍错误（2026-10-19，V3）
+
+用 `r.jina.ai` 抓厂商文档（绕开 PI 的代理拦截），把实际规格与实际绕组填进工具对账：
+
+```
+正激：ON Semi EVBUM2133-D（NCP1216A，36~72 V→12 V/3 A，100 kHz，EFD25 Ae=58，ΔB 0.2 T，D_max 0.5）
+      文档 Np=35 / Ns=25；工具同规格 n=1.333 vs 文档 1.400（−4.8%，整数匝+Vf）✓
+      但 Np 16 vs 35：基准不同（厂商用 Vin_max·D_max 的最恶劣 V·t，工具用稳态 V·t）→ 新增"瞬态磁通裕量"校核
+全桥：Infineon REF_XDP_1000W_GAN_PSFB（360~420 V→12 V/1 kW，350 kHz，Np/Ns = 11.0）
+      工具修复前 24.8 ✗（2 倍）→ 修复后 12.96 ✓
+```
+
+**修掉的 bug：`TOPOS.gFactor` 半桥/全桥各错一倍**
+
+| 拓扑 | 一次导通期加在整个初级上的电压 | g 应为 | 原值 | 后果 |
+|---|---|---|---|---|
+| 半桥 | Vin/2（电容分压） | **0.5** | 1 | 匝比大 2×、磁通摆幅小 2× |
+| 全桥 | ±Vin（整绕组） | **1** | 2 | 同上 |
+| 推挽 | 2·Vin（半绕组 Np/2 匝） | 2 ✓ | 2 | — |
+
+修复后三个桥式的 ΔB 统一为 `Vo/(Ns·Ae·Fs)`（与正激同形）。回归：半桥基线 Ns 6→12、全桥 n 公式改为 Vin·D/Vo。
+另新增 `瞬态磁通裕量：Bpk(@Vin_max·D_max) ≤ Bsat·降额` 校核（ON Semi 的 eq.4 口径），超限时给出"厂商基准需要 Np ≥ X"。
+
+**覆盖情况**：正激（ON Semi + 你的天胜承认书）、全桥（Infineon）、反激（PI AN-32 公式链 + DCM/BCM 手算）、
+电容复位正激（你的实板实测）已对上；推挽/半桥/LLC/ACF 的公式已对齐，但整机参考设计文档还缺
+（PI 拦代理、TI 部分页面 JS 渲染、SLUP263 需登录、TIDT096 抓取为空）。
+**验证**：707 项引擎检查 + 114 项真浏览器检查全过。
+
+
 ## 归档完整性
 
 归档整理于 2026-10-15（最后一轮更新 2026-10-16，本轮把 v2 / v3 拆成两个子目录），
@@ -885,8 +939,8 @@ V2 冻结在最后全绿状态（690 + 114 + Excel 19/19），不再改动。两
 | `v2/transformer_design_tool_v2.html` | `53B5F4966F669C464BBB293169049A2BC10109A825E76D0084AB6B30310144DB` |
 | `v2/verify_transformer_tool_v2.mjs` | `DADAC7EF0A571161FA2AE044C879D59D1747FE3135902E8606A2A7EFC312FF70` |
 | `v2/verify_visibility_browser.mjs` | `2C161B1447AFD47884F990C95D4045A0B119A57FEB1FF7EF7B0D3CB62D69331B` |
-| `v3/transformer_design_tool_v3.html` | `D0CE5F87A8E8452BA462F196864E22D1EF125EBFB884D6509B44AD24376F19FB` |
-| `v3/verify_transformer_tool_v3.mjs` | `DACEE61DEB1F9262A1717C4928B33E7E1F8060214BD8649619877CEB73F52DB3` |
+| `v3/transformer_design_tool_v3.html` | `6B7F11972569C4B5FD934306E9E05715CF064CBFDE1FF20881B1B0591EBBC3F5` |
+| `v3/verify_transformer_tool_v3.mjs` | `E7AB8C7D35589629CBE8EAEF4EEFC0A32B0AE41D9017F2BF948D267F2A8B1E0F` |
 | `v3/verify_visibility_browser_v3.mjs` | `57B22AFCF21A0E8FA44A4E7BB53A0F4BA027CE522DFFDEFC4C605E045F1BD7CC` |
 | `v2/supplier_spec_EPC19_review.md` | `3B12F62F67648E77FD4A4CE7DD7401B7E8FF547A844426CE10DAE0B7B84414E6` |
 

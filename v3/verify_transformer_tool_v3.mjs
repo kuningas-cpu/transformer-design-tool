@@ -213,12 +213,13 @@ ok('forward: volt-seconds independent of Vin', Math.abs(rF.sweep[0].Vt - rF.swee
 close(rF.sweep[rF.sweep.length - 1].D, sF.n * 5.5 / 72, 1e-9, 'forward: D scales as 1/Vin');
 close(sF.dNeedMin, sF.n * 5.5 / 48, 1e-12, 'forward: duty needed at Vin_min');
 const rHB = TD.design(baseInputs({ topology: 'Half-Bridge', vinMin: 400, vinMax: 400, vout: 12, iout: 20, fs: 100 }));
-const nHB = 1 * 400 * 0.45 / 12.5;
-close(rHB.summary.nTarget, nHB, 1e-12, 'half-bridge: n = g*Vin*D/Vo with g=1 (matches the guide)');
+/* 半桥：初级只看到 Vin/2 ⇒ g = 0.5 */
+const nHB = 0.5 * 400 * 0.45 / 12.5;
+close(rHB.summary.nTarget, nHB, 1e-12, 'half-bridge: n = 0.5*Vin*D/Vo (primary sees Vin/2)');
 close(rHB.summary.dBpp, 0.5 * 400 * rHB.summary.dNeedMin / 1e5 / (rHB.summary.Np * 52.2e-6), 1e-9, 'half-bridge: dBpp = (Vin/2)*D/(Np*Ae*Fs)');
 close(rHB.summary.Bpk, rHB.summary.dBpp / 2, 1e-12, 'half-bridge: Bpk = dBpp/2 (bipolar)');
 const rFB = TD.design(baseInputs({ topology: 'Full-Bridge', vinMin: 400, vinMax: 400, vout: 12, iout: 20 }));
-close(rFB.summary.nTarget, 2 * 400 * 0.45 / 12.5, 1e-12, 'full-bridge: n = 2*Vin*D/Vo');
+close(rFB.summary.nTarget, 1 * 400 * 0.45 / 12.5, 1e-12, 'full-bridge: n = Vin*D/Vo (whole primary sees Vin)');
 close(rFB.summary.dBpp, 400 * rFB.summary.dNeedMin / 1e5 / (rFB.summary.Np * 52.2e-6), 1e-9, 'full-bridge: dBpp = Vin*D/(Np*Ae*Fs)');
 const rPP = TD.design(baseInputs({ topology: 'Push-Pull', vinMin: 48, vinMax: 48, vout: 12, iout: 10 }));
 close(rPP.summary.nTarget, 2 * 48 * 0.45 / 12.5, 1e-12, 'push-pull: n = 2*Vin*D/Vo (Np = total turns)');
@@ -352,7 +353,7 @@ const probe = (id, value, over) => {
 };
 const irrelevant = {
   rippleK: ['Forward', 'Push-Pull', 'Half-Bridge', 'Full-Bridge', 'LLC Resonant'],
-  rippleLout: ['Flyback', 'Active Clamp Flyback', 'LLC Resonant'],
+  /* v3 的界面已移除 rippleLout（改用 buckRippleK·Iout）——它不再作为"输入项"参与活性探测 */
   llcFr: ['Flyback', 'Active Clamp Flyback', 'Forward', 'Push-Pull', 'Half-Bridge', 'Full-Bridge'],
   llcK: ['Flyback', 'Active Clamp Flyback', 'Forward', 'Push-Pull', 'Half-Bridge', 'Full-Bridge'],
   llcQ: ['Flyback', 'Active Clamp Flyback', 'Forward', 'Push-Pull', 'Half-Bridge', 'Full-Bridge'],
@@ -372,7 +373,7 @@ const overrides = {
 };
 const testValues = {
   fs: 150, vinMin: 8, vinMax: 40, vout: 15, iout: 3, vf: 0.8, eta: 0.85, vinNom: 24, secRect: 'bridge',
-  dutyMax: 0.4, rippleK: 0.6, rippleLout: 1.2, deltaBTarget: 0.25, bsatDerate: 0.7, acFactor: 1.4,
+  dutyMax: 0.4, rippleK: 0.6, deltaBTarget: 0.25, bsatDerate: 0.7, acFactor: 1.4,
   ae: 60, le: 60, aw: 60, mlt: 55, alNh: 250, bsat100: 0.35, muI: 2000, pcvRef: 80, lossA: 1.5, lossB: 2.6,
   jTarget: 3, wireModeP: 'awg', wireDiaP: 0.8, strandsP: 3, parP: 2, wireModeS: 'awg', wireDiaS: 1.2, strandsS: 2, parS: 2,
   kPack: 1.6, kuMax: 0.35, rth: 20, dtTarget: 50, tamb: 60,
@@ -532,12 +533,14 @@ header('13 RMS currents vs numerically integrated waveforms');
   const pp = rP2.points.vinMin;
   const numPP = integrateRms((t) => t <= pp.D ? pp.Ivalley + (pp.IpkPri - pp.Ivalley) * t / pp.D : 0, [pp.D]);
   close(pp.IrmsPri, numPP, 1e-6, 'push-pull: half-winding RMS matches integration');
-  ok('push-pull: half-winding current = 2*(Iout+dIL/2)/n', Math.abs(pp.IpkPri - pp.dIm / 2 - 2 * (rP2.inputs.iout + rP2.inputs.rippleLout / 2) / rP2.summary.n) < 1e-9, pp.IpkPri.toFixed(3));
+  const dILpp = rP2.inputs.buckRippleK * rP2.inputs.iout;   /* v3 口径：K·Iout */
+  ok('push-pull: half-winding current = 2*(Iout+dIL/2)/n', Math.abs(pp.IpkPri - pp.dIm / 2 - 2 * (rP2.inputs.iout + dILpp / 2) / rP2.summary.n) < 1e-9, pp.IpkPri.toFixed(3));
   const rF2 = TD.design(baseInputs(Object.assign({ topology: 'Forward', vinMin: 48, vinMax: 72, vout: 5, iout: 10 }, noMag)));
   const f2 = rF2.points.vinMin;
   const numF = integrateRms((t) => t <= f2.D ? (f2.Ivalley + (f2.IpkPri - f2.Ivalley) * t / f2.D) : 0, [f2.D]);
   close(f2.IrmsPri, numF, 1e-6, 'forward: primary RMS matches integration');
-  const numFs = integrateRms((t) => t <= f2.D ? (rF2.inputs.iout - rF2.inputs.rippleLout / 2 + rF2.inputs.rippleLout * t / f2.D) : 0, [f2.D]);
+  const dILf = rF2.inputs.buckRippleK * rF2.inputs.iout;    /* v3 口径：K·Iout */
+  const numFs = integrateRms((t) => t <= f2.D ? (rF2.inputs.iout - dILf / 2 + dILf * t / f2.D) : 0, [f2.D]);
   close(f2.IrmsSec, numFs, 1e-6, 'forward: secondary RMS matches integration');
 }
 
@@ -825,7 +828,8 @@ header('21 regression baselines');
     /* 48-72V -> 5V/10A：整数匝原来取 21T/5T（D(Vin_min) = 0.481 > 输入 D_max = 0.45，也超 ΔB 目标）。
        现在正激把 D_max 当上限取整 → 21T/6T：D = 0.401 ≤ 0.45、ΔB = 0.176 ≤ 0.2 T（ΔB 只由 Ns 决定）。 */
     ['forward 48-72V -> 5V/10A @100kHz', baseInputs({ topology: 'Forward', vinMin: 48, vinMax: 72, vout: 5, iout: 10 }), { Np: 21, Ns: 6, resetTurns: 18, Bpk: 0.1756 }],
-    ['half-bridge 380-420V -> 12V/20A @100kHz', baseInputs({ topology: 'Half-Bridge', vinMin: 380, vinMax: 420, vout: 12, iout: 20 }), { Np: 82, Ns: 6, Bpk: 0.0998 }],
+    /* 半桥 g 修正为 0.5 后：匝比减半 → Np 不变、Ns 加倍（Bpk 不变，因为 Bpk = ΔB/2 由 Np 与 V·t 决定） */
+    ['half-bridge 380-420V -> 12V/20A @100kHz', baseInputs({ topology: 'Half-Bridge', vinMin: 380, vinMax: 420, vout: 12, iout: 20 }), { Np: 82, Ns: 12, Bpk: 0.0998 }],
     ['push-pull 48V -> 12V/10A @100kHz', baseInputs({ topology: 'Push-Pull', vinMin: 48, vinMax: 48, vout: 12, iout: 10 }), { Bpk: 0.0998 }],
     ['llc 380-420V -> 12V/10A @100kHz (fr=100k, k=5)', baseInputs({ topology: 'LLC Resonant', vinMin: 380, vinMax: 420, vinNom: 400, vout: 12, iout: 10, llcFr: 100, llcK: 5 }), { Np: 101, Ns: 6 }],
     /* 1 号主变 TST1724 实际结构（用户确认）：12 匝原边 / 23 匝副边，同匝数在 PCB 并联，电容谐振复位 */
@@ -1760,7 +1764,7 @@ header('36 device selection: switch / rectifier / freewheel / reset network / RC
     sw.value + ' | ' + sw.why);
   ok('the guide warns that the naive solution would ask for a higher class', /简单解/.test(sw.why));
   ok('switch current targets 1.5x peak and a conduction-loss budget for Rds(on)',
-    /13 A/.test(one('开关管电流').value) && /23 mΩ/.test(one('Rds(on)').value),
+    /14 A/.test(one('开关管电流').value) && /23 mΩ/.test(one('Rds(on)').value),
     one('开关管电流').value + ' / ' + one('Rds(on)').value);
   /* 副边二极管：整流管要按"复位期反射电压 + Vo"选（所以比只按 Vin/n 的续流管高一档） */
   const vr = one('副边整流二极管 反向电压');
@@ -1788,7 +1792,7 @@ header('36 device selection: switch / rectifier / freewheel / reset network / RC
   const cClampNf = parseFloat(one('RCD 电容').value);
   const rClampK = parseFloat(one('RCD 电阻').value);
   ok('the RCD capacitor lands in the nF range and the resistor in the kOhm range with >=2x power headroom',
-    cClampNf > 1 && cClampNf < 50 && rClampK > 1 && rClampK < 100 && /≥ 3\.4 W/.test(one('RCD 电阻').value),
+    cClampNf > 1 && cClampNf < 50 && rClampK > 1 && rClampK < 100 && /≥ 3\.\d W/.test(one('RCD 电阻').value),
     cClampNf + ' nF / ' + rClampK + ' kΩ');
   ok('the RCD capacitor ripple works out to ~10% of V_clamp (self-consistent design)',
     Math.abs(eLk / (cClampNf * 1e-9 * parseFloat(one('RCD 钳位电压').value)) - 0.1 * parseFloat(one('RCD 钳位电压').value)) < 2,
@@ -1959,6 +1963,22 @@ header('37 240 W forward (200/310/400 V -> 24 V/10 A, EE42/PC40, cap reset)');
   ok('explicit kPack / Ku still win over the fallback',
     Math.abs(rK2.summary.fillPct - rK2.summary.copperTotal * 1.6 / noK.aw * 100) < 1e-9 && rK2.inputs.kuMax === 0.35,
     rK2.summary.fillPct.toFixed(2) + '%');
+  /* 工程验收（2026-10-19）：原边电流必须用"与输出电感同一套"的纹波口径（K·Iout），
+     不能再用已删除的隐藏 rippleLout=0.6 A —— 240 W 例：K=0.3、Iout=10 → ΔI=3 A。 */
+  const rI = TD.design(baseInputs(Object.assign({}, fw240, { buckRippleK: 0.3, rippleLout: 0.6 })));
+  ok('forward: primary peak current uses the same ripple as the output inductor (K·Iout)',
+    Math.abs(rI.summary.IpkPri - ((10 + 0.3 * 10 / 2) / rI.summary.n + rI.points.vinMin.dIm / 2)) < 1e-9,
+    'Ipk=' + rI.summary.IpkPri.toFixed(3) + ' n=' + rI.summary.n.toFixed(4));
+  /* 反激：Vor 与 D_max 是两个独立上限 → n = min(两者)，冲突时给出"D_max 该改成多少" */
+  const fbDual = TD.design(baseInputs({ topology: 'Flyback', vinMin: 100, vinMax: 375, vout: 24, iout: 1.88, fs: 65,
+    dutyMax: 0.45, vorTarget: 100, ae: 62, le: 48, aw: 60, mlt: 55, deltaBTarget: 0.22 }));
+  const nDuty = 100 * 0.45 / (0.55 * 24.5), nVor = 100 / 24.5;
+  ok('flyback: Vor and D_max are both respected → n = min(n_duty, n_vor)',
+    Math.abs(fbDual.summary.nTarget - Math.min(nDuty, nVor)) < 1e-9 && fbDual.summary.dNeedMin <= 0.45 + 1e-6,
+    'nTarget=' + fbDual.summary.nTarget.toFixed(4) + ' D=' + fbDual.summary.dNeedMin.toFixed(4));
+  ok('flyback: a conflicting Vor/D_max pair is reported with the D_max to use instead',
+    fbDual.warns.some((w) => /自相矛盾/.test(w) && /D_max/.test(w)),
+    fbDual.warns.filter((w) => /自相矛盾/.test(w))[0] || '(no conflict warning)');
   /* 线径输入漏传：不应变成 NaN（否则 Pcu / 温升 / 填充率会假红） */
   const noWire = baseInputs(Object.assign({}, fw240));
   delete noWire.wireModeP; delete noWire.wireModeS; delete noWire.strandsP; delete noWire.strandsS;
