@@ -2086,6 +2086,17 @@ header('39 vendor reference designs (same duty basis)');
     Math.abs(fw.summary.nTarget - 1.4) < 0.06, fw.summary.nTarget.toFixed(3));
   ok('forward: the industry Np basis (Vin_max·D_max) is exposed as a transient-flux check row',
     fw.checks.some((c) => /瞬态磁通裕量/.test(c.name)));
+  /* LLC：TI PMP30522 / TIDT101（110 VAC→38 V/2 A，75 W，半桥 LLC）
+     原理图实测：T1 Lm = 160.5 µH、C15 = 150 nF（谐振电容）；由 Lm/Cr 反推 fr ≈ 72.5 kHz @ k = Lm/Lr = 5、Q ≈ 0.228 */
+  const llc = TD.design(baseInputs({ topology: 'LLC Resonant', vinMin: 141, vinMax: 180, vinNom: 155.6,
+    vout: 38, iout: 2, fs: 100, vf: 0.6, eta: 0.93, secRect: 'ct', llcFr: 72.5, llcK: 5, llcQ: 0.228,
+    ae: 120, le: 60, aw: 100, mlt: 60, cossP: 200, tDeadNs: 150 }));
+  const tk = llc.tank;
+  ok('LLC (TI PMP30522): n = Vin/(2Vo) = 2.016 matches the vendor transformer',
+    Math.abs(llc.summary.nTarget - 155.6 / (2 * 38.6)) < 1e-9, llc.summary.nTarget.toFixed(3));
+  ok('LLC (TI PMP30522): at the vendor fr/k/Q the tank lands near Lm 160.5 µH / Cr 150 nF',
+    Math.abs(tk.LmReqUH / 160.5 - 1) < 0.12 && Math.abs(tk.CrNf / 150 - 1) < 0.12,
+    'Lm=' + tk.LmReqUH.toFixed(1) + 'µH Cr=' + tk.CrNf.toFixed(1) + 'nF');
 }
 
 console.log('\n================ RESULT ================');

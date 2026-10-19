@@ -950,6 +950,10 @@ CCM/DCM/BCM 判据、LLC 变比与 FHA/ZVS。仍未校准的：损耗绝对值�
 （只有 65 W/20 V/3 A/93% 这类规格）→ 目前只完成规格级 + 公式级对账，缺绕组级数字。
 **验证**：**712 项引擎检查 + 114 项真浏览器检查全过**。
 
+**LLC 绕组级补账（用户补充 `tidrzi6.pdf` = PMP30522 原理图）**：T1 实测 **Lm = 160.5 µH**、C15 = **150 nF**（谐振电容）。
+工具在厂商的 `fr=72.5 kHz / k=5 / Q=0.228` 下给 **Lm 176.9 µH（+10%）、Cr 136.2 nF（−9%）**，匝比 **2.016 与厂商完全一致** ✓。
+工具默认 Q ≈ 0.49（更激进）时会给出 2 倍大的 Lm/更小的 Cr —— 属设计余量选择，不是公式错误。已钉进第 39 节回归（714 项）。
+
 
 ## 归档完整性
 
@@ -963,7 +967,7 @@ CCM/DCM/BCM 判据、LLC 变比与 FHA/ZVS。仍未校准的：损耗绝对值�
 | `v2/verify_transformer_tool_v2.mjs` | `DADAC7EF0A571161FA2AE044C879D59D1747FE3135902E8606A2A7EFC312FF70` |
 | `v2/verify_visibility_browser.mjs` | `2C161B1447AFD47884F990C95D4045A0B119A57FEB1FF7EF7B0D3CB62D69331B` |
 | `v3/transformer_design_tool_v3.html` | `36B56F985F8925B6BE1FA74BBF3B947957867A1FE29E39C7552025D9F199CDD7` |
-| `v3/verify_transformer_tool_v3.mjs` | `62D822F8C9C0C8C5C032955783D9C8B7934C268D10CE76317F4C001EFC134AF1` |
+| `v3/verify_transformer_tool_v3.mjs` | `48518C195614869730B7D2A7767B83B56D95C0F07007F2EA5159CE4D270DBDD2` |
 | `v3/verify_visibility_browser_v3.mjs` | `57B22AFCF21A0E8FA44A4E7BB53A0F4BA027CE522DFFDEFC4C605E045F1BD7CC` |
 | `v2/supplier_spec_EPC19_review.md` | `3B12F62F67648E77FD4A4CE7DD7401B7E8FF547A844426CE10DAE0B7B84414E6` |
 
