@@ -213,13 +213,12 @@ ok('forward: volt-seconds independent of Vin', Math.abs(rF.sweep[0].Vt - rF.swee
 close(rF.sweep[rF.sweep.length - 1].D, sF.n * 5.5 / 72, 1e-9, 'forward: D scales as 1/Vin');
 close(sF.dNeedMin, sF.n * 5.5 / 48, 1e-12, 'forward: duty needed at Vin_min');
 const rHB = TD.design(baseInputs({ topology: 'Half-Bridge', vinMin: 400, vinMax: 400, vout: 12, iout: 20, fs: 100 }));
-/* 半桥：初级只看到 Vin/2 ⇒ g = 0.5 */
-const nHB = 0.5 * 400 * 0.45 / 12.5;
-close(rHB.summary.nTarget, nHB, 1e-12, 'half-bridge: n = 0.5*Vin*D/Vo (primary sees Vin/2)');
+const nHB = 1 * 400 * 0.45 / 12.5;
+close(rHB.summary.nTarget, nHB, 1e-12, 'half-bridge: n = g*Vin*D/Vo with g=1 (matches the guide)');
 close(rHB.summary.dBpp, 0.5 * 400 * rHB.summary.dNeedMin / 1e5 / (rHB.summary.Np * 52.2e-6), 1e-9, 'half-bridge: dBpp = (Vin/2)*D/(Np*Ae*Fs)');
 close(rHB.summary.Bpk, rHB.summary.dBpp / 2, 1e-12, 'half-bridge: Bpk = dBpp/2 (bipolar)');
 const rFB = TD.design(baseInputs({ topology: 'Full-Bridge', vinMin: 400, vinMax: 400, vout: 12, iout: 20 }));
-close(rFB.summary.nTarget, 1 * 400 * 0.45 / 12.5, 1e-12, 'full-bridge: n = Vin*D/Vo (whole primary sees Vin)');
+close(rFB.summary.nTarget, 2 * 400 * 0.45 / 12.5, 1e-12, 'full-bridge: n = 2*Vin*D/Vo');
 close(rFB.summary.dBpp, 400 * rFB.summary.dNeedMin / 1e5 / (rFB.summary.Np * 52.2e-6), 1e-9, 'full-bridge: dBpp = Vin*D/(Np*Ae*Fs)');
 const rPP = TD.design(baseInputs({ topology: 'Push-Pull', vinMin: 48, vinMax: 48, vout: 12, iout: 10 }));
 close(rPP.summary.nTarget, 2 * 48 * 0.45 / 12.5, 1e-12, 'push-pull: n = 2*Vin*D/Vo (Np = total turns)');
@@ -828,8 +827,7 @@ header('21 regression baselines');
     /* 48-72V -> 5V/10A：整数匝原来取 21T/5T（D(Vin_min) = 0.481 > 输入 D_max = 0.45，也超 ΔB 目标）。
        现在正激把 D_max 当上限取整 → 21T/6T：D = 0.401 ≤ 0.45、ΔB = 0.176 ≤ 0.2 T（ΔB 只由 Ns 决定）。 */
     ['forward 48-72V -> 5V/10A @100kHz', baseInputs({ topology: 'Forward', vinMin: 48, vinMax: 72, vout: 5, iout: 10 }), { Np: 21, Ns: 6, resetTurns: 18, Bpk: 0.1756 }],
-    /* 半桥 g 修正为 0.5 后：匝比减半 → Np 不变、Ns 加倍（Bpk 不变，因为 Bpk = ΔB/2 由 Np 与 V·t 决定） */
-    ['half-bridge 380-420V -> 12V/20A @100kHz', baseInputs({ topology: 'Half-Bridge', vinMin: 380, vinMax: 420, vout: 12, iout: 20 }), { Np: 82, Ns: 12, Bpk: 0.0998 }],
+    ['half-bridge 380-420V -> 12V/20A @100kHz', baseInputs({ topology: 'Half-Bridge', vinMin: 380, vinMax: 420, vout: 12, iout: 20 }), { Np: 82, Ns: 6, Bpk: 0.0998 }],
     ['push-pull 48V -> 12V/10A @100kHz', baseInputs({ topology: 'Push-Pull', vinMin: 48, vinMax: 48, vout: 12, iout: 10 }), { Bpk: 0.0998 }],
     ['llc 380-420V -> 12V/10A @100kHz (fr=100k, k=5)', baseInputs({ topology: 'LLC Resonant', vinMin: 380, vinMax: 420, vinNom: 400, vout: 12, iout: 10, llcFr: 100, llcK: 5 }), { Np: 101, Ns: 6 }],
     /* 1 号主变 TST1724 实际结构（用户确认）：12 匝原边 / 23 匝副边，同匝数在 PCB 并联，电容谐振复位 */
@@ -2061,6 +2059,33 @@ header('38 switch Vds / rectifier Vr per topology (用户对账表回归)');
   ok('the checklist carries the per-topology Vds row and the rectifier-Vr row',
     fb.checks.some((c) => /开关管 Vds,pk（.*）/.test(c.name)) && fb.checks.some((c) => /副边整流管反向电压需求/.test(c.name)),
     fb.checks.filter((c) => /Vds,pk|整流管反向/.test(c.name)).map((c) => c.name).join(' | '));
+}
+
+/* ---------------- 39. 厂商参考设计：同一占空比基准下的匝比/绕组 ---------------- */
+header('39 vendor reference designs (same duty basis)');
+{
+  /* 半桥：TI LM5039EVAL（AN-2025）36~75 V→3.3 V/30 A、400 kHz、T1 = 8:2（n = 4）、D@36V ≈ 0.422 */
+  const hb = TD.design(baseInputs({ topology: 'Half-Bridge', vinMin: 36, vinMax: 75, vout: 3.3, iout: 30, fs: 400,
+    vf: 0.5, eta: 0.89, dutyMax: 0.422 }));
+  ok('half-bridge (TI LM5039EVAL): n = 1·36·0.422/3.8 ≈ 4.0 (T1 8:2)',
+    Math.abs(hb.summary.nTarget - 4.0) < 0.1, hb.summary.nTarget.toFixed(3));
+  /* 全桥：Infineon REF_XDP_1000W_GAN_PSFB 360~420 V→12 V/1 kW、350 kHz、Np/Ns = 11.0（单管 D ≈ 0.19） */
+  const fbr = TD.design(baseInputs({ topology: 'Full-Bridge', vinMin: 360, vinMax: 420, vout: 12, iout: 80, fs: 350,
+    vf: 0.5, eta: 0.95, dutyMax: 0.19 }));
+  ok('full-bridge (Infineon 1 kW PSFB): n = 2·360·0.19/12.5 ≈ 11.0',
+    Math.abs(fbr.summary.nTarget - 11.0) < 0.25, fbr.summary.nTarget.toFixed(3));
+  /* 推挽：TI LM25037EVB（AN-1861）16~32 V→5 V/10 A、250 kHz、副边 2 匝/2:1（n = 2）、D@16V ≈ 0.344 */
+  const pp = TD.design(baseInputs({ topology: 'Push-Pull', vinMin: 16, vinMax: 32, vout: 5, iout: 10, fs: 250,
+    vf: 0.5, eta: 0.88, dutyMax: 0.344 }));
+  ok('push-pull (TI LM25037EVB): n = 2·16·0.344/5.5 ≈ 2.0 (2:1)',
+    Math.abs(pp.summary.nTarget - 2.0) < 0.08, pp.summary.nTarget.toFixed(3));
+  /* 正激：ON Semi EVBUM2133（36~72 V→12 V/3 A、100 kHz、EFD25 Ae=58、D=0.5、Np 35/Ns 25 → n = 1.4） */
+  const fw = TD.design(baseInputs({ topology: 'Forward', vinMin: 36, vinMax: 72, vout: 12, iout: 3, fs: 100,
+    vf: 0.5, eta: 0.87, dutyMax: 0.5, ae: 58, le: 45, aw: 50, mlt: 45, resetMode: 'winding', deltaBTarget: 0.2 }));
+  ok('forward (ON Semi EVBUM2133): n = 36·0.5/12.5 ≈ 1.40 (Np 35/Ns 25)',
+    Math.abs(fw.summary.nTarget - 1.4) < 0.06, fw.summary.nTarget.toFixed(3));
+  ok('forward: the industry Np basis (Vin_max·D_max) is exposed as a transient-flux check row',
+    fw.checks.some((c) => /瞬态磁通裕量/.test(c.name)));
 }
 
 console.log('\n================ RESULT ================');

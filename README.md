@@ -928,6 +928,29 @@ CCM/DCM/BCM 判据、LLC 变比与 FHA/ZVS。仍未校准的：损耗绝对值�
 **验证**：707 项引擎检查 + 114 项真浏览器检查全过。
 
 
+### 第三十二轮：厂商参考设计全量对账（用户下载 11 份 PDF）→ 桥式结论修正（2026-10-19，V3）
+
+用户把可下载的厂商文档放进 `refs/`（11 份，含 TI/ON/Infineon/ST/PI）。用 `pypdf` 提取正文后逐拓扑对账：
+
+| 拓扑 | 厂商文档 | 厂商 n | 工具 n（同占空比） | 结论 |
+|---|---|---|---|---|
+| 正激（绕组复位） | ON Semi EVBUM2133-D（36~72 V→12 V/3 A，100 kHz，EFD25，D=0.5） | 35/25 = 1.40 | 1.44 | ✓ 3% 内；Np 基准不同（见下） |
+| 半桥 | TI LM5039EVAL / AN-2025（36~75 V→3.3 V/30 A，400 kHz，T1 8:2，D=0.422） | 4.0 | 4.00 | ✓ |
+| 全桥 | Infineon REF_XDP_1000W_GAN_PSFB（360~420 V→12 V，350 kHz，Np/Ns=11.0，单管 D≈0.19） | 11.0 | 10.94 | ✓ |
+| 推挽 | TI LM25037EVB / AN-1861（16~32 V→5 V/10 A，250 kHz，2:1，D=0.344） | 2.0 | 2.00 | ✓ |
+
+**修正上一轮的误判**：上一轮我用 D_max = 0.45 对比 Infineon 的 Np/Ns = 11，判定"半桥/全桥 gFactor 各错一倍"并改了代码。
+用三份厂商文档在**各自占空比**下复核后确认：**g = 1/2/2 原本就是对的**，差异全部来自 D 基准（PSFB 的 11 对应 D≈0.19）。
+改动已完整回退，并把四个"厂商值 ↔ 工具值"钉成回归（第 39 节）。
+
+**仍然成立的正激发现**：厂商用 `Np = Vin_max·D_max/(ΔB·f·Ae)`（最恶劣 V·t）定匝数，工具用稳态 V·t
+（两者差 2.2×）→ 新增 `瞬态磁通裕量：Bpk(@Vin_max·D_max) ≤ Bsat·降额` 校核，超限时给"Np ≥ X"或"把 D 压到 Y"。
+
+**LLC / ACF**：ST AN2450 与 ON AND90061 的绕组表是图片/CID 字体（提取为乱码），TI TIDT101/TIDT096 是测试报告
+（只有 65 W/20 V/3 A/93% 这类规格）→ 目前只完成规格级 + 公式级对账，缺绕组级数字。
+**验证**：**712 项引擎检查 + 114 项真浏览器检查全过**。
+
+
 ## 归档完整性
 
 归档整理于 2026-10-15（最后一轮更新 2026-10-16，本轮把 v2 / v3 拆成两个子目录），
@@ -939,8 +962,8 @@ CCM/DCM/BCM 判据、LLC 变比与 FHA/ZVS。仍未校准的：损耗绝对值�
 | `v2/transformer_design_tool_v2.html` | `53B5F4966F669C464BBB293169049A2BC10109A825E76D0084AB6B30310144DB` |
 | `v2/verify_transformer_tool_v2.mjs` | `DADAC7EF0A571161FA2AE044C879D59D1747FE3135902E8606A2A7EFC312FF70` |
 | `v2/verify_visibility_browser.mjs` | `2C161B1447AFD47884F990C95D4045A0B119A57FEB1FF7EF7B0D3CB62D69331B` |
-| `v3/transformer_design_tool_v3.html` | `6B7F11972569C4B5FD934306E9E05715CF064CBFDE1FF20881B1B0591EBBC3F5` |
-| `v3/verify_transformer_tool_v3.mjs` | `E7AB8C7D35589629CBE8EAEF4EEFC0A32B0AE41D9017F2BF948D267F2A8B1E0F` |
+| `v3/transformer_design_tool_v3.html` | `36B56F985F8925B6BE1FA74BBF3B947957867A1FE29E39C7552025D9F199CDD7` |
+| `v3/verify_transformer_tool_v3.mjs` | `62D822F8C9C0C8C5C032955783D9C8B7934C268D10CE76317F4C001EFC134AF1` |
 | `v3/verify_visibility_browser_v3.mjs` | `57B22AFCF21A0E8FA44A4E7BB53A0F4BA027CE522DFFDEFC4C605E045F1BD7CC` |
 | `v2/supplier_spec_EPC19_review.md` | `3B12F62F67648E77FD4A4CE7DD7401B7E8FF547A844426CE10DAE0B7B84414E6` |
 
