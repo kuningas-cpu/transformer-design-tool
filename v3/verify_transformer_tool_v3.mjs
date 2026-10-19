@@ -2120,6 +2120,22 @@ header('39 vendor reference designs (same duty basis)');
   ok('ACF: an insufficient-ZVS design gets a concrete "Lm ≤ X µH" recommendation',
     acf.warns.some((w) => /ZVS/.test(w) && /Lm 需 ≤/.test(w)),
     (acf.warns.find((w) => /Lm 需 ≤/.test(w)) || '').slice(0, 120));
+  /* ACF 第二参考：ON Semi DN05119/D + Würth 750317295。
+     24T 中心抽头（12T+12T）、20V 副边 4T、L(4-6)=120µH、Lk=4µH、600V 管、100kHz。
+     半桥 ACF 每半 12T → 有效 n=3；全初级 24T → 6:1 只是数据表全绕组比。 */
+  const dn = TD.design(baseInputs({ topology: 'Active Clamp Flyback', vinMin: 110, vinMax: 375,
+    vout: 20, iout: 3.25, fs: 100, vf: 0.5, eta: 0.94, dutyMax: 0.36, vdsRated: 600,
+    lkUh: 4.0, cossP: 200, tDeadNs: 100, ae: 64, le: 55, aw: 60, mlt: 55, secRect: 'ct' }));
+  ok('ACF (DN05119/D + 750317295): half-primary 12T/4T gives n ≈ 3.0',
+    Math.abs(dn.summary.nTarget - 3.0) < 0.08, dn.summary.nTarget.toFixed(3));
+  ok('ACF (DN05119/D): 600 V switches are consistent with the half-primary n=3 (Vds ≤ 510 V)',
+    dn.summary.vdsTopoPeak <= 510, dn.summary.vdsTopoPeak.toFixed(1) + ' V');
+  const dnFull = TD.design(baseInputs({ topology: 'Active Clamp Flyback', vinMin: 110, vinMax: 375,
+    vout: 20, iout: 3.25, fs: 100, vf: 0.5, eta: 0.94, dutyMax: 0.53, vdsRated: 600,
+    lkUh: 4.0, cossP: 200, tDeadNs: 100, ae: 64, le: 55, aw: 60, mlt: 55, secRect: 'ct' }));
+  ok('ACF (DN05119/D): the full-primary 24T/4T = 6:1 request is correctly rejected by the 600 V clamp hard limit',
+    dnFull.summary.dTopoAllow < 0.50 && dnFull.warns.some((w) => /硬上限/.test(w)),
+    'D_limit=' + dnFull.summary.dTopoAllow.toFixed(3));
 }
 
 /* ---------------- 40. Buck 型副边 DCM：L / Ipk / Irms / Bpk / Bac 同一套模型 ---------------- */
