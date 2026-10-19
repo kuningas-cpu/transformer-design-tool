@@ -784,10 +784,20 @@ var TD = (function () {
       }
     } else if (dTopoKind === 'acfClamp') {
       if (vdsRated > 0 && 0.85 * vdsRated > I.vinMax) {
-        dTopoAllow = (0.85 * vdsRated - I.vinMax) / (0.85 * vdsRated);
+        /* 有源钳位的钳位电容电压是 V_clamp = n·Vo/(1−D)（D 随输入变：D = n·Vo/(Vin+n·Vo)），
+           所以 Vds = Vin_max + n·Vo + (n·Vo)²/Vin_max ≤ 0.85×U。
+           解出 n·Vo 的上限，再换算成"Vin_min 处的设计占空比上限"（D_design 是按 Vin_min 定义的）。
+           以前直接套反激的 (0.85U−Vin_max)/(0.85U)（等于假设 D_max 发生在 Vin_max），
+           会把 ACF 的设计占空比压到 0.33、匝比算小一半（TI UCC28780EVM-002：厂商 5.26，旧算法 2.98）。 */
+        var uAllowAcf = 0.85 * vdsRated;
+        var discAcf = 1 + 4 * (uAllowAcf - I.vinMax) / I.vinMax;
+        var xMaxAcf = discAcf > 0 ? (Math.sqrt(discAcf) - 1) * I.vinMax / 2 : 0;
+        var nMaxAcf = xMaxAcf / Vo;
+        dTopoAllow = (nMaxAcf > 0) ? nMaxAcf * Vo / (I.vinMin + nMaxAcf * Vo) : 0.02;
         dTopoTag = '钳位电压反推';
-        dTopoSrc = '有源钳位：V_clamp = Vin·D/(1−D)，开关管承压 Vin+V_clamp ≤ 0.85×' + vdsRated +
-          ' → D ≤ (0.85×U − Vin_max)/(0.85×U) = ' + dTopoAllow.toFixed(4) + '（@Vin_max）';
+        dTopoSrc = '有源钳位：V_clamp = n·Vo/(1−D)、D = n·Vo/(Vin+n·Vo) ⇒ Vds = Vin_max + n·Vo + (n·Vo)²/Vin_max ≤ 0.85×' +
+          vdsRated + ' ⇒ n·Vo ≤ ' + xMaxAcf.toFixed(1) + ' V（n ≤ ' + nMaxAcf.toFixed(2) +
+          '）⇒ 等效设计占空比上限 D(Vin_min) ≤ ' + dTopoAllow.toFixed(4);
       } else {
         dTopoSrc = '有源钳位：填开关管耐压后按 V_clamp = Vin·D/(1−D) 反推上限；未填时无硬限，另见钳位电容/软开关校核';
       }
@@ -2053,9 +2063,12 @@ var TD = (function () {
         warns.push('ACF 的软开关判据需要死区时间：请在"死区时间 t_dead"填入实际值（否则不校核 ZVS）。');
       }
       if (iZvsNeedAcf > 0 && iLmPkAcf < iZvsNeedAcf) {
+        /* 无载 ZVS 靠励磁电流半幅：I_Lm,pk = Vin_min·D/(2·Lm·Fs) ≥ I_ZVS,need ⇒ Lm ≤ Vin_min·D/(2·Fs·I_ZVS,need) */
+        var lmZvsMaxUh = (I.vinMin * Math.max(dNeedMin, 0.02)) / (2 * Fs * iZvsNeedAcf) * 1e6;
         warns.push('ACF 软开关不足：无载时励磁电流半幅只有 ' + iLmPkAcf.toFixed(2) + ' A，要在 ' + tDeadNs +
           ' ns 内把节点摆过 ' + vClampAcfWorst.toFixed(0) + ' V 需要 ' + iZvsNeedAcf.toFixed(2) +
-          ' A → 减小 Lm、缩短死区或加大换流电流才能 ZVS。');
+          ' A → **为满足 ZVS，Lm 需 ≤ ' + lmZvsMaxUh.toFixed(0) + ' µH**（当前 ' + (Lm * 1e6).toFixed(0) +
+          ' µH）；或缩短死区/加大换流电流。TI UCC28780EVM-002（45 W/20 V）就是靠把 Lm 做到 115 µH 满足 ZVS 的。');
       }
     }
     if (T.kind === 'flyback') addCheck('所需气隙 l_g', gapMm, 'mm', 2.0, 'mm', gapMm <= 2.0, 0.75);

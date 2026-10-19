@@ -2097,6 +2097,17 @@ header('39 vendor reference designs (same duty basis)');
   ok('LLC (TI PMP30522): at the vendor fr/k/Q the tank lands near Lm 160.5 µH / Cr 150 nF',
     Math.abs(tk.LmReqUH / 160.5 - 1) < 0.12 && Math.abs(tk.CrNf / 150 - 1) < 0.12,
     'Lm=' + tk.LmReqUH.toFixed(1) + 'µH Cr=' + tk.CrNf.toFixed(1) + 'nF');
+  /* ACF：TI UCC28780EVM-002（90~264 VAC→20 V/2.25 A，45 W，RM8/ILP，Lm 104~127 µH（BOM 115），
+     漏感 ≤2.5 µH，匝比 1:0.19 ⇒ Np/Ns = 5.26，650 V GaN） */
+  const acf = TD.design(baseInputs({ topology: 'Active Clamp Flyback', vinMin: 127, vinMax: 373, vout: 20, iout: 2.25,
+    fs: 500, vf: 0.5, eta: 0.945, dutyMax: 0.46, vdsRated: 650, cossP: 200, tDeadNs: 100, secRect: 'ct' }));
+  ok('ACF (TI UCC28780EVM-002): n = Vin_min·D/((1−D)·Vo) with D=0.46 ≈ 5.26 (vendor 1:0.19)',
+    Math.abs(acf.summary.nTarget - 5.26) < 0.15, acf.summary.nTarget.toFixed(3));
+  ok('ACF: the clamp-based hard limit is a duty-at-Vin_min limit (not "D_max at Vin_max")',
+    acf.summary.dTopoAllow > 0.46 && acf.summary.dTopoAllow < 0.62, String(acf.summary.dTopoAllow));
+  ok('ACF: an insufficient-ZVS design gets a concrete "Lm ≤ X µH" recommendation',
+    acf.warns.some((w) => /ZVS/.test(w) && /Lm 需 ≤/.test(w)),
+    (acf.warns.find((w) => /Lm 需 ≤/.test(w)) || '').slice(0, 120));
 }
 
 console.log('\n================ RESULT ================');

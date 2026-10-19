@@ -954,6 +954,13 @@ CCM/DCM/BCM 判据、LLC 变比与 FHA/ZVS。仍未校准的：损耗绝对值�
 工具在厂商的 `fr=72.5 kHz / k=5 / Q=0.228` 下给 **Lm 176.9 µH（+10%）、Cr 136.2 nF（−9%）**，匝比 **2.016 与厂商完全一致** ✓。
 工具默认 Q ≈ 0.49（更激进）时会给出 2 倍大的 Lm/更小的 Cr —— 属设计余量选择，不是公式错误。已钉进第 39 节回归（714 项）。
 
+**ACF 绕组级补账（TI UCC28780EVM-002 / SLUUBO8A）**：90~264 VAC→20 V/2.25 A，RM8/ILP，Lm 104~127 µH（BOM 115），
+漏感 ≤2.5 µH，匝比 1:0.19 ⇒ **Np/Ns = 5.26**，650 V GaN，η 94.6%。工具对账抓到一个真 bug：
+ACF 的"钳位上限"照抄了反激口径（等价于假设 D_max 发生在 Vin_max），把设计占空比压到 0.325、**匝数算小一半（2.98）**；
+改为解 `Vds = Vin_max + n·Vo + (n·Vo)²/Vin_max ≤ 0.85U` 后 n = **5.277（−0.3%）** ✓。
+另：ACF 的 Lm 是**为无载 ZVS** 定的（厂商 115 µH vs 工具按纹波目标给的 287 µH）；ZVS 行现在直接给"Lm 需 ≤ 138 µH"。
+第二参考：ON NCP1568 EVB（EVBUM2776-D，37~57 V PoE→5/9/12/15/20 V，45 W，Würth DN05119/D 变压器）。
+
 
 ## 归档完整性
 
@@ -966,8 +973,8 @@ CCM/DCM/BCM 判据、LLC 变比与 FHA/ZVS。仍未校准的：损耗绝对值�
 | `v2/transformer_design_tool_v2.html` | `53B5F4966F669C464BBB293169049A2BC10109A825E76D0084AB6B30310144DB` |
 | `v2/verify_transformer_tool_v2.mjs` | `DADAC7EF0A571161FA2AE044C879D59D1747FE3135902E8606A2A7EFC312FF70` |
 | `v2/verify_visibility_browser.mjs` | `2C161B1447AFD47884F990C95D4045A0B119A57FEB1FF7EF7B0D3CB62D69331B` |
-| `v3/transformer_design_tool_v3.html` | `36B56F985F8925B6BE1FA74BBF3B947957867A1FE29E39C7552025D9F199CDD7` |
-| `v3/verify_transformer_tool_v3.mjs` | `48518C195614869730B7D2A7767B83B56D95C0F07007F2EA5159CE4D270DBDD2` |
+| `v3/transformer_design_tool_v3.html` | `611923C0A190763EBECC74DC31E6F5DA21F677F75C0BCC0BBFA44FB8DF19E9B8` |
+| `v3/verify_transformer_tool_v3.mjs` | `477EB3B142606744DD8C45799248306B7BB5F5373D244C4EF5020C3B97224621` |
 | `v3/verify_visibility_browser_v3.mjs` | `57B22AFCF21A0E8FA44A4E7BB53A0F4BA027CE522DFFDEFC4C605E045F1BD7CC` |
 | `v2/supplier_spec_EPC19_review.md` | `3B12F62F67648E77FD4A4CE7DD7401B7E8FF547A844426CE10DAE0B7B84414E6` |
 
