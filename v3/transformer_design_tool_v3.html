@@ -2609,14 +2609,14 @@ var TD = (function () {
       var vSpike = vC - vReset;                /* 漏感尖峰（相对正常复位平台） */
       var vdsClamp = I.vinMax + vC;            /* MOSFET 总电压 */
       row('RCD 钳位电容电压 V_C（相对 Vin 的抬升）', 'V_C = 1.3~1.5×V_reset',
-        Math.ceil(vC / 10) * 10 + ' V',
+        vC.toFixed(1) + ' V',
         'V_reset = ' + vReset.toFixed(1) + ' V → V_C = ' + vC.toFixed(1) + ' V；这是电容两端电压，不是 MOSFET 总电压');
       row('RCD MOSFET 总电压 Vds,clamp', 'Vds = Vin_max + V_C',
-        Math.ceil(vdsClamp / 10) * 10 + ' V',
+        vdsClamp.toFixed(1) + ' V',
         'Vin_max ' + I.vinMax.toFixed(1) + ' V + V_C ' + vC.toFixed(1) + ' V；选管耐压按此值再留 15% 裕量（≥ ' +
         Math.ceil(vdsClamp / 0.85 / 10) * 10 + ' V）');
       row('RCD 漏感尖峰 V_spike（相对正常平台）', 'V_spike = V_C − V_reset',
-        Math.ceil(vSpike / 10) * 10 + ' V',
+        vSpike.toFixed(1) + ' V',
         '正常复位平台已含 Vin + V_reset；示波器上的峰值还会叠加 ESL/二极管恢复过冲，实测优先');
       var eLk = 0.5 * lkAbs * ipkClamp * ipkClamp;
       var pClamp = eLk * I.fs * 1000;

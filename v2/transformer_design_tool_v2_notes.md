@@ -1031,3 +1031,40 @@ C15：0.15 µF = 150 nF     （谐振电容 Cr）
 **另一个差异（不是 bug）**：工具按"纹波比 K"选 Lm（本例 287 µH），厂商把 Lm 做到 115 µH —— ACF 的 Lm 是**为无载 ZVS**
 定的（励磁半幅要够大）。工具的 ACF ZVS 行会判 FAIL 并给出"Lm 需 ≤ 138 µH"（厂商 115 µH ✓ 落在范围内）。
 ⇒ 设计流程是"先用纹波目标定 Lm → 看 ZVS 行 → 按提示下调 Lm"，两轮收敛。
+
+### 20.6 第三十三轮：DCM 与 RCD 的口径统一
+
+**反激 DCM 复位时间**：`operatingPoint` 里原来把 `trFrac` 截断到 `1−D` 再做 `D+tr ≤ 1` 判定，
+等于用截断后的值掩盖"复位没走完"。现在保留 `trFracRaw = tr/T`，判定用
+`DdcmRaw + trFracRaw ≤ 1`；截断值只用于本周期 RMS 积分（`IavgSec`/`IrmsSec`），
+不自洽时校核表直接 FAIL。
+
+**Buck 型副边 DCM**（正激/推挽/半桥/全桥）统一为：
+
+```
+m     = 1（正激）或 2（推挽/半桥/全桥，每周期两个副边脉冲）
+Vs    = Vin/n（正激/推挽/全桥）；Vin/(2n)（半桥）
+VLon  = Vs − Vo（Vo 已含整流管压降）
+D2    = D·VLon/Vo
+Ipk   = VLon·D/(L·Fs)
+Irms  = Ipk·√(m·(D+D2)/3)
+Iout  = ½·m·VLon·D²·(Vo+VLon)/(L·Vo·Fs)
+⇒ L   = ½·m·VLon·D²·(Vo+VLon)/(Vo·Iout·Fs)
+Bpk   = L·Ipk/(N·Ae) ;  Bac = Bpk/2
+```
+
+同一组 `L / Ipk / Irms / Bpk / Bac` 同时喂给输出电感、变压器副边电流、磁通与损耗；
+`LoutN`、`LoutAL`、气隙、铜损、磁芯损耗不再各用一套 CCM 纹波。
+
+**RCD 三电压**：
+
+```
+V_reset = 正常复位平台相对 Vin 的抬升
+          （反激 n·(Vo+Vf)；正激绕组复位 Vin·Np/Nr；电容复位取 Vin 作保守代理）
+V_C     = 1.3~1.5·V_reset      ← 钳位电容两端电压（相对 Vin）
+V_spike = V_C − V_reset        ← 漏感尖峰（相对正常平台）
+Vds,clamp = Vin_max + V_C      ← MOSFET 总电压，也是 RCD 二极管反压的基准
+```
+
+RCD 的 C/R 用 `V_C` 计算（`C = E/(ΔV_C·V_C)`、`R = V_C²/P`），
+MOSFET 耐压与二极管 `Vr` 用 `Vds,clamp`；正激只把原边折算漏感 `Lk,eff = Lk·k_p` 计入 RCD 耗散。

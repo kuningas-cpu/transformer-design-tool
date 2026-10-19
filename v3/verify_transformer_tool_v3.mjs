@@ -1799,7 +1799,7 @@ header('36 device selection: switch / rectifier / freewheel / reset network / RC
   const vdsClamp = parseFloat(one('RCD MOSFET 总电压').value);
   const vSpike = parseFloat(one('RCD 漏感尖峰').value);
   ok('RCD voltage bases are separated: Vds,clamp = Vin_max + V_C and V_spike = V_C − V_reset',
-    Math.abs(vdsClamp - (36 + vC)) <= 10 && Math.abs(vSpike - (vC - 36)) <= 10,
+    Math.abs(vdsClamp - (36 + vC)) <= 0.2 && Math.abs(vSpike - (vC - 36)) <= 0.2,
     'V_C=' + vC + ' V, Vds=' + vdsClamp + ' V, V_spike=' + vSpike + ' V');
   ok('the RCD capacitor ripple works out to ~10% of V_clamp (self-consistent design)',
     Math.abs(eLk / (cClampNf * 1e-9 * vC) - 0.1 * vC) < 2,
