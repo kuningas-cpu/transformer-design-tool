@@ -51,7 +51,7 @@ if (DRY) { entries.forEach((e) => console.log('  would upload', e.path)); proces
 
 for (const e of entries) {
   /* 从 git 对象读内容（而不是工作区文件），保证与提交内容一致 */
-  const content = execFileSync('git', ['cat-file', 'blob', e.sha]).toString('base64');
+  const content = execFileSync('git', ['cat-file', 'blob', e.sha], { maxBuffer: 128 * 1024 * 1024 }).toString('base64');
   const blob = await api('POST', `/repos/${OWNER}/${REPO}/git/blobs`, { content, encoding: 'base64' });
   if (blob.sha !== e.sha) throw new Error('blob SHA 不一致: ' + e.path);
   console.log('  blob ✓', e.path);

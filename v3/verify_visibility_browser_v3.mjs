@@ -178,6 +178,10 @@ SCENARIOS.forEach((sc) => {
   const ALL_LABELS = ['反激 / Flyback', '有源钳位反激 / ACF', '单端正激 / Forward', '推挽 / Push-Pull', '半桥 / Half-Bridge', '全桥 / Full-Bridge', 'LLC 谐振 / LLC'];
   const scope = hintText(dom, 'inputScope');
   check('面板顶部提示当前拓扑要填什么', scope.indexOf('当前拓扑：' + sc.topoLabel) >= 0 && scope.length > 60, scope.slice(0, 100));
+  if (/LLC/.test(sc.topoLabel)) {
+    check('LLC 输入面板给出 Q 取值口径（自动 0.9·Q_max vs 厂商 0.2~0.3）',
+      dom.indexOf('Q 的取值口径') >= 0 && dom.indexOf('0.2~0.3') >= 0);
+  }
   const fStart = dom.indexOf('这里只列当前拓扑'), fDet = dom.indexOf('<details', fStart > 0 ? fStart : 0);
   const fRegion = (fStart > 0 && fDet > fStart) ? dom.slice(fStart, fDet) : '';
   const leaked = ALL_LABELS.filter((l) => l !== sc.topoLabel && fRegion.indexOf(l) >= 0);

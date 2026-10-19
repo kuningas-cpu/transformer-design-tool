@@ -78,6 +78,8 @@ try { new Function(uiSrc); uiCompiles = true; } catch (e) {
   }
 }
 ok('UI script compiles (syntax)', uiCompiles);
+ok('topology schematics are not shipped (no topoFig/topoCap remnants)',
+  !/topoFig|topoCap/.test(html));
 
 const htmlIds = new Set([...html.matchAll(/id="([^"]+)"/g)].map((m) => m[1]));
 const uiRefs = new Set([...(uiSrc + engineSrc).matchAll(/getElementById\('([^']+)'\)|\$\('([^']+)'\)/g)].map((m) => m[1] || m[2]));
@@ -1782,20 +1784,30 @@ header('36 device selection: switch / rectifier / freewheel / reset network / RC
     one('复位电容 耐压').value);
   ok('the reset-winding alternative is offered with Nr = Np and 2xVin_max diode',
     /Nr = Np/.test(one('复位绕组').spec) && /87 V/.test(one('复位绕组').value) && /2×Vin_max/.test(one('复位绕组').why));
-  /* RCD：耗散 = ½LkIpk²Fs，C 由 10% 纹波定，R = V²/P 且两者自洽 */
-  const eLk = 0.5 * 0.2e-6 * r.summary.IpkPri * r.summary.IpkPri;
+  /* RCD：耗散 = ½Lk,effIpk²Fs（正激只算原边折算那部分），C 由 10% 纹波定，R = V_C²/P 且两者自洽 */
+  const lkEff = 0.2e-6 * 0.5;
+  const eLk = 0.5 * lkEff * r.summary.IpkPri * r.summary.IpkPri;
   const pClamp = eLk * 250e3;
   ok('the RCD dissipation equals 1/2*Lk*Ipk^2*Fs',
     Math.abs(parseFloat(one('RCD 耗散').value) - pClamp) < 0.05, one('RCD 耗散').value + ' vs ' + pClamp.toFixed(2) + ' W');
   const cClampNf = parseFloat(one('RCD 电容').value);
   const rClampK = parseFloat(one('RCD 电阻').value);
   ok('the RCD capacitor lands in the nF range and the resistor in the kOhm range with >=2x power headroom',
-    cClampNf > 1 && cClampNf < 50 && rClampK > 1 && rClampK < 100 && /≥ 3\.\d W/.test(one('RCD 电阻').value),
+    cClampNf > 1 && cClampNf < 50 && rClampK > 1 && rClampK < 100 && /≥ 1\.\d W/.test(one('RCD 电阻').value),
     cClampNf + ' nF / ' + rClampK + ' kΩ');
+  const vC = parseFloat(one('RCD 钳位电容电压').value);
+  const vdsClamp = parseFloat(one('RCD MOSFET 总电压').value);
+  const vSpike = parseFloat(one('RCD 漏感尖峰').value);
+  ok('RCD voltage bases are separated: Vds,clamp = Vin_max + V_C and V_spike = V_C − V_reset',
+    Math.abs(vdsClamp - (36 + vC)) <= 10 && Math.abs(vSpike - (vC - 36)) <= 10,
+    'V_C=' + vC + ' V, Vds=' + vdsClamp + ' V, V_spike=' + vSpike + ' V');
   ok('the RCD capacitor ripple works out to ~10% of V_clamp (self-consistent design)',
-    Math.abs(eLk / (cClampNf * 1e-9 * parseFloat(one('RCD 钳位电压').value)) - 0.1 * parseFloat(one('RCD 钳位电压').value)) < 2,
+    Math.abs(eLk / (cClampNf * 1e-9 * vC) - 0.1 * vC) < 2,
     one('RCD 电容').why);
   ok('the RCD also lists the diode requirements', /trr ≤ 100 ns/.test(one('RCD 二极管').value));
+  const vDiode = parseFloat(String(one('RCD 二极管').value).replace(/[^\d.]/g, ''));
+  ok('RCD diode Vr is referenced to Vds,clamp (Vin_max + V_C), not V_C alone',
+    vDiode >= 1.1 * vdsClamp, 'Vr=' + vDiode + ' V vs Vds,clamp=' + vdsClamp + ' V');
   /* 同步整流目标 */
   const sr = TD.design(baseInputs(Object.assign({}, board, { rectDevice: 'sr1', rdsOnMOhm: 10 })));
   ok('when SR is selected the guide adds an Rds(on) target for the secondary',
@@ -2108,6 +2120,72 @@ header('39 vendor reference designs (same duty basis)');
   ok('ACF: an insufficient-ZVS design gets a concrete "Lm ≤ X µH" recommendation',
     acf.warns.some((w) => /ZVS/.test(w) && /Lm 需 ≤/.test(w)),
     (acf.warns.find((w) => /Lm 需 ≤/.test(w)) || '').slice(0, 120));
+}
+
+/* ---------------- 40. Buck 型副边 DCM：L / Ipk / Irms / Bpk / Bac 同一套模型 ---------------- */
+header('40 buck-type secondary DCM uses one model for L, Ipk, Irms, flux and loss');
+{
+  function dcmCase(over) {
+    return TD.design(baseInputs(Object.assign({ buckMode: 'dcm', buckDcmD: 0.4, vinMin: 200, vinMax: 400, vout: 24, iout: 10,
+      fs: 100, vf: 0.5, eta: 0.88, dutyMax: 0.45, resetMode: 'winding', ae: 155, le: 100, aw: 150, mlt: 70 }, over)));
+  }
+  function expectDcm(r, m, halfBridge) {
+    const s = r.summary, os = s.outStage, n = s.n;
+    const pmin = os.buckDcm.pmin, pmax = os.buckDcm.pmax;
+    const Vo = 24.5, D = r.inputs.buckDcmD, Fs = r.inputs.fs * 1000, Iout = r.inputs.iout;
+    const Vs = halfBridge ? r.inputs.vinMin / (2 * n) : r.inputs.vinMin / n;
+    const VLon = Vs - Vo;
+    const L = 0.5 * m * VLon * D * D * (Vo + VLon) / (Vo * Iout * Fs);
+    const Ipk = VLon * D / (L * Fs);
+    const D2 = D * VLon / Vo;
+    const Irms = Ipk * Math.sqrt(m * (D + D2) / 3);
+    close(os.LoutUH * 1e-6, L, 1e-6, 'DCM L_out = 1/2*m*VLon*D^2*(Vo+VLon)/(Vo*Iout*Fs)');
+    close(pmin.Ipk, Ipk, 1e-6, 'DCM Ipk@Vin_min = VLon*D/(L*Fs)');
+    close(pmin.Irms, Irms, 1e-6, 'DCM Irms@Vin_min = Ipk*sqrt(m*(D+D2)/3)');
+    close(os.LoutIpk, Math.max(pmin.Ipk, pmax.Ipk), 1e-6, 'DCM worst-case Ipk = max(Vin_min, Vin_max)');
+    close(os.LoutIrms, Math.max(pmin.Irms, pmax.Irms), 1e-6, 'DCM worst-case Irms = max(Vin_min, Vin_max)');
+    close(os.LoutBpk, L * os.LoutIpk / (os.LoutN * r.inputs.ae * 1e-6), 1e-6, 'DCM Bpk = L*Ipk,max/(N*Ae)');
+    close(os.LoutBac, 0.5 * L * os.LoutIpk / (os.LoutN * r.inputs.ae * 1e-6), 1e-6, 'DCM Bac = Bpk/2');
+    ok('DCM mode is flagged and D+D2 <= 1', os.dcmUsed && os.buckModeActual === 'DCM' && os.buckDcm.pmin.dcm,
+      os.buckModeActual + ' D+D2=' + os.buckDcm.pmin.Dtotal.toFixed(3));
+    return { s, os, pmin, pmax, L, Ipk, Irms, D, D2 };
+  }
+  const fwd = dcmCase({ topology: 'Forward' });
+  ok('forward DCM case runs', fwd.ok, (fwd.errs || []).join('; '));
+  if (fwd.ok) {
+    expectDcm(fwd, 1, false);
+    close(fwd.points.vinMin.IrmsSec, fwd.points.vinMin.buckIrms, 1e-6, 'forward DCM transformer Irms,sec = inductor Irms@Vin_min');
+    close(fwd.points.vinMin.IpkPri, fwd.points.vinMin.buckIpk / fwd.summary.n + fwd.points.vinMin.dIm, 1e-6,
+      'forward DCM Ipk,pri = Ipk,sec/n + dIm');
+    close(fwd.points.vinMin.dBpp, fwd.points.vinMin.buckD * 200 / (fwd.inputs.fs * 1000 * fwd.summary.Np * 155e-6), 1e-6,
+      'forward DCM transformer dBpp uses the DCM duty, not the CCM duty');
+    close(fwd.points.vinMin.Bpk, fwd.points.vinMin.dBpp, 1e-6, 'forward DCM Bpk = dBpp');
+  }
+  const fb = dcmCase({ topology: 'Full-Bridge', secRect: 'ct', buckDcmD: 0.35 });
+  ok('full-bridge DCM case runs', fb.ok, (fb.errs || []).join('; '));
+  if (fb.ok) {
+    const e = expectDcm(fb, 2, false);
+    close(fb.points.vinMin.IrmsSec, fb.points.vinMin.buckIrms, 1e-6, 'full-bridge DCM secondary RMS uses m=2');
+    close(fb.points.vinMin.IrmsPri, (fb.points.vinMin.buckIpk / fb.summary.n + fb.points.vinMin.dIm) * Math.sqrt(2 * fb.points.vinMin.buckD / 3), 1e-6,
+      'full-bridge DCM primary RMS uses two on-pulses per period');
+    close(fb.points.vinMin.Bpk, fb.points.vinMin.dBpp / 2, 1e-6, 'full-bridge DCM Bpk = dBpp/2');
+  }
+  const hb = dcmCase({ topology: 'Half-Bridge', secRect: 'ct', buckDcmD: 0.35 });
+  ok('half-bridge DCM case runs', hb.ok, (hb.errs || []).join('; '));
+  if (hb.ok) {
+    expectDcm(hb, 2, true);
+  }
+  ok('flyback DCM consistency check uses DdcmRaw + trFracRaw (not a clamped value)',
+    /dcmConsistent\s*=\s*\(DdcmRaw \+ trFracRaw\)/.test(engineSrc));
+  const fbd = TD.design(baseInputs({ topology: 'Flyback', vinMin: 9, vinMax: 36, vout: 12, iout: 5,
+    fs: 100, alNh: 32, npGiven: 10, nsGiven: 5, dutyMax: 0.45 }));
+  ok('flyback DCM case runs', fbd.ok, (fbd.errs || []).join('; '));
+  if (fbd.ok) {
+    const p = fbd.points.vinMin;
+    const trRaw = fbd.summary.LpUH * 1e-6 * p.IpkPri / (p.n * (12 + 0.5)) * fbd.inputs.fs * 1000;
+    close(p.trFrac, trRaw, 1e-6, 'flyback DCM tr/T is reported un-truncated');
+    ok('flyback DCM reset-time row is consistent for this case', p.dcmConsistent === true, String(p.dcmConsistent));
+  }
 }
 
 console.log('\n================ RESULT ================');

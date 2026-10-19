@@ -21,8 +21,8 @@ transformer_tool_archive/
 │   └─ pdf_text_extract.mjs                     承认书 PDF 文本提取
 ├─ v3/                          ← 你的 v3 分支
 │   ├─ transformer_design_tool_v3.html     ★ 主开发线（V2 模型 + 占空比三层 + CCM·BCM·DCM 模式选择）
-│   ├─ verify_transformer_tool_v3.mjs      引擎回归（691 项，全过）
-│   ├─ verify_visibility_browser_v3.mjs    真浏览器回归（114 项，全过）
+│   ├─ verify_transformer_tool_v3.mjs      引擎回归（758 项，全过）
+│   ├─ verify_visibility_browser_v3.mjs    真浏览器回归（115 项，全过）
 │   ├─ history/                    生成过程：final10 … final14 五个中间版本
 │   └─ patches/                    生成 v3 的 4 个补丁脚本（final10→14 的来龙去脉）
 ├─ reference/                   ← 设计公式参考（v2/v3 共用，未改动）
@@ -42,7 +42,7 @@ transformer_tool_archive/
 | 漏感尖峰电流 | 折算到原边的负载电流 | **已对齐**（原先只取励磁电流，低估 1~2 个数量级） |
 | 正激整数匝 | Ns 守 ΔB、Np 守 D_max | **已对齐** |
 | 输出电感纹波口径 | 绝对 ΔI_L 输入 | 纹波比 K（buckMode/buckRippleK）—— V3 自己的口径，保留 |
-| 验证状态 | 690 项引擎 + 114 项浏览器 + Excel 19/19 全过 | **691 项引擎 + 114 项浏览器全过**（`v3/verify_transformer_tool_v3.mjs`、`v3/verify_visibility_browser_v3.mjs`） |
+| 验证状态 | 690 项引擎 + 114 项浏览器 + Excel 19/19 全过 | **758 项引擎 + 115 项浏览器全过**（`v3/verify_transformer_tool_v3.mjs`、`v3/verify_visibility_browser_v3.mjs`） |
 
 **怎么用**：日常设计与校核都用 V3；V2 只作为"已验证基线"用于对照（两者在同一工况下的差异见 notes §15/§17）。
 共用文档（设计说明 `transformer_design_tool_v2_notes.md`、参数速查、两家供应商承认书核算）仍在 `v2/` 下，V3 沿用同一套模型说明。
@@ -959,7 +959,18 @@ CCM/DCM/BCM 判据、LLC 变比与 FHA/ZVS。仍未校准的：损耗绝对值�
 ACF 的"钳位上限"照抄了反激口径（等价于假设 D_max 发生在 Vin_max），把设计占空比压到 0.325、**匝数算小一半（2.98）**；
 改为解 `Vds = Vin_max + n·Vo + (n·Vo)²/Vin_max ≤ 0.85U` 后 n = **5.277（−0.3%）** ✓。
 另：ACF 的 Lm 是**为无载 ZVS** 定的（厂商 115 µH vs 工具按纹波目标给的 287 µH）；ZVS 行现在直接给"Lm 需 ≤ 138 µH"。
-第二参考：ON NCP1568 EVB（EVBUM2776-D，37~57 V PoE→5/9/12/15/20 V，45 W，Würth DN05119/D 变压器）。
+第二参考：ON Semi DN05119/D（NCP1568，90~265 VAC→5/9/15/20 V，60 W ACF，T1 = Würth 750317295 RM8/LP，T2 = 330 µH/12T）。
+PDF：https://www.onsemi.cn/download/design-notes/pdf/dn05119.pdf
+
+### 第三十三轮：DCM 口径统一 + RCD 三电压分离 + 参考文件归档（2026-10-19，V3）
+
+- **反激 DCM 复位时间**：`trFrac` 不再截断到 `1−D`；判定改用 `DdcmRaw + trFracRaw`，截断值只用于本周期 RMS 积分。新增回归第 40 节。
+- **RCD 口径**：把 `V_C`（钳位电容相对 Vin 的电压）、`Vds,clamp = Vin_max + V_C`、`V_spike = V_C − V_reset` 三个量分开；C/R 以 `V_C` 为基准，MOSFET 与 RCD 二极管反压以 `Vds,clamp` 为基准。正激只把原边折算漏感计入 RCD 耗散。
+- **Buck 型副边 DCM**：统一 `L = ½·m·(Vs−Vo)·D²·(Vo+Vs−Vo)/(Vo·Iout·Fs)`、`Ipk = (Vs−Vo)·D/(L·Fs)`、`D2 = D·(Vs−Vo)/Vo`、`Irms = Ipk·√(m·(D+D2)/3)`、`Bpk = L·Ipk/(N·Ae)`、`Bac = Bpk/2`。`m=1` 正激，`m=2` 推挽/半桥/全桥；半桥的 `Vs = Vin/(2n)`。同一组数同时喂给变压器副边电流、输出电感、磁通与损耗。新增第 40 节回归。
+- **LLC Q 提示**：工具内增加 Q 取值口径说明；自动 Q=0.9·Q_max 偏激进时会给出 warning，建议用 0.2~0.3 复现厂商板余量。
+- **参考文件**：`refs/` 归档 14 份 PDF（含新增 ON Semi DN05119/D），并补 `refs/README.md` 来源表与对账结论。
+- **验证**：758 项引擎检查 + 115 项真浏览器检查全过。
+
 
 
 ## 归档完整性
@@ -971,11 +982,12 @@ ACF 的"钳位上限"照抄了反激口径（等价于假设 D_max 发生在 Vin
 | 文件 | SHA-256 |
 |---|---|
 | `v2/transformer_design_tool_v2.html` | `53B5F4966F669C464BBB293169049A2BC10109A825E76D0084AB6B30310144DB` |
+| `v2/transformer_design_tool_v2_notes.md` | `90814877A98B9BBF8FB411D507DD896CA64AA576FFE2634453841C4E4E6BF90E` |
 | `v2/verify_transformer_tool_v2.mjs` | `DADAC7EF0A571161FA2AE044C879D59D1747FE3135902E8606A2A7EFC312FF70` |
 | `v2/verify_visibility_browser.mjs` | `2C161B1447AFD47884F990C95D4045A0B119A57FEB1FF7EF7B0D3CB62D69331B` |
-| `v3/transformer_design_tool_v3.html` | `611923C0A190763EBECC74DC31E6F5DA21F677F75C0BCC0BBFA44FB8DF19E9B8` |
-| `v3/verify_transformer_tool_v3.mjs` | `477EB3B142606744DD8C45799248306B7BB5F5373D244C4EF5020C3B97224621` |
-| `v3/verify_visibility_browser_v3.mjs` | `57B22AFCF21A0E8FA44A4E7BB53A0F4BA027CE522DFFDEFC4C605E045F1BD7CC` |
+| `v3/transformer_design_tool_v3.html` | `425F7ACE9DBEE0940CAB67ADC5D4F7982C4D5B241CCFA6FF93B6257D80D3CF39` |
+| `v3/verify_transformer_tool_v3.mjs` | `F0C48B5D7D4BB86609C7A57E859FEB9E1D9851EB481E02F9FE416D625C2A9EBE` |
+| `v3/verify_visibility_browser_v3.mjs` | `A75D2D901A923117E5725DADF37FEDBC44595528AB27BC646C41F680E0ED1261` |
 | `v2/supplier_spec_EPC19_review.md` | `3B12F62F67648E77FD4A4CE7DD7401B7E8FF547A844426CE10DAE0B7B84414E6` |
 
 两个验证脚本都以**脚本自身所在目录**解析工具文件路径，所以把 `v2/`、`v3/` 整体移动或改名后仍可直接运行

@@ -1010,7 +1010,11 @@ C15：0.15 µF = 150 nF     （谐振电容 Cr）
 文档：TI SLUUBO8A《Using the UCC28780EVM-002 45-W 20-V High Density GaN Active-Clamp Flyback》
 实测（Table 5 / BOM）：Lm（P1-P2）= 104~127 µH（BOM 标 115 µH）、漏感 ≤ 2.5 µH、
                       匝比 1 : 0.19 : 0.14 : 0.1 ⇒ Np/Ns = 5.26、RM8/ILP 磁芯、650 V GaN、η 94.6%
-第二参考：ON Semi NCP1568 EVB（AN/EVBUM2776-D，37~57 V PoE→5/9/12/15/20 V，45 W ACF，Würth 变压器 DN05119/D）
+第二参考：ON Semi DN05119/D（NCP1568，90~265 VAC→5/9/15/20 V，60 W ACF）
+  T1 = Würth 750317295（RM8/LP）；T2 = 330 µH / 12T（Bourns TX9/5/3C-3E10）
+  PDF：https://www.onsemi.cn/download/design-notes/pdf/dn05119.pdf
+  官方镜像：https://www.onsemi.com/pub/Collateral/DN05119.PDF（部分网络 403，浏览器打开即可）
+  注：PDF 文本层的 T1 BOM 行被误提取成“120 uF”，不能当变压器参数；匝数/Lm 以 Würth 规格书或实测为准。
 ```
 
 | 量 | 厂商 | 工具（修复前） | 工具（修复后） |
