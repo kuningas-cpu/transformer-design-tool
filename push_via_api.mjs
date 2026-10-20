@@ -6,6 +6,7 @@
    令牌从环境变量 GH_TOKEN 读取，绝不打印。用法：node push_via_api.mjs <owner> <repo> [--dry] */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 
 const OWNER = process.argv[2], REPO = process.argv[3];
 const DRY = process.argv.includes('--dry');
@@ -14,6 +15,52 @@ if (!TOKEN) { console.error('缺少 GH_TOKEN'); process.exit(2); }
 const API = 'https://api.github.com';
 const H = { Authorization: `token ${TOKEN}`, 'User-Agent': 'codex-push', Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };
 const git = (...a) => execFileSync('git', a, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+
+/* Rebuild the exact remote commit object locally (same SHA), then point
+   refs/remotes/origin/main and refs/heads/main at it and set upstream.
+   GitHub's git/commits API returns dates in UTC; the raw object may keep the
+   original +0800 offset and a different trailing-newline count, so try the
+   small set of candidates and only accept an exact SHA match. */
+function parseIsoDate(s) {
+  const m = String(s).match(/^(.+?)([+-]\d{2}):(\d{2})$/);
+  return { ts: Math.floor(Date.parse(s) / 1000), tz: m ? m[2] + m[3] : '+0000' };
+}
+function commitRaw(tree, parents, author, committer, msg, nl) {
+  return [
+    `tree ${tree}`,
+    ...parents.map((p) => `parent ${p}`),
+    `author ${author.name} <${author.email}> ${author.ts} ${author.tz}`,
+    `committer ${committer.name} <${committer.email}> ${committer.ts} ${committer.tz}`,
+    '',
+    msg + '\n'.repeat(nl)
+  ].join('\n');
+}
+function commitSha(raw) {
+  return crypto.createHash('sha1').update(`commit ${Buffer.byteLength(raw)}\0${raw}`, 'utf8').digest('hex');
+}
+function reconstructRemoteCommit(c, meta, msg) {
+  const aLocal = parseIsoDate(meta.aI), cLocal = parseIsoDate(meta.cI);
+  const aApi = parseIsoDate(c.author.date), cApi = parseIsoDate(c.committer.date);
+  const authors = [
+    { name: meta.an, email: meta.ae, ...aLocal },
+    { name: c.author.name, email: c.author.email, ...aApi }
+  ];
+  const committers = [
+    { name: meta.cn, email: meta.ce, ...cLocal },
+    { name: c.committer.name, email: c.committer.email, ...cApi }
+  ];
+  const msgs = [msg, c.message, msg.trimEnd(), c.message.trimEnd()];
+  for (const a of authors) for (const cm of committers) for (const m of msgs) {
+    for (const nl of [0, 1, 2, 3]) {
+      const raw = commitRaw(c.tree.sha, c.parents.map((p) => p.sha), a, cm, m, nl);
+      if (commitSha(raw) === c.sha) {
+        execFileSync('git', ['hash-object', '-t', 'commit', '-w', '--stdin'], { input: raw, encoding: 'utf8' });
+        return true;
+      }
+    }
+  }
+  return false;
+}
 
 async function api(method, path, body) {
   let last;
@@ -69,4 +116,24 @@ console.log('commit:', commit.sha.slice(0, 12), commit.sha === localSha ? '✓ �
 const ref = await api('PATCH', `/repos/${OWNER}/${REPO}/git/refs/heads/main`, { sha: commit.sha, force: true });
 console.log('main →', ref.object.sha.slice(0, 12));
 const head = await api('GET', `/repos/${OWNER}/${REPO}/commits/main`);
-console.log('远端 main 现为', head.sha.slice(0, 12), '| 与本地一致:', head.sha === localSha);
+
+/* Keep local Git tracking in sync even though this push bypassed git://. */
+const remoteSha = commit.sha;
+const sameTree = tree.sha === localTree;
+if (reconstructRemoteCommit(commit, { an, ae, aI, cn, ce, cI }, message)) {
+  execFileSync('git', ['update-ref', 'refs/remotes/origin/main', remoteSha]);
+  const dirty = git('status', '--porcelain').trim();
+  if (sameTree && !dirty) {
+    execFileSync('git', ['update-ref', 'refs/heads/main', remoteSha]);
+    execFileSync('git', ['branch', '--set-upstream-to=origin/main', 'main'], { stdio: 'inherit' });
+    console.log('tracking: local main -> ' + remoteSha.slice(0, 12) + ' (origin/main)');
+  } else {
+    execFileSync('git', ['branch', '--set-upstream-to=origin/main', 'main'], { stdio: 'inherit' });
+    console.warn('tracking: origin/main updated, but local main was not moved' +
+      (sameTree ? '（工作区有未提交修改）' : '（远端 tree 与本地不一致）'));
+  }
+  console.log(git('status', '-sb').trim());
+} else {
+  console.warn('tracking: could not reconstruct the remote commit locally; origin/main/upstream not updated');
+}
+console.log('remote main:', head.sha.slice(0, 12));

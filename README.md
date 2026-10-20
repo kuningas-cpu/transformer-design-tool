@@ -972,6 +972,7 @@ PDF：https://www.onsemi.cn/download/design-notes/pdf/dn05119.pdf
 - **ACF 第二参考的匝比口径**：750317295 是 24T 中心抽头（12T+12T），20V 副边 4T；半桥 ACF 每半 12T → 有效 n=3，全初级 24T → 数据表 6:1。工具在 110~375VDC/20V/3.25A/600V 管下给 n≈3.018、Vds≈500.6V；按 6:1 会被 ACF 硬限正确拒绝（D≤0.489、n≤5.14）。
 - **ACF 新增中心抽头 / 半桥子模式**：`acfMode=ct`；Np 填 4-6 总匝数，内部用 `Nph=Np/2`、`n_eff=Nph/Ns`，磁通/Lm/ZVS 用 Nph，窗口/铜面积用 Np_total。DN05119 + 750317295 实测输入（Np=24、Ns=4、Lm,full=120µH、Lk=4µH、Fs=250kHz、600V 管）给：Nph=12、n_eff=3、n_full=6、Lm,half=30µH、Bpk=0.168T、每管 Vds≈436.5V、ZVS 3.52A，全部通过。
 - **审计模式口径**：供应商给定 Np 低于 `ΔB_target` 对应匝数、但实际 `Bpk ≤ Bsat·降额` 时，只提示"磁损会高于目标"，不再误判为饱和失败；饱和硬限仍由实际 Bpk 判定。
+- **API 推送脚本**：推送成功后自动在本地重建远端 commit 对象（SHA 完全一致）、写 `refs/remotes/origin/main`、把本地 `main` 对齐到同一 SHA 并设置 upstream，避免再次出现"远端已更新但本地没有追踪关系"。
 - **验证**：768 项引擎检查 + 127 项真浏览器检查全过。
 
 
